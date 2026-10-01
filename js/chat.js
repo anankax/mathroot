@@ -57,12 +57,37 @@ SR.chat = (function () {
     });
 
     // 画板按钮
-    var bp = $('btn-play'), br = $('btn-redraw'), bc = $('btn-clear');
+    var bp = $('btn-play'), br = $('btn-redraw'), bc = $('btn-clear'), bpng = $('btn-png');
     if (bp) bp.addEventListener('click', function () { SR.board.togglePlay(); });
     if (br) br.addEventListener('click', function () { SR.board.redraw(); });
     if (bc) bc.addEventListener('click', function () { SR.board.clear(); });
+    if (bpng) bpng.addEventListener('click', function () { saveBoardPNG(bpng); });
 
     // 画板的注入不在这里——那是 main.boot 的活。这里只把两个回调交出去。
+  }
+
+  // 存图（画板工具条最右边那个）。署名由 board.exportPNG 烧进图片右下角，
+  // 这里只管把 dataURL 变成一次下载，并让按钮在生成的这一两秒里看得见反应——
+  // 点了没动静，老师会以为坏了，然后连点三下。
+  function saveBoardPNG(btn) {
+    var old = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '正在存…';
+    SR.board.exportPNG(function (url) {
+      btn.disabled = false;
+      btn.textContent = old;
+      if (!url) { setStatus('画板还没画东西，或者这一版的浏览器不让存图。'); return; }
+      var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
+      var name = '数根-画板-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) +
+                 '-' + p(d.getHours()) + p(d.getMinutes()) + '.png';
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setStatus('存好了：' + name);
+    });
   }
 
   function onPlayState(st) {

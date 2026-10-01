@@ -106,6 +106,13 @@ SR.main = (function () {
   //  启动
   // ============================================================
   function boot() {
+    // 署名以 config.js 为准刷一遍页脚和画板水印（index.html 里那两处是开机前的样子）。
+    // 顺序上放最前面：board 挂牌时会用到水印，存图也照它取字。
+    var cr = $('credits');
+    if (cr && SR.COPYRIGHT) cr.textContent = SR.COPYRIGHT;
+    var wm = document.querySelector('.wm');
+    if (wm && SR.WATERMARK) wm.textContent = SR.WATERMARK;
+
     // 顺序要紧：chat 先把 DOM 句柄和按钮接好，board 才能挂牌，
     // applyMode 最后跑（它会重置对话、写开场白）。
     SR.chat.init();

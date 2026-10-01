@@ -145,7 +145,12 @@ SR.MODES = {
   }
 };
 
-// ---- 署名（要改署名，只改这里）----
+// ---- 署名（要改署名，只改这三行）----
+// ★ 这三行是**运行时的源头**：main.js 开机时会把页脚和画板水印的文案按它们刷一遍；
+//   index.html 里那两处同样的字是**开机之前**显示用的，别只改那边——改完对不上，
+//   画面会在开机那一瞬间跳一下。存图导出的署名也是照画板水印取的字，跟着走。
+//   （2026-10-01：原先 SR.COPYRIGHT 定义了却没人读，页脚其实写死在 index.html 里。）
 SR.AUTHOR = 'KAX';
 SR.SITE = 'mathroot';
-SR.COPYRIGHT = '© 2026 KAX · 数根 mathroot · 保留所有权利';
+SR.COPYRIGHT = '© 2026 ' + SR.AUTHOR + ' · 数根 ' + SR.SITE + ' · 保留所有权利';
+SR.WATERMARK = SR.AUTHOR + ' · 数根 ' + SR.SITE;

@@ -77,9 +77,9 @@ js/zhuawen.js         追问条目库（118 条，由脚本生成）★ 这个�
 js/retrieve.js        字符二元组 BM25 检索，按学生这句话找教材条目／追问条目
 js/api.js             双后端客户端（SSE 流式、429 降级、按 token 裁历史）
 js/render.js          围栏拆分 + markdown + KaTeX
-js/board.js           GeoGebra 桥：逐条出图、动点播放、平面/三维、本地空图兜底
+js/board.js           GeoGebra 桥：逐条出图、动点播放、平面/三维、本地空图兜底、存图（烧署名）
 js/chips.js           "猜他想说"三个按钮的本地兜底词库
-js/chat.js            气泡、chips、拍照
+js/chat.js            气泡、chips、拍照、存图
 js/main.js            装配与模式切换
 test/                 生成脚本与自检，不进部署
 ```
@@ -132,6 +132,7 @@ node test/probe_fence.cjs 8 deepseek    # 换了后端，这一条必须两个�
 node test/probe_zhcmd.cjs               # 中文命令经翻译后，在真 applet 里建不建得出对象（含 3D）
 node test/probe_3d.cjs                  # 3D 能力逐条探：切视图、立方体/棱柱/球、getPNGBase64
 node test/probe_blank.cjs               # "我画不出来" → 画板上有没有补出一条空数轴
+node test/probe_png.cjs                 # 存图：导出的 PNG 右下角是不是真烧着署名
 node test/mk_problem_image.cjs          # 先造一张"学生拍的错题"（浏览器画的，不吃 Python 依赖）
 node test/probe_image.cjs glm           # 拍照上传端到端（并检查答话的是不是守规矩的那颗模型）
 node test/probe_image.cjs deepseek
@@ -149,6 +150,10 @@ node test/e2e.cjs demo 90 "画个数轴，带个动点 P"
   Prism/Pyramid 要的是多边形而非散点、3D 下只认英文命令名）。只有前一档算红绿。
 - `probe_blank.cjs` 退出 **3** = 量坐标轴的尺子本身坏了（两个已知状态读不出差别），
   结论一个都不能信，先修仪器。
+- `probe_png.cjs` 退出 **3** = 同一把"量右下角墨点"的尺子。它**同时**量两张图：
+  没水印的原图（`toPNG`）和该有水印的导出图（`exportPNG`）。原图必须近似 0
+  ——不然尺子是见谁都报有墨，两张都"有"的时候它分不出"烧了"和"没烧"。
+  退出 1 = 原图干净、导出图却也没有墨，那才是真的没烧进去。
 
 `probe_image.cjs` 现在是**三段证据分开报**，别把它们混成一句"红/绿"：
 - **通道单独量一次**：绕开提示词，拿同一张图直接问"把图上的算式念出来"。
@@ -223,6 +228,17 @@ GET 回来的 `author.date` 显示成 `Z`（UTC），但对象里存的还是原
   `test/probe_blank.cjs` 现在开头先用两个已知状态自检这把尺子，读数没差别就直接退出码 3。
 - **GeoGebra 在 `about:blank` 里加载不起来**（不透明源），但在 `file://` 和 https 下都正常。
   别用 `srcdoc` 或空标签页去承载 applet。
+- **`getPNGBase64` 给的是光秃秃的 base64，不是 data URL**（开头就是 `iVBORw0KGgo…`）。
+  直接塞 `img.src` 会走 `onerror`，日志里只有一句"画板位图加载失败"，看不出是少了前缀。
+  `board.js` 的 `toPNG` / `exportPNG` 都自己补 `data:image/png;base64,`。
+- **画板里贴着的那些字（右下角的 `KAX · 数根 mathroot`）`getPNGBase64` 拍不到。**
+  它们是板子上的 DOM 层（`index.html` 的 `.wm`），位图里没有。所以「存图」这条路必须
+  **自己再画一遍水印**（`exportPNG` 把位图铺进 canvas 再压字）——照位图直接存出去，
+  就是一张干干净净、看不出出处的图，而图恰恰是最好搬走、最会外传的那个形态。
+  署名的**源头是 `config.js` 的 `SR.COPYRIGHT` / `SR.WATERMARK`**：`main.js` 开机时刷页脚
+  和 `.wm`，`exportPNG` 又照 `.wm` 取字——所以改署名只改 config 那两行，
+  页脚、画板、导出的图三处一起走。`index.html` 里同样的字是开机前的兜底，别只改那边。
+  `test/probe_png.cjs` 守着导出那一处。
 
 ### 提示词 / 模型
 

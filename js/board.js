@@ -185,6 +185,56 @@ SR.board = (function () {
     try { return api ? api.getPNGBase64(2, false, 96) : ''; } catch (e) { return ''; }
   }
 
+  // ★ 存图时必须把署名**烧进图里**（2026-10-01）。
+  //   画板右下角那个 `KAX · 数根 mathroot` 是个 DOM 层，`getPNGBase64` 拿不到它——
+  //   照着它直接存出去，就是一张干干净净、看不出出处的图。而图片恰恰是最容易被
+  //   拿去用的形态（贴进课件、发群里、塞进别处的材料），孔老师这次第一条要求就是"不让人盗用"。
+  //   所以导出这一路自己再画一遍，压在右下角。
+  //
+  //   异步是因为要等位图 load 完才能往 canvas 上叠。回调传 dataURL，任一步失败给空串。
+  function exportPNG(cb) {
+    var raw = toPNG();
+    if (!raw) { cb(''); return; }
+    // ★ `getPNGBase64` 给的是**光秃秃的 base64**（开头就是 `iVBORw0KGgo`），
+    //   不是 data URL。直接塞给 `img.src` 会走 onerror——实测就是这样，
+    //   日志里只有一句"画板位图加载失败"。所以前缀得自己补。
+    var src = /^data:/.test(raw) ? raw : 'data:image/png;base64,' + raw;
+    var im = new Image();
+    im.onerror = function () {
+      // 别静默失败：存图这条路一旦断了，界面上只会看到"点了没反应"，
+      // 分不出是"还没画东西"还是"浏览器不让存"。留一行日志给控制台。
+      if (window.console) window.console.warn('exportPNG：画板位图加载失败');
+      cb('');
+    };
+    im.onload = function () {
+      try {
+        var c = document.createElement('canvas');
+        c.width = im.width; c.height = im.height;
+        var g = c.getContext('2d');
+        g.drawImage(im, 0, 0);
+        // 署名照**画板上那一处**的字取（index.html 的 `.wm`），不再抄一份常量：
+        // 改名字只改那一处，导出的图跟着走。取不到才退回写死的那串。
+        var wm = document.querySelector('.wm');
+        var txt = (wm && wm.textContent.trim()) || 'KAX · 数根 mathroot';
+        var fs = Math.max(13, Math.round(im.width / 42));
+        var pad = Math.round(fs * 0.8);
+        g.font = fs + 'px "Microsoft YaHei", "PingFang SC", sans-serif';
+        g.textAlign = 'right';
+        g.textBaseline = 'bottom';
+        // 先垫一层浅色描边：白底上深绿看得清，深色底上这层也兜着
+        g.fillStyle = 'rgba(255,255,255,.8)';
+        g.fillText(txt, im.width - pad + 1, im.height - pad + 1);
+        g.fillStyle = 'rgba(39,122,86,.9)';
+        g.fillText(txt, im.width - pad, im.height - pad);
+        cb(c.toDataURL('image/png'));
+      } catch (e) {
+        if (window.console) window.console.warn('exportPNG 失败：', e);
+        cb('');
+      }
+    };
+    im.src = src;
+  }
+
   // ---- 装机 ----
   var hostId = null;
 
@@ -327,7 +377,8 @@ SR.board = (function () {
 
   return {
     init: init, run: run, clear: clear, redraw: redraw, giveBlank: giveBlank,
-    togglePlay: togglePlay, stopPlay: stopPlay, toPNG: toPNG,
+    togglePlay: togglePlay, stopPlay: stopPlay,
+    toPNG: toPNG, exportPNG: exportPNG,
     isReady: function () { return ready; },
     canPlay: function () { return !!playTarget; },
     isPlaying: function () { return playing; },
