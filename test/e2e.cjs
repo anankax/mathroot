@@ -142,8 +142,12 @@ function put(p) {
 
   async function playTest() {
     console.log('\n──── 播放键测试');
-    // 播放对象的名字从按钮上的字里取（"▶ 播放 t"），别写死 t——模型可能用别的字母
-    const tgt = String(await q('document.getElementById("btn-play").textContent') || '').replace(/[^A-Za-z0-9_]/g, '');
+    // 播放对象的名字从按钮上的字里取（"▶ 播放 t"），别写死 t——模型可能用别的字母。
+    // ★ 别再拿 `[^A-Za-z0-9_]` 去滤：模型很爱用希腊字母命名滑动条，3D 那轮它给的就是 `α`，
+    //   滤完只剩空串，于是 getValue('') 读回 undefined、探针报"没动"——
+    //   画板上其实转得好好的，是这把尺子把名字吃掉了。取"播放"后面那一段就够。
+    const label = String(await q('document.getElementById("btn-play").textContent') || '');
+    const tgt = (label.match(/播放\s*(\S+)/) || [, ''])[1];
     const read = 'window.ggbApplet.getValue(' + JSON.stringify(tgt) + ')';
     console.log('  播放对象: ' + tgt + '   点之前的值: ' + await q(read));
     await q('document.getElementById("btn-play").click()');

@@ -5,7 +5,7 @@
 //   读图这条链上每一环都可能断：文件有没有塞进去、有没有压小、base64 有没有拼对、
 //   模型那把 messages 数组收不收 data URI、流式拆包会不会把图丢了。
 //
-// 用真图：test/_case_photo.png，是 mk_problem_image.py 造的"解方程 2x+1=7"，
+// 用真图：test/_case_photo.png，是 mk_problem_image.cjs 造的"解方程 2x+1=7"，
 // 学生的解答里**故意错了一步**（x = 6÷2 写成了 x = 4）。就为了验 v18 铁律第 7 条：
 // 学生把整份解答拍过来、每一步都看得见的时候，模型最容易"哪步错了就直接问哪步"，
 // 把学生自己的复盘跳过去——那条铁律就是治这个的。
@@ -32,7 +32,7 @@ function put(p) {
 }
 
 (async () => {
-  if (!fs.existsSync(IMG)) { console.error('先跑 py -3 test/mk_problem_image.py 造图'); process.exit(1); }
+  if (!fs.existsSync(IMG)) { console.error('先跑 node test/mk_problem_image.cjs 造图'); process.exit(1); }
   const t = JSON.parse(await put('/json/new?about:blank'));
   const ws = new WebSocket(t.webSocketDebuggerUrl);
   let id = 0; const pend = {}; const errs = [];
@@ -72,10 +72,58 @@ function put(p) {
               ' 带图那轮的模型链:', await q('JSON.stringify((SR.api.backend().modelsImage)||SR.api.backend().models)'),
               ' 画板就绪:', await q('SR.board.isReady()'));
 
+  // ---- 0. 先单独问一次"你看得见这张图吗" ----
+  // ★ 为什么先单独量：整条链上"图没送到"和"送到了但模型守规矩、什么都没复述"
+  //   在回复上长得一模一样。这里绕开提示词、绕开学生模式，直接拿同一张图问一句
+  //   "把图上的算式念出来"——它要是念得出来，通道就是通的，后面红绿都该记在别的地方。
+  const chModel = ((await q('JSON.stringify((SR.api.backend().modelsImage)||SR.api.backend().models)')) || '[]');
+  const cm = JSON.parse(chModel)[0];
+  const chKey = BACKEND === 'glm' ? await q('SR.GLM_KEY || ""') : KEY;
+  const chUrl = await q('SR.api.backend().url');
+  console.log('\n--- 0. 通道单独量一次（' + cm + '，不走提示词）---');
+  {
+    const b64 = fs.readFileSync(IMG).toString('base64');
+    let said = null;
+    for (let i = 1; i <= 6 && !said; i++) {
+      let r, t;
+      try {
+        r = await fetch(chUrl, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + chKey },
+          body: JSON.stringify({ model: cm, stream: false, messages: [{ role: 'user', content: [
+            { type: 'text', text: '这张图里写的是什么？把图上的算式一行一行原样念出来，不要解答。' },
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,' + b64 } }] }] })
+        });
+        t = await r.text();
+      } catch (e) { console.log('  第' + i + '次 网络出错：' + e.message); await new Promise(z => setTimeout(z, 3000)); continue; }
+      if (r.status === 200) { said = JSON.parse(t).choices[0].message.content; break; }
+      console.log('  第' + i + '次 HTTP ' + r.status + '（挤了，隔几秒再来）');
+      await new Promise(z => setTimeout(z, 4000 + Math.random() * 4000));
+    }
+    if (!said) {
+      console.log('  ❌ 六次都没挤进去，通道这一条今天量不了——别把它当成"图没法读"。');
+    } else {
+      const ok = /2x\s*\+?\s*1\s*=\s*7/.test(said) && /6\s*[÷\/]\s*2/.test(said);
+      console.log('  模型念出来的：' + said.replace(/\n/g, ' ⏎ ').slice(0, 160));
+      console.log('  念对了吗：' + (ok ? '✅ 图上的算式都念出来了——通道是通的' : '❌ 念出来的对不上，图可能没被当成图'));
+    }
+  }
+
   await q(`(function(){ window.__cmds=[];
      var raw=window.ggbApplet.evalCommand.bind(window.ggbApplet);
      window.ggbApplet.evalCommand=function(s){ var r; try{r=raw(s);}catch(e){r='THROW:'+(e.message||e);}
        window.__cmds.push(s+' => '+(r===true?'ok':r)); return r; };
+     return 1 })()`);
+
+  // ★ 顺带把**发出去的请求体**记下来（api.js 走的是 fetch）。
+  //   为什么非得记：这个探针原来判"图有没有送到模型"是看模型的回复里有没有提到图上的东西。
+  //   可设计上第一轮它**就该**只问一句"这道题你当时是怎么做的？"，什么都不复述——
+  //   2026-10-01 跑出来就是这句，于是判据报"图可能没送到"，而同一张图直接打 API
+  //   是读得出来的（把算式一行一行念出来了）。又是"数字不是它宣称的那件事"。
+  //   要看的是**客户端到底发了什么**，这个是能直接读的，不用猜模型的措辞。
+  await q(`(function(){ window.__reqs=[];
+     var raw=window.fetch;
+     window.fetch=function(u,o){ try{ if(o&&typeof o.body==='string') window.__reqs.push(o.body); }catch(e){}
+       return raw.apply(this, arguments); };
      return 1 })()`);
 
   // ---- 把图塞进隐藏的 file input（真实照片走的就是这条路）----
@@ -141,6 +189,14 @@ function put(p) {
   const o = typeof one === 'string' ? JSON.parse(one) : one;
   const text = o.text || '', raw = o.raw || '';
 
+  // ---- 客户端到底发了什么（这一条才是"图有没有送到"的硬证据）----
+  const reqsRaw = await q('JSON.stringify((window.__reqs||[]).map(function(s){return s.length}))');
+  const reqLens = (typeof reqsRaw === 'string' ? JSON.parse(reqsRaw) : reqsRaw) || [];
+  const lastReq = await q('(window.__reqs||[]).length ? window.__reqs[window.__reqs.length-1] : ""');
+  const last = typeof lastReq === 'string' ? lastReq : '';
+  const SENT = /"image_url"/.test(last) && /data:image\//.test(last);
+  const imgLen = (last.match(/data:image\/[a-z]+;base64,([A-Za-z0-9+/=]+)/) || [, ''])[1].length;
+
   // ---- 先分开"守没守住"和"通道挤不挤" ----
   // ★ glm-4.6v-flash 会被限流（1305），实测三次里成两次。挤了是**通道问题，不是模型出错**，
   //   混在一起报"有问题"这个探针就成了掷骰子，跑十遍看十遍红。挤了就明说挤了、退出码给 2。
@@ -164,7 +220,14 @@ function put(p) {
   console.log('【选项】' + (o.chips.length ? o.chips.join(' | ') : '（无）'));
   console.log('【画板命令】' + (o.cmds.length ? o.cmds.join(' ; ') : '（无）'));
   console.log('【原文】' + JSON.stringify(raw).slice(0, 600));
-  console.log('\n读到了图上的数 : ' + (READ ? '✅ 是' : '❌ 没提图上的数——图可能没送到模型'));
+  // ★ 这两条分清楚："客户端发出去没有"和"模型复述不复述"是两件事。
+  //   守规矩的模型第一轮本来就只问一句，不复述任何东西——拿"复述"当"送到了"的判据，
+  //   等于"谁越界谁得分"。所以硬证据用上面的 SENT，READ 降级成参考信息。
+  console.log('发出去的请求   : ' + reqLens.length + ' 个，长度 ' + JSON.stringify(reqLens));
+  console.log('图送出去了吗   : ' + (SENT
+    ? '✅ 是（最后一个请求里有 image_url，base64 ' + (imgLen / 1024).toFixed(0) + 'KB）'
+    : '❌ 最后一个请求里没有图——客户端这一步就断了，与模型无关'));
+  console.log('模型复述了图上内容 : ' + (READ ? '有（参考）' : '没有（守规矩的第一轮本来就该这样，不算问题）'));
   console.log('越界点出错步   : ' + (POINT ? '❌ 踩了铁律第 7 条' : '✅ 没点名错在哪一步'));
   console.log('这一轮谁答的   : ' + (o.model || '（没记到）'));
   // 重试过一次的话，屏幕上那句话**不该**出现两遍（retryLast 会把旧气泡摘掉）
@@ -181,11 +244,21 @@ function put(p) {
     ? '✅ ' + (o.model || '未记录') + '（名单 ' + allowList.join('、') + '）'
     : '❌ ' + o.model + ' 不在 [' + allowList.join('、') + '] 里'));
 
-  if (BUSY && !READ) {
-    console.log('\n===== ' + BACKEND + ' 图片链路：⏭ 通道挤了，这一次没测成（不是失败，重跑一次）=====');
-    process.exit(2);
+  // ---- 判据合成 ----
+  //  图送出（SENT）     —— 客户端那一半，硬证据，必须过
+  //  不踩第 7 条（POINT）—— 模型那一半，必须过
+  //  模型在名单（onList）—— 防止悄悄降级到守不住的模型
+  //  复述（READ）不进判据：见前面那段注释，它是个"谁越界谁得分"的指标。
+  const pass = SENT && !POINT && onList;
+  if (BUSY) {
+    console.log('\n   通道挤过（这一轮重试过）。图送出去了、规矩也守住了，这就算测成；');
+    console.log('   要是重试之后连请求都没发全，那才要另说。');
   }
-  const pass = READ && !POINT && onList;
   console.log('\n===== ' + BACKEND + ' 图片链路：' + (pass ? '通过' : '有问题') + ' =====');
+  if (!pass) {
+    if (!SENT) console.log('★ 先修客户端：图根本没进请求体（看上面 reqLens，请求发出去了但里面没有 image_url）');
+    else if (POINT) console.log('★ 是模型越界（铁律第 7 条），去改提示词那一节');
+    else console.log('★ 是模型不在名单里——它被悄悄降级了');
+  }
   process.exit(pass ? 0 : 1);
 })();

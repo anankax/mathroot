@@ -5,38 +5,43 @@
 const path = require('path'), fs = require('fs'), http = require('http');
 const WebSocket = require(path.join(process.env.USERPROFILE, '.claude', 'skills', 'browser', 'browser', 'node_modules', 'ws'));
 
+// 每条：label 名字、cmds 逐条喂进 applet 的命令、want 该不该建出东西。
+//   want:false = **预期不过**，是在记录一条已知约束，不算缺陷——
+//   混在一起报的话，"红的那几条"和"故意让它红的那几条"就分不开了。
 const CASES = [
-  ['3D 点', 'A=(0,0,0)', 'B=(2,0,0)'],
-  ['正方体 Cube', 'A=(0,0,0)', 'B=(2,0,0)', 'Cube(A,B)'],
-  ['棱柱 Prism', 'A=(0,0,0)', 'B=(2,0,0)', 'C=(0,2,0)', 'Prism(A,B,C,3)'],
-  ['棱锥 Pyramid', 'A=(0,0,0)', 'B=(2,0,0)', 'C=(0,2,0)', 'Pyramid(A,B,C,3)'],
-  ['球 Sphere', 'Sphere((0,0,0),2)'],
-  ['圆锥 Cone', 'c=Circle((0,0,0),2)', 'Cone(c,3)'],
-  ['圆柱 Cylinder', 'c2=Circle((0,0,0),2)', 'Cylinder(c2,3)'],
-  ['四面体 Tetrahedron', 'A2=(0,0,0)', 'B2=(2,0,0)', 'Tetrahedron(A2,B2)'],
-  ['平面 Plane', 'P1=(0,0,0)', 'P2=(1,0,0)', 'P3=(0,1,0)', 'Plane(P1,P2,P3)'],
-  ['3D 线段 Segment', 'S1=(0,0,0)', 'S2=(1,2,3)', 'Segment(S1,S2)'],
-  ['旋转 Rotate', 'cube1=Cube((0,0,0),(1,0,0))', 'Rotate(cube1, 45°, zAxis)'],
-  ['平移 Translate', 'pt=(0,0,0)', 'Translate(pt, Vector((1,2,3)))'],
-  ['滑动条 Slider', 'α=Slider(0,2*pi,0.05)'],
+  { label: '3D 点', cmds: ['A=(0,0,0)', 'B=(2,0,0)'] },
+  { label: '正方体 Cube', cmds: ['A=(0,0,0)', 'B=(2,0,0)', 'Cube(A,B)'] },
+  { label: '球 Sphere', cmds: ['Sphere((0,0,0),2)'] },
+  { label: '圆锥 Cone', cmds: ['c=Circle((0,0,0),2)', 'Cone(c,3)'] },
+  { label: '圆柱 Cylinder', cmds: ['c2=Circle((0,0,0),2)', 'Cylinder(c2,3)'] },
+  { label: '四面体 Tetrahedron', cmds: ['A2=(0,0,0)', 'B2=(2,0,0)', 'Tetrahedron(A2,B2)'] },
+  { label: '平面 Plane', cmds: ['P1=(0,0,0)', 'P2=(1,0,0)', 'P3=(0,1,0)', 'Plane(P1,P2,P3)'] },
+  { label: '3D 线段 Segment', cmds: ['S1=(0,0,0)', 'S2=(1,2,3)', 'Segment(S1,S2)'] },
+  { label: '旋转 Rotate', cmds: ['cube1=Cube((0,0,0),(1,0,0))', 'Rotate(cube1, 45°, zAxis)'] },
+  { label: '滑动条 Slider', cmds: ['α=Slider(0,2*pi,0.05)'] },
+  { label: '棱柱 Prism(多边形,高)', cmds: ['A5=(0,0,0)', 'B5=(2,0,0)', 'C5=(0,2,0)', 'pl=Polygon(A5,B5,C5)', 'Prism(pl,3)'] },
+  { label: '棱锥 Pyramid(多边形,高)', cmds: ['A6=(0,0,0)', 'B6=(2,0,0)', 'C6=(0,2,0)', 'pl2=Polygon(A6,B6,C6)', 'Pyramid(pl2,1.5)'] },
 
-  // ---- 第一轮失败的三个，换参数形态再试 ----
-  // ★ Prism / Pyramid 第一轮是 `Prism(A,B,C,3)` 直接喂三个点，返回 false。
-  //   GeoGebra 里这两个命令要的是**一个多边形对象**，不是散着的点：先 Polygon 再 Prism。
-  ['棱柱 Prism(多边形,高)', 'A5=(0,0,0)', 'B5=(2,0,0)', 'C5=(0,2,0)', 'pl=Polygon(A5,B5,C5)', 'Prism(pl,3)'],
-  ['棱锥 Pyramid(多边形,高)', 'A6=(0,0,0)', 'B6=(2,0,0)', 'C6=(0,2,0)', 'pl2=Polygon(A6,B6,C6)', 'Pyramid(pl2,1.5)'],
-  // ★ Translate 第一轮写成 Vector((1,2,3))——Vector 不收"单点"那种写法，要两个点。
-  //   这个坑不分平面/立体，顺手在这儿一起验掉。
-  ['平移 Translate(点,两点向量)', 'pt=(0,0,0)', 'v=Vector((0,0,0),(1,2,3))', 'Translate(pt,v)'],
-  ['平移（中文写法）', 'pt2=(0,0,0)', 'v2=Vector((0,0,0),(1,2,3))', '平移(pt2,v2)'],
-  // 中文那条：走 translate() 之后到底认不认——这才是线上真正会发生的事
-  ['中文：棱柱（先建多边形）', 'A7=(0,0,0)', 'B7=(2,0,0)', 'C7=(0,2,0)', 'pl3=Polygon(A7,B7,C7)', '棱柱(pl3,3)'],
+  // ---- 平移 ----
+  // ★ 2026-10-01 这一条连着报了两轮"✗"，追下去发现是**探针自己把命令写错了**：
+  //   原来写的是 `Vector((1,2,3))`（单个点）和 `Vector((0,0,0),(1,2,3))`（两个内联坐标），
+  //   这两种 Vector 都建不出来 → v 不存在 → Translate 当然返回 false。
+  //   换成两个**命名点** `Vector(P,Q)`，Translate(P,v) 和 Translate(c1,v) 一次就过。
+  //   教训跟别处一样：脚本报红，先看它喂进去的到底是什么，别先信它的结论。
+  { label: '平移 Translate(点,两点向量)', cmds: ['P=(0,0,0)', 'Q=(1,2,3)', 'v=Vector(P,Q)', 'Translate(P,v)'] },
+  { label: '平移 Translate(立体图形)', cmds: ['P=(0,0,0)', 'Q=(1,2,3)', 'v=Vector(P,Q)', 'c1=Cube((0,0,0),(1,0,0))', 'Translate(c1,v)'] },
 
-  // ---- 中文命令名，3D 下认不认？----
-  ['中文：球', '球((0,0,0),2)'],
-  ['中文：立方体', 'A3=(0,0,0)', 'B3=(2,0,0)', '立方体(A3,B3)'],
-  ['中文：棱柱', 'A4=(0,0,0)', 'B4=(1,0,0)', 'C4=(0,1,0)', '棱柱(A4,B4,C4,2)'],
-  ['中文：平面', 'Q1=(0,0,0)', 'Q2=(1,0,0)', 'Q3=(0,1,0)', '平面(Q1,Q2,Q3)']
+  // ---- 以下都是**预期不过**，留着是为了把约束钉在明处 ----
+  // 1) Prism / Pyramid 要的是**一个多边形对象**，不是散着的点。
+  { label: '棱柱 Prism(A,B,C,3)', want: false, cmds: ['A=(0,0,0)', 'B=(2,0,0)', 'C=(0,2,0)', 'Prism(A,B,C,3)'] },
+  { label: '棱锥 Pyramid(A,B,C,3)', want: false, cmds: ['A=(0,0,0)', 'B=(2,0,0)', 'C=(0,2,0)', 'Pyramid(A,B,C,3)'] },
+  // 2) 3D 下**只认英文命令名**（跟 2D 一样），中文字面一条都不认——
+  //    所以线上必须先过 translate() 翻译，再喂给 evalCommand。
+  { label: '中文：球', want: false, cmds: ['球((0,0,0),2)'] },
+  { label: '中文：立方体', want: false, cmds: ['A3=(0,0,0)', 'B3=(2,0,0)', '立方体(A3,B3)'] },
+  { label: '中文：棱柱', want: false, cmds: ['A4=(0,0,0)', 'B4=(1,0,0)', 'C4=(0,1,0)', '棱柱(A4,B4,C4,2)'] },
+  { label: '中文：平面', want: false, cmds: ['Q1=(0,0,0)', 'Q2=(1,0,0)', 'Q3=(0,1,0)', '平面(Q1,Q2,Q3)'] },
+  { label: '中文：平移', want: false, cmds: ['pt2=(0,0,0)', 'Q9=(1,2,3)', 'v2=Vector(pt2,Q9)', '平移(pt2,v2)'] }
 ];
 
 function put(p) {
@@ -95,9 +100,9 @@ function put(p) {
 
   // ---- 3. 逐条建对象 ----
   console.log('\n--- 3. 3D 命令建不建得出东西 ---');
-  let ok = 0; const bad = [];
+  let ok = 0, must = 0; const bad = [], known = [];
   for (const c of CASES) {
-    const label = c[0], cmds = c.slice(1);
+    const label = c.label, cmds = c.cmds, want = c.want !== false;
     await q('ggbApplet.newConstruction()').catch(() => {});
     await sleep(150);
     await q('ggbApplet.setPerspective("T")');
@@ -110,10 +115,14 @@ function put(p) {
     const after = await q('ggbApplet.getAllObjectNames()');
     const added = after.filter(n => before.indexOf(n) < 0);
     const pass = added.length > 0;
-    if (pass) ok++; else bad.push(label);
-    console.log('   ' + (pass ? '✓' : '✗') + ' ' + label.padEnd(16) + ' `' + cmds[cmds.length - 1] + '` 返回 ' + String(cr).slice(0, 12) + '  新增 ' + JSON.stringify(added));
+    if (want) { must++; if (pass) ok++; else bad.push(label); } else if (!pass) known.push(label);
+    console.log('   ' + (pass ? '✓ ' : (want ? '✗ ' : '· ')) + label.padEnd(24) + ' `' +
+      cmds[cmds.length - 1] + '` 返回 ' + String(cr).slice(0, 12) + '  新增 ' + JSON.stringify(added).slice(0, 80));
   }
-  console.log('  过关 ' + ok + '/' + CASES.length + (bad.length ? '   没过的：' + bad.join('、') : ''));
+  console.log('  该过的过了 ' + ok + '/' + must + (bad.length ? '   ★没过的：' + bad.join('、') : ''));
+  console.log('  预期不过 ' + known.length + ' 条（已知约束，不算缺陷）：' + known.join('、'));
+  if (bad.length) console.log('  ★ 有该过的没过——下面几张截图要看一眼，别让它悄悄混过去。');
+  process.exitCode = bad.length ? 1 : 0;
   console.log('  截图:', await shot('_3d_solids.png'));
 
   // ---- 4. getPNGBase64 在 3D 下还能不能用 ----
@@ -140,5 +149,5 @@ function put(p) {
   }
   console.log('  最终视图截图:', await shot('_3d_toggle.png'));
 
-  ws.close(); process.exit(0);
+  ws.close(); process.exit(process.exitCode || 0);
 })();

@@ -19,7 +19,7 @@ const SR = W.SR;
 
 const N = Number(process.argv[2] || 3);
 const IMG = path.join(__dirname, '_case_photo.png');
-if (!fs.existsSync(IMG)) { console.error('先跑 py -3 test/mk_problem_image.py'); process.exit(1); }
+if (!fs.existsSync(IMG)) { console.error('先跑 node test/mk_problem_image.cjs 造图'); process.exit(1); }
 const DATA_URL = 'data:image/png;base64,' + fs.readFileSync(IMG).toString('base64');
 
 // 学生那句话可以换：SR_SAY="这题我做错了" node test/probe_image_prompt.cjs 4
