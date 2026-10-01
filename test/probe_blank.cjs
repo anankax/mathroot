@@ -154,7 +154,41 @@ function put(p) {
   const spoke = !!(o.say && o.say.trim());
   console.log('气泡里有话吗     : ' + (spoke ? '✅ 有（' + o.say.trim().slice(0, 30) + '…）' : '❌ 空的'));
 
-  const pass = okc === CASES.length && blank && spoke;
+  // ---- 3. 桩测：模型**画了图、正文一句没有** ----
+  // ★ 上一格靠模型自己给不给面子——免费通道有时整段回围栏、有时又肯说两句，
+  //   同一句提示跑两次结果不一样。所以这一支改成把 SR.api.ask 换掉，喂一段
+  //   写死的"只有围栏、没有正文"的回复：模型行为一旦变了它也不受影响，
+  //   而这恰恰是 2026-10-01 真正出过一次的场面（学生盯着空气泡以为页面坏了）。
+  //   注意围栏里得有真命令——空围栏那条路走的是"本地补空图"，是另一支。
+  console.log('\n--- 3. 桩测：只回围栏、一句正文都没有（模型行为换成写死的，不受它心情影响）---');
+  await q(`(function(){
+     window.__origAsk = SR.api.ask;
+     SR.api.ask = function(o){
+       var raw = '\\u0060\\u0060\\u0060ggb\\n#清空\\n数轴\\n\\u0060\\u0060\\u0060\\n';
+       o.onChunk(raw);
+       return Promise.resolve({ text: raw, model: 'STUB', error: '' });
+     };
+     return 1 })()`);
+  await q('SR.board.setView("2d")'); await settle();
+  const nB2 = await q('document.querySelectorAll(".msg.assistant").length');
+  await q('(function(){var i=document.getElementById("input");' +
+          'i.value="帮我画个数轴";' +
+          'i.dispatchEvent(new Event("input",{bubbles:true}));' +
+          'document.getElementById("send").click();return 1})()');
+  let stubSay = '';
+  for (let s = 0; s < 20; s++) {
+    await sleep(400);
+    stubSay = await q('(document.querySelector(".msg.assistant:last-of-type .bubble")||{}).innerText||""');
+    const n = await q('document.querySelectorAll(".msg.assistant").length');
+    if (n > nB2 && stubSay && !(await q('SR.board.isBusy()'))) break;
+  }
+  await q('(function(){ SR.api.ask = window.__origAsk; return 1 })()');
+  const stubOk = !!String(stubSay).trim();
+  console.log('  气泡里：' + (stubOk ? '✅「' + String(stubSay).trim().slice(0, 34) + '…」' : '❌ 还是空的'));
+  console.log('  画板上有东西吗：' + (await q(`(function(){var x=ggbApplet.getXML();
+     var m=x.match(/<axis id="1"[^>]*show="([^"]*)"/);return m?('y轴 show='+m[1]):'?'})()`)));
+
+  const pass = okc === CASES.length && blank && spoke && stubOk;
   console.log('\n===== ' + BACKEND + ' 空数轴兜底：' + (pass ? '通过' : '有问题') + ' =====');
   process.exit(pass ? 0 : 1);
 })();

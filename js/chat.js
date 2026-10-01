@@ -330,26 +330,29 @@ SR.chat = (function () {
         history.push({ role: 'assistant', content: res.text });
         if (history.length > MAX_TURNS) history = history.slice(-MAX_TURNS);
         paint(msg);
-        // ★ 模型一个 ```ggb 围栏都没给，而学生又明说了"画不出来" —— 本地补上空图。
-        //   学生模式才补（演示模式是老师自己画图，模型不出图就是它偷懒，别替它圆场）；
-        //   而且只在 msg.ggbDone === 0 时补，模型已经画了就别叠。
-        //   判定写在 board.giveBlank 里，见那段注释。
-        var blankKind = '';
-        if (mode === 'student' && !msg.ggbReal) blankKind = SR.board.giveBlank(text);
-        // ★ 补了空图，可气泡里一个字都没有——那多半是模型这一轮**整段回的都是画板命令**
-        //   （免费通道掉围栏的典型形状），被 render.js 的删行规则全删干净了。
-        //   学生盯着一个空气泡，只会以为页面坏了。补一句**程序自己**的话：
-        //   交代的是"画板那边我给你放好了"，不冒充老师提问，也不给答案。
+        // ★ 气泡里一个字都没有的时候，得补一句**程序自己**的话。两种来路：
+        //   ① 模型既没画也没说（学生说"画不出来"那种）→ 本地补一张空图，再告诉学生图放好了；
+        //      学生模式才补空图（演示模式是老师自己画图，模型不出图就是它偷懒，别替它圆场）。
+        //      判定写在 board.giveBlank 里，见那段注释。
+        //   ② 模型**画了图、正文却一句没有**——围栏外的字被 render.js 的删行规则删光了
+        //      （免费通道掉围栏时最常见的形状）。图是在板上了，可没人招呼一声，
+        //      学生盯着一个空气泡，只会以为页面坏了。
+        //      2026-10-01 才补的这一支：原来只处理①，`probe_blank` 抓到②时气泡是空的。
+        //   两句话都只交代"画板那边好了、你接着说"，不冒充老师提问，也不给答案。
         //   只在气泡真空的时候补——模型但凡说了句正经话，就别去盖它。
-        //   顺手也把这句话写进 history：学生看到的就是它，下一轮模型也该知道
-        //   画板上已经有一条空数轴了（不然它会当画板还是空的，又说一遍"你先画"）。
-        if (blankKind && !msg.lastVisible) {
-          var line = blankKind === '坐标系'
-            ? '画板上给你放了一个空坐标系，你把题目里的点标上去，标好了说给我听。'
-            : '画板上给你放了一条空数轴，你把题目里那几个数标上去，标好了说给我听。';
-          SR.render.renderInto(b, line);
-          msg.lastVisible = line;
-          history[history.length - 1].content = String(res.text || '') + '\n\n' + line;
+        //   顺手也把这句话写进 history：学生看到的就是它，下一轮模型也该知道画板上有什么了
+        //   （不然它会当画板还是空的，又说一遍"你先画"）。
+        if (!msg.lastVisible && mode === 'student') {
+          var blankKind = msg.ggbReal ? '' : SR.board.giveBlank(text);
+          var line = '';
+          if (blankKind === '坐标系') line = '画板上给你放了一个空坐标系，你把题目里的点标上去，标好了说给我听。';
+          else if (blankKind) line = '画板上给你放了一条空数轴，你把题目里那几个数标上去，标好了说给我听。';
+          else if (msg.ggbReal) line = '画板上给你画好了，你先看一眼，再说说这道题你当时是怎么想的。';
+          if (line) {
+            SR.render.renderInto(b, line);
+            msg.lastVisible = line;
+            history[history.length - 1].content = String(res.text || '') + '\n\n' + line;
+          }
         }
         // 模型写了 ```想说 就用它的（更贴这道题）；没写就用本地兜底。
         // ★ 免费通道那两颗小模型守不住这个围栏（实测 0/4 ~ 6/6 看运气），
