@@ -67,7 +67,16 @@ SR.BACKENDS = {
     // 但正文开头就是 `<think>用户的问题是问…`）。不剥掉就直接念给学生听了。
     stripThink: true,
     keyInPage: true,      // Key 写在本文件里，不要用户填
-    sendThinking: false,  // GLM 不用 thinking 参数，别去惹它的参数校验
+    // ★★ false → true（2026-10-01 孔老师截图那次事故）。原来那句"GLM 不吃这个参数，
+    //   别去惹它的参数校验"是**错的**——四颗 glm 全认（glm-4v-flash / glm-4-flash-250414 /
+    //   glm-4.1v-thinking-flash / glm-4.6v-flash 实测都 200）。
+    //   真问题是 `glm-4.6v-flash` **默认开着深度思考**，而 SR.MAX_TOKENS 只有 1024：
+    //   实测同一段三轮历史打 6 次，**3 次正文 0 字**、finish_reason=length、
+    //   思考帧 1023、completion_tokens=1024——额度被思考整段吃光，正文一个字不剩，
+    //   学生那边就是红字「模型没说出话来」。另外 3 次也烧了 182/592/706，全是擦着上限过。
+    //   显式关掉之后：0/4 空，completion_tokens 只用 **9~14**（省 80 倍），回复也快了一个量级。
+    //   万一哪颗不认这个参数，api.js 有现成的 400 兜底：认出错误里带 thinking 就去掉重发。
+    sendThinking: true,
     // ★ 学生提示词用精简版（prompt-lean.js，5303 字）**不是审美取舍，是实测逼出来的**：
     //   全量版 11711 字 = 7618 tokens 喂给 glm-4v-flash，```想说 围栏只中 2/4、0/4，
     //   正文还在照抄提示词里的例句（"（好）学生：…"）；换成精简版，同一颗模型、同一批用例，
