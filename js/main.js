@@ -88,7 +88,7 @@ SR.main = (function () {
 
   // ---- Key ----
   function openKeyDlg() {
-    $('keyset').classList.add('open');
+    showOverlay($('keyset'));
     var inp = $('keyinput');
     inp.value = SR.api.getKey('deepseek');
     $('keyok').textContent = '';                       // 上一轮留下的"通了"，换个面板就说不上话了
@@ -99,7 +99,7 @@ SR.main = (function () {
     paintKeyState();
     inp.focus();
   }
-  function closeKeyDlg() { $('keyset').classList.remove('open'); }
+  function closeKeyDlg() { hideOverlay($('keyset')); }
 
   // 往那一行写字只有这一个口子。省得"忘了把上次的 .hint 摘掉"——
   // 一忘，报错就顶着灰字出现，看着像句无关紧要的提示。
@@ -138,11 +138,37 @@ SR.main = (function () {
   // ============================================================
   //  弹层：关于 / Key，共用遮罩
   // ============================================================
-  function openOverlay(id) { var d = $(id); if (d) d.classList.add('open'); }
-  function closeOverlay(d) { d.classList.remove('open'); }
+  // ★ 开和关都要走这两个函数，别在别处直接 classList.add/remove('open')。
+  //   那篇第六节讲"方舟在每一个需要进行页面切换的地方都加入了过场动画"——
+  //   过场就挂在这个 .open 类上（见 main.css 的 ovIn/boxIn）。
+  //
+  // ★ 退场为什么非得有 JS：`.overlay` 是靠 `display:none` 切的，而 display
+  //   **不参与过渡**，CSS 一个人收不回去。所以加一个 .closing 类放退场动画，
+  //   等它跑完再把 .open 摘掉。这个定时器必须能被取消——不然会出现这种事故：
+  //   点"关了"（150ms 后摘 .open）→ 立刻又点"我的 Key"（加上 .open）→
+  //   定时器到点，把刚打开的弹层又关掉了。看着就是"点了没反应"。
+  var OUT_MS = 150;
+  function showOverlay(d) {
+    if (!d) return;
+    if (d._hideT) { clearTimeout(d._hideT); d._hideT = 0; }
+    d.classList.remove('closing');
+    d.classList.add('open');   // 类被摘掉过再加回来，CSS 动画会自己重播
+  }
+  function hideOverlay(d) {
+    if (!d || !d.classList.contains('open') || d._hideT) return;
+    d.classList.add('closing');
+    d._hideT = setTimeout(function () {
+      d._hideT = 0;
+      d.classList.remove('open');
+      d.classList.remove('closing');
+    }, OUT_MS);
+  }
+
+  function openOverlay(id) { showOverlay($(id)); }
+  function closeOverlay(d) { hideOverlay(d); }
   function closeAll() {
     var all = document.querySelectorAll('.overlay');
-    for (var i = 0; i < all.length; i++) all[i].classList.remove('open');
+    for (var i = 0; i < all.length; i++) hideOverlay(all[i]);
   }
 
   // ---- 本地素材面板 ----
@@ -174,6 +200,9 @@ SR.main = (function () {
       var r = rows[i];
       var el = document.createElement('div');
       el.className = 'resrow';
+      // 错开入场的序号。CSS 那边是 `animation-delay: calc(var(--i) * 28ms)`。
+      // ★ 封顶 24：一屏七十条的时候，第 70 条要等两秒才出来，那不叫动效叫卡顿。
+      el.style.setProperty('--i', Math.min(i, 24));
       var head = document.createElement('div');
       head.className = 'reshape';
       head.textContent = (r.册 ? r.册 + ' · ' : '') + (r.节 ? r.节 + ' ' : '') + r.名 + '（' + r.型 + '）';
@@ -277,6 +306,7 @@ SR.main = (function () {
       var it = list[i];
       var row = document.createElement('div');
       row.className = 'kbhit' + (cut && it.score < cut ? ' cut' : '');
+      row.style.setProperty('--i', Math.min(i, 24));   // 错开入场，见 main.css 那条
       var sc = document.createElement('span');
       sc.className = 'kbscore';
       sc.textContent = it.score.toFixed(1);

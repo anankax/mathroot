@@ -12,15 +12,18 @@ SR.chat = (function () {
   var MAX_TURNS = 24;
   var lastFail = null;       // 上一轮失败的提问，切完 Key 可以一键重发
 
-  // 开场白。★ 短，而且**不自述**（2026-10-01 孔老师的原话："说说你怎么做的，有点刻意了"）。
-  //   原来那句「我不判对错、不给答案、只顺着你的思路往下问，问到你自己说出错在哪儿为止」，
-  //   是把自己的工作方式讲给学生听——像一份说明书，不像一个人开口说话。
-  //   这层意思没丢，它挪到「关于」面板的「为什么这么设计」那一节去了，那里才是该讲道理的地方。
-  //   ★ 第二句里"整张卷子也行"要留着：学生发一整份卷子是这个站的常见用法，
-  //     开场白不提，他就不敢发（见 js/files.js 的多文件支持）。
+  // 开场白。★ 一句话，就这么长。
+  //   2026-10-01 孔老师定了两回，第二回是骂醒的：她要的就是「告诉我你的问题」这一句。
+  //   ★ 别再加第二句。加什么都算跑偏，试过两版都是这个下场：
+  //     · 自述式（"我不判对错、不给答案、只顺着你的思路往下问…"）＝把工作方式念给学生听，像说明书
+  //     · 补充式（"做错的、不会的都能发，整张卷子也行。先说说你想到哪一步了。"）
+  //       ＝像是怕他不用而急着推销自己，**"有点刻意了"说的就是这种**
+  //   ★ 那两层意思都没丢，只是不在这儿说：「为什么这么设计」在「关于」面板里；
+  //     发整张卷子、发文件这些，属于**学生问得出来就答得出来**的事，
+  //     不用开场白替他把用法讲一遍（真发上来了，"整卷附注"那一档会接住，见 api.js）。
   var OPENING = {
-    student: '把题发给我吧。做错的、不会的都能发，整张卷子也行。先说说你想到哪一步了。',
-    demo: '你说画什么，我画什么。想让它动就说一声，比如「画个数轴，带个动点 P」。'
+    student: '告诉我你的问题。',
+    demo: '告诉我你想画什么。'
   };
 
   function $(id) { return document.getElementById(id); }
@@ -239,18 +242,21 @@ SR.chat = (function () {
     for (var i = 0; i < lines.length; i++) {
       var t = String(lines[i]).trim();
       if (!t) continue;
-      (function (txt) {
+      (function (txt, idx) {
         var b = document.createElement('button');
         b.className = 'chip';
         b.type = 'button';
         b.textContent = txt;
+        // 错开入场的序号——CSS 那边是 `animation-delay: calc(var(--i) * 28ms)`。
+        // 一排四个选项同时淡入，看着是"这一块换了"；错开才像"一件件摆上来"。
+        b.style.setProperty('--i', idx);
         b.addEventListener('click', function () {
           if (busy) return;
           clearChips();
           submit(txt);
         });
         els.chips.appendChild(b);
-      })(t);
+      })(t, i);
     }
   }
 

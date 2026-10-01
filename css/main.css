@@ -1,57 +1,113 @@
 /* 「数根」——两栏：左边说话，右边画板。
    投影仪上要用，所以字大、对比度高、可点的东西都够大。
 
-   ── 视觉语言（2026-10-01 重做）────────────────────────────────
-   参考的是《明日方舟》UI/UX 分析（腾讯游戏学堂 AJ 那篇）里总结的**手法**，
-   不是它的配色、更不是它那套深色军武调。偷的是这三条：
+   ── 视觉语言（2026-10-01 第二版重做）──────────────────────────
+   参考的是《明日方舟》UI/UX 分析（腾讯游戏学堂 AJ 那篇），
+   https://gameinstitute.qq.com/index.php/knowledge/100122
+   ★ 上一版说"参考了"其实只抄了它六节里的三条的一半，做出来还是个后台管理系统。
+     这一版逐节对着做，六条一条不落：
 
-   ① 层级靠线、角标和字重，不靠阴影
-      那篇说扁平化的出发点是"减少与交互无关的细节、提升效率、加强视觉统一"，
-      **不是"平"**；"单纯理解为平，就会导致学习成本增高和画面失焦"。
-      所以我们不用大圆角大阴影，改成一圈细线 + 四角的 L 形角标 + 字重差。
-      阴影只留给真正浮起来的东西（弹层、演示角标）——那才是"越要抓住用户
-      的元素，在图层上摆得越高"。
+   ① 画内界面（Diegetic Interface）
+      那片讲方舟主看板"仿若钢铁侠头盔内的漂浮投影界面"，连手机的电量、信号、
+      时间都被按统一风格塞进对应浮窗里。意思是：**界面不是贴在网页上的一张表，
+      是场景里真实存在的一块屏**。落到这儿就是——两块面板各挂一个编号铭牌
+      （01 对话 / 02 画板），四周有仪表那样的角标和内投影，读数用等距字体。
+      学生看到的是一台"错题复盘仪"，不是一张表单。
 
-   ② 明度拉开三层，强调色只给"当前状态"
-      纸底（最暗、带格纹）→ 面板（亮，浮起）→ 凹槽（比面板暗，是陷进去的）。
-      原来三层全是淡绿、明度几乎一样，糊成一片，这是它"丑"的主因。
-      绿色只出现在：当前选中的那格、能点的动作、正在输入的地方。不做装饰。
+   ② 层级对比度极高 ← ★ 上一版最大的失误
+      那篇第二节的原话："方舟的 UI 一个突出特点就是层级对比度极高"。
+      上一版三层（纸/面板/凹槽）明度几乎一样，糊成一片，这是它"丑"的主因。
+      这一版把三层真正拉开（见 :root 的 --paper/--panel/--sunken），
+      并且**整条顶栏只有一块满色**（.plate 那块深绿牌子），眼睛第一下就知道看哪。
+      材质那部分照那篇的方法做：提取材质 → 重现纹理 → 剥离细部 → 加光照和交互强调。
+      落到这儿是网格 + 散点（网点纸）两层底纹，和毛玻璃弹层。
 
-   ③ 底材是方格纸，不是渐变
-      方舟用噪点和漫画网点纸做底图，理由是**散点"用在按钮上可以使留白不显得
-      单薄，用在卡片背景或底图上则能够提升对比度"**。数学的本命材质就是方格纸
-      （草稿纸），所以这里铺一层 16px 细格 + 80px 粗格的底纹，几乎看不见，
-      但留白不再是空的。
+   ③ 扁平 ≠ 平
+      那篇第三节："扁平的出发点是减少页面中和交互无关的细节……**如果单纯理解为
+      「平」，就会导致用户学习成本增高和画面失焦**"。所以层级靠**线、角标、
+      字重、编号**，不靠大圆角大阴影；阴影只留给真正浮起来的东西（弹层）。
+      画板那圈极淡的内投影（vignette / 热点效应）也是这一节点名的：
+      "影像中心的明度和饱和度比四周高"，用来把视线收到画面中间。
+
+   ④ 衬线体 ← ★ 上一版整个漏掉的一节
+      那篇第四节整节在讲字体：中文衬线体"因其笔画显著的粗细差异而具有相当的可读性"，
+      拉丁衬线越往现代走"字肩的弧度切角越来越平直"（Didot/Bodoni 那种锐利感），
+      还讲了**字距缩进**和中英叠排——"中英（或多语言）一起进行文本搭配设计
+      总能够比较好看，在多数场景为装饰考虑"。
+      所以这一版：**标题走衬线**（--song 中文宋体族 / --lat 拉丁 Palatino 族），
+      **正文和按钮走无衬线**（--sans），**读数和编号走等距**（--mono，
+      对应那篇里基建系统用的伪等距字体 Bender）。三种字各管一摊，别混。
+
+   ⑤ 底图处理
+      那篇第五节：方舟用"噪点与漫画网点纸风格的底图"，
+      "散点……用在基础组件（如按钮上）可以使留白不显得单薄，用在各类卡片的
+      背景或者平面设计的底图中则能够提升对比度"；"粗条纹，类似警戒线，
+      展现设计的工业感"。
+      落到这儿：页面底铺一层**极淡的散点**（.grain），按钮悬停时也浮一点出来；
+      教师演示模式那个角标用**粗斜条纹**，就是这节说的警戒线。
+
+   ⑥ 降低页面层级
+      那篇第六节讲毛玻璃浮窗"降低玩家对忽然跳出的新页面的抗拒感"，
+      以及"赋予各系统一种空间上的联系与包装"。所以弹层一律毛玻璃覆盖
+      （下面那页还在，只是退后一层），而不是把下面盖死。
 
    ★ 正文和小字号文字一律 ≥ 4.5:1。这不是好看不好看的问题——投影仪偏色，
-     对比度不够后排就看不见了。改这里的任何一个色值，都要重新核对对比度。 */
+     对比度不够后排就看不见了。改这里的任何一个色值，都要重新核对对比度。
+   ★ 手机上那几处 `flex: 0 0 auto` / `min-height: 0` 是防塌的命门，
+     注释都写在原处，动形状时别误删。 */
 
 :root {
-  --ink: #16241c;          /* 正文 */
-  --ink-2: #3f5147;        /* 次要文字 */
-  --ink-3: #5f7065;        /* 提示、状态栏（对面板 ≈5.2:1，不能再浅） */
-  --line: #d2e0d6;         /* 细线：比原来深一档，不然拉不开层级 */
-  --rule: #bcd0c4;         /* 重一档的线（角标、强调分隔） */
+  /* 三种字各管一摊（对应那篇第四节）。
+     ★ 标题走 Noto Serif SC（思源宋体），**不是** SimSun。
+       2026-10-01 栽过一次：字族写成 "Songti SC", SimSun —— 那篇文章讲的"衬线体"
+       落地成了 Word 老文档那个宋体，26px 下细瘦发虚，孔老师一眼看出"字体不对"。
+       思源宋体是同一类的现代衬线，但笔画粗细对比、字重都完全不是一回事。
+       走 jsdelivr 的 @fontsource 包，按 unicode-range 切成一堆小包，
+       页面上只有几个字，浏览器只下用到的那一两个，约 45KB。
+     ★ 正文**不下载字体**，就用系统字。量过：思源黑体做正文，首屏要多下 13 个
+       包约 600KB（页面上的字遍布全站），而 14~16px 下跟微软雅黑几乎没差别。
+       要下载的字只给"字最少、最显眼"的地方用。见 index.html 顶上那段。
+     ★ --song 别用在正文上：衬线正文在投影仪上读起来累。 */
+  --sans: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+  --song: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "Microsoft YaHei", serif;
+  --lat:  "Palatino Linotype", "Book Antiqua", Palatino, Georgia, "Times New Roman", serif;
+  --mono: Consolas, "Cascadia Mono", "Courier New", monospace;
 
-  --paper: #e9f1ec;        /* 页面底：纸。带格纹，是三层里最暗的 */
-  --panel: #f9fcfa;        /* 面板：浮在纸上 */
-  --sunken: #e4ede7;       /* 凹槽：比面板暗，陷进去（气泡、切换器底、输入框） */
+  --ink: #0d1913;          /* 正文。★ 比上一版更黑——对比度是这一版的第一要务 */
+  --ink-2: #33443b;        /* 次要文字 */
+  --ink-3: #5a6e64;        /* 提示、状态栏（对面板 ≈5.1:1，不能再浅） */
+  --line: #d2e0d8;         /* 细线 */
+  --rule: #b0c8ba;         /* 重一档的线（分隔、铭牌） */
+  --edge: rgba(11, 107, 69, .45);   /* 角标。半透明的主色，比实色"轻" */
 
-  --brand: #1f7a54;        /* 主色（对白 5.4:1，配小字也够） */
-  --brand-deep: #145237;
-  --brand-soft: #e0f0e6;
-  --brand-line: #b4d6c2;
-  --code-bg: #e3ece6;
+  /* 三层。★ 明度必须真拉开（那篇第二节的"层级对比度极高"）：
+       纸（最深）→ 凹槽（比纸还深，是陷进去的）→ 面板（最亮，浮起来）。
+     上一版这三层几乎一样亮，是"糊"的病根。 */
+  --paper: #e4eee8;        /* 页面底：纸 */
+  --panel: #fdfefd;        /* 面板：浮在纸上 */
+  --sunken: #d8e5dd;       /* 凹槽：气泡、切换器底、输入框 */
 
-  --warn: #a83c18;
-  --demo: #67711a;         /* 演示模式：苔绿——要和主色一眼分得开，又不能跳出绿色系 */
-  --demo-dark: #55600f;
-  --demo-soft: #f1f5de;
-  --demo-line: #cdd79c;
+  --brand: #0b6b45;        /* 主色（对白 6.1:1） */
+  --brand-deep: #063f28;
+  --brand-soft: #d9eee2;
+  --brand-line: #a5ccb7;
+  --code-bg: #dde9e2;
 
-  --r: 3px;                /* 几乎是直角。圆角越大越像聊天软件，越不像仪表盘 */
-  --grid: rgba(31, 122, 84, .05);
-  --grid-2: rgba(31, 122, 84, .095);
+  --warn: #9e3218;
+  --demo: #5f6b12;         /* 演示模式：苔绿——要和主色一眼分得开，又不能跳出绿色系 */
+  --demo-dark: #4a540c;
+  --demo-soft: #eff4d9;
+  --demo-line: #c8d492;
+
+  /* ★ 几乎没有圆角。那篇说的是"扁平化不是为了平"，但圆角是"聊天软件"的形状，
+     不是"仪表"的形状。全部归零，层级改由角标和线来做。 */
+  --r: 0px;
+  --grid: rgba(11, 107, 69, .045);
+  --grid-2: rgba(11, 107, 69, .085);
+
+  /* 散点（网点纸）。那篇第五节："散点……用在基础组件上可以使留白不显得单薄"。
+     用 SVG 的 feTurbulence 现画，不额外下载图片。 */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.26'/%3E%3C/svg%3E");
 }
 
 * { box-sizing: border-box; }
@@ -62,40 +118,79 @@ html, body {
 }
 
 body {
-  font: 16px/1.75 "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+  font: 16px/1.75 var(--sans);
   color: var(--ink);
   background-color: var(--paper);
-  /* 方格纸：80px 一格是粗线，16px 一格是细线。淡到只在留白处看得见，
-     正好对上那篇里说的"使留白不显得单薄"。background-attachment:fixed
-     让格纹不跟着滚动跑（跟着跑的话，聊天区一滚就像整页在抖）。 */
+  /* 方格纸 + 散点，都画在**页面底**上：80px 一格是粗线，16px 一格是细线。
+     ★ 散点必须画在 background 里，不能另铺一层盖在最上面（第一版就是这么干的，
+       见下一段）。background 是垫在所有面板后面的，所以白面板照样是纯白；
+       铺成覆盖层则是"连白面板一起乘暗"，整张图发灰。
+     background-attachment:fixed 让格纹不跟着滚动跑（跟着跑的话，
+     聊天区一滚就像整页在抖）。 */
   background-image:
+    var(--grain),
     linear-gradient(var(--grid-2) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-2) 1px, transparent 1px),
     linear-gradient(var(--grid) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-  background-size: 80px 80px, 80px 80px, 16px 16px, 16px 16px;
+  background-size: 140px 140px, 80px 80px, 80px 80px, 16px 16px, 16px 16px;
   background-attachment: fixed;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
+/* ★ 这里原来有一层 `body::before`，把散点铺满整个视口（position:fixed + multiply）。
+   那是第一版"糊"的病根之一：它盖在**所有东西**上面，白色的面板也被乘成灰的。
+   那篇文章说散点用在"各类卡片的背景或者平面设计的底图"上——是底图，
+   不是罩子。已经并进上面那个 background 了，别再抬回来。 */
+
 /* ── 四角角标 ──────────────────────────────────────────────
    只在左上和右下画两个 L 形短角线——四角都画会太吵，两个正好是"读数头"
    那种仪表盘味道。角标画在里面（top/left:0 而不是 -1px），
    因为 .col 是 overflow:hidden 的，画到框外面会被裁掉。
-   pointer-events:none 是必须的：不写它，角标会挡住底下按钮的点击。 */
+   pointer-events:none 是必须的：不写它，角标会挡住底下按钮的点击。
+   ★ 这一版把角标做大、做实（9→15px，2→3px，改用半透明主色）：
+     那篇讲"层级对比度极高"，角标就是面板上唯一敢用重色的地方。 */
 .tick { position: relative; }
 .tick::before, .tick::after {
-  content: ''; position: absolute; width: 9px; height: 9px; pointer-events: none;
-  border: 0 solid var(--rule); opacity: .85; z-index: 3;
+  content: ''; position: absolute; width: 15px; height: 15px; pointer-events: none;
+  border: 0 solid var(--edge); z-index: 3;
 }
-.tick::before { top: 0; left: 0; border-top-width: 2px; border-left-width: 2px; }
-.tick::after  { bottom: 0; right: 0; border-bottom-width: 2px; border-right-width: 2px; }
+.tick::before { top: 0; left: 0; border-top-width: 3px; border-left-width: 3px; }
+.tick::after  { bottom: 0; right: 0; border-bottom-width: 3px; border-right-width: 3px; }
 
 /* 当前模式是演示时，角标跟着换成苔绿——同一套语言，配色分档 */
 body[data-mode="demo"] .tick::before,
-body[data-mode="demo"] .tick::after { border-color: var(--demo-line); }
+body[data-mode="demo"] .tick::after { border-color: rgba(95, 107, 18, .5); }
+
+/* 铭牌：编号 + 中文 + 拉丁小字。两块面板和两个弹层标题共用这一套。
+   ★ 编号走等距字体，是对那篇里 Bender（工业风伪等距体）的对应——
+     "读数"和"正文"一眼分得开，仪表感就是从这儿来的。
+   ★ 中文走衬线（那篇第四节）。别改成无衬线，改了整块铭牌就塌成一行小字。 */
+/* ★ 基座一律给 --song（衬线）。**别写成 --sans**：弹层里的 h2 是
+   `<h2>模型通道<em>CHANNEL</em></h2>`——中文是**裸文本节点**，外面没有 span 包着，
+   所以只有落在基座上的字族才管得住它。上一版基座写的是 --sans，
+   .overlay h2 span 那条选择器根本匹配不到任何东西（弹层的 h2 里压根没有 span），
+   四个弹层的中文标题就全都退回了微软雅黑——只有 h3 是衬线，看着像两套东西。
+   b 和 em 各自有字族，会盖掉基座，不影响。 */
+.stag, .colhead, .overlay h2 {
+  font-family: var(--song);
+}
+.stag b, .colhead b, .overlay h2 b {
+  font-family: var(--mono); font-weight: 700; font-size: 11.5px; letter-spacing: .5px;
+  color: var(--brand); border: 1px solid var(--brand-line); padding: 1px 5px; margin-right: 9px;
+}
+.stag span, .colhead span, .overlay h2 span { font-weight: 700; color: var(--ink); }
+/* 拉丁小字：字距**拉开**（小字号拉开＝清楚），配中文字距**收紧**
+   ——那篇第四节说的"字距缩进"。两种情况方向相反，别写成一档。 */
+.stag em, .colhead em, .overlay h2 em, .boardbar em {
+  font-family: var(--lat); font-style: normal; font-weight: 400;
+  font-size: 10.5px; color: var(--ink-3); letter-spacing: 2.2px;
+  text-transform: uppercase;
+}
+/* 中文大字和拉丁小字挨着时，中间得留一口气，不然两串字糊成一串 */
+.overlay h2 em { margin-left: 12px; }
 
 /* ---------- 顶栏 ---------- */
 header {
@@ -103,18 +198,20 @@ header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 18px;
+  /* ★ padding-left 不能是 0（2026-10-01 截图抓到）：.logo 是第一个子元素，
+     左边距归零后它被**顶到视口边缘**，那个圆角方牌被切掉左边一条，
+     看着像"图上少了一块"。牌子（.plate）靠 align-self:stretch 上下顶格，
+     它自己不需要贴左边缘。 */
+  padding: 0 18px 0 13px;
+  height: 66px;
   background: var(--panel);
-  /* 下面那条线是重一档的 rule，和左边那道 3px 竖条一起，把顶栏"压"在页面上。
-     原来只有一条 1px 淡线加一点几乎看不见的阴影，顶栏像浮着。 */
+  /* 下面那条线是重一档的 rule，和左边那块牌子一起，把顶栏"压"在页面上。
+     上一版只有一条淡线加一点几乎看不见的阴影，顶栏像浮着。 */
   border-bottom: 2px solid var(--rule);
-  position: relative;
 }
-header::before {
-  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-  background: var(--brand);
-}
-body[data-mode="demo"] header::before { background: var(--demo); }
+
+/* 通高竖线（那篇里方舟的导航分区靠的就是这个） */
+.vrule { width: 1px; align-self: stretch; margin: 12px 2px; background: var(--line); flex: 0 0 auto; }
 
 /* ★ `flex: 0 0 auto` 不能省（2026-10-01 手机实测）：不写就是默认的 `0 1 auto`，
    顶栏一挤它**可以被压到 0 宽**——logo、站名、by KAX 一起消失得干干净净。
@@ -122,79 +219,119 @@ body[data-mode="demo"] header::before { background: var(--demo); }
    左边露出半截被切掉的 logo，「数根」两个字没了。
    这跟"不让人盗用"正好相反：手机上看这一页，页面上根本没写是谁做的。
    ⚠ 里面的 .sub 还要能被省略号截断，所以 min-width:0 得留着。 */
-.brand { display: flex; align-items: center; gap: 9px; margin-right: auto; min-width: 0; flex: 0 0 auto; }
-.brand .logo { width: 30px; height: 30px; flex: 0 0 auto; display: block; }
-/* nowrap + 不压缩：顶栏一挤，「数根」两个字会被从中间折断成竖排（实测截到过） */
-.brand .name {
-  font-size: 21px; font-weight: 700; letter-spacing: 2px; color: var(--brand);
-  white-space: nowrap; flex: 0 0 auto;
+/* ★ align-self: stretch 是给 .plate 的白底用的（2026-10-01）：.brand 自己是顶栏里的
+   一个 flex 项，不拉伸的话它的高度＝最高那个子元素的高度，于是 .plate 的
+   `align-self: stretch` 只能撑到 .brand，**撑不到顶栏边缘**——上下各留 3px 缝。
+   白底接不了地，这块白就是浮在顶栏里的一小片。拉满之后它才是通高的。
+   logo 等其它子元素走 align-items:center 不受影响。 */
+.brand { display: flex; align-items: center; gap: 10px; margin-right: auto; min-width: 0; flex: 0 0 auto; align-self: stretch; }
+.brand .logo { width: 34px; height: 34px; flex: 0 0 auto; display: block; }
+
+/* ★ 牌子是**白底绿字，且没有边框**（2026-10-01 孔老师定的）。
+   原来那块满绿的问题：左边紧挨着的 .logo 本身就是一块绿，两块绿并排，
+   在顶栏左上角糊成一个绿疙瘩——反而看不出哪块是站名。
+   改成白底之后 logo 的绿和牌子的绿各占一处，读起来是"一深一浅"的对照。
+   ★★ **不要再给它加边框。** 我加过一版 2px 绿框，理由是"顶栏底色 #fdfefd
+     跟纯白几乎一样，不描边这块牌子就没形状"——这个理由是对着"一块牌子"
+     这个说法成立的，但对"数根"这两个字不成立：它左边就是 logo，
+     右边是 BY KAX 的框、再右边是副标题，一串东西本来就在那儿排着，
+     不需要再来一个框把它框一遍。一加框，顶栏左侧变成 logo／牌子／BY KAX
+     三个方框并排，吵，而且把最显眼的那两个字降格成"三个框里的一个"。
+     所以它保持只是一块留白，靠"这块留白比别处宽"来分组。 */
+.brand .plate {
+  display: flex; flex-direction: column; justify-content: center;
+  align-self: stretch; padding: 7px 16px 6px 14px;
+  background: #fff; flex: 0 0 auto;
 }
-/* 署名：紧跟着站名，不让人把这一页扒走改成自己的。
+/* 中文走衬线。★ 「数根」这两个字用宋体，是那篇第四节最直接的一条落地：
+   宋体"笔画显著的粗细差异"在放大以后就是比无衬线有分量。
+   ★ 字距收 2px——两个字的标题拉开字距会散。 */
+.brand .name {
+  font-family: var(--song); font-size: 26px; font-weight: 700; line-height: 1.15;
+  letter-spacing: 2px; color: var(--brand); white-space: nowrap;
+}
+/* 拉丁小字压在中文底下，字距拉到 3.6px 让它跟中文一样宽——中英叠排要
+   "两行等宽"才像一块牌子，不然上宽下窄，像个没对齐的 logo。
+   ★ 它比中文浅一档但**不能太浅**：9.5px 已经很小，再淡在白底上就散成灰雾了。
+     .78 是量着白底调的，再低一档（.6）在投影仪上就看不见有这行字。 */
+.brand .lat {
+  font-family: var(--lat); font-size: 9.5px; letter-spacing: 3.6px;
+  color: rgba(11, 107, 69, .78); white-space: nowrap; line-height: 1;
+  margin-top: 2px;
+}
+
+/* 署名：紧跟着牌子，不让人把这一页扒走改成自己的。
    直角 + 左竖线，不用胶囊——胶囊是"聊天软件"的形状，不是"铭牌"的形状。 */
 .brand .by {
-  font-size: 12px; font-weight: 700; color: var(--brand); white-space: nowrap; flex: 0 0 auto;
-  background: var(--brand-soft); border-left: 2px solid var(--brand);
-  padding: 2px 8px 2px 6px; letter-spacing: 1.1px; text-transform: uppercase;
+  font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--brand);
+  white-space: nowrap; flex: 0 0 auto; letter-spacing: 1.2px;
+  border: 1px solid var(--brand-line); padding: 2px 7px;
 }
 .brand .sub {
-  font-size: 12.5px; color: var(--ink-3); padding-left: 8px;
-  border-left: 1px solid var(--line); margin-left: 3px;
+  font-size: 12.5px; color: var(--ink-3); padding-left: 9px;
+  border-left: 1px solid var(--line); margin-left: 1px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .3px;
 }
 
 /* 分段切换器（模式 / 通道 / 视角，三处共用一套语言）。
-   ★ 采用的是"当前项＝抬起来的一格 + 底下一条色条"，不是"填充的胶囊"。
-     那篇里反复讲层级靠对比和线，不靠色块堆；而且胶囊一旦有五个，
-     投影仪上就是五个大色团，看不出哪个是当前的。 */
+   ★ "当前项＝满色的一格"，不是"淡底 + 底下一条线"：那篇讲层级靠对比，
+     满色对淡底就是最强的对比，投影仪上也看得清是哪个。
+   ★ 但满色用的是**近黑**，不是绿。上一版三处切换器全填绿，加上牌子、
+     发送键，一屏里五块绿，那篇文章说的"强调色只给当前状态"被我执行成了
+     "到处都填绿"，反而没有重点了。现在"填满的绿"只剩发送键一处；
+     牌子改成了白底绿字（见 .brand .plate），编号、角标、连接点用的是绿但面积极小。 */
 .modes, .backs, .viewsw {
   display: flex; flex: 0 0 auto; gap: 0;
-  background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r);
-  padding: 0;
+  background: var(--sunken); border: 1px solid var(--line);
 }
 .modebtn, .backbtn, .viewbtn {
   border: 0; background: transparent; font: inherit; cursor: pointer;
-  color: var(--ink-3); white-space: nowrap;
-  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  color: var(--ink-2); white-space: nowrap;
 }
-.modebtn { font-size: 14px; padding: 7px 16px 6px; }
-.backbtn { font-size: 13px; padding: 6px 12px 5px; }
-.viewbtn { font-size: 13px; padding: 5px 13px 4px; }
+.modebtn { font-size: 14px; padding: 8px 17px; }
+.backbtn { font-size: 13px; padding: 7px 13px; }
+.viewbtn { font-size: 13px; padding: 5px 13px; }
+/* 格与格之间一道竖线，不是靠间距分开——间距会被窗口宽度拉变形，线不会 */
+.modebtn + .modebtn, .backbtn + .backbtn, .viewbtn + .viewbtn { border-left: 1px solid var(--line); }
 
 .modebtn.on, .backbtn.on, .viewbtn.on {
-  background: var(--panel); color: var(--brand); font-weight: 700;
-  border-bottom-color: var(--brand);
+  background: var(--ink); color: #fff; font-weight: 700;
 }
-body[data-mode="demo"] .modebtn.on { color: var(--demo); border-bottom-color: var(--demo); }
+body[data-mode="demo"] .modebtn.on { background: var(--demo); }
 
-/* 通道那两格带状态点：绿＝在用，砖红＝这条走不通 */
+/* 通道那两格带状态点：白＝在用，砖红＝这条走不通 */
 .backbtn .dot {
-  display: inline-block; width: 6px; height: 6px; background: #b6c7bc;
-  margin-right: 6px; vertical-align: 1px; border-radius: 0;
+  display: inline-block; width: 6px; height: 6px; background: #93a79c;
+  margin-right: 7px; vertical-align: 1px;
 }
 .backbtn.on .dot { background: var(--brand); }
-.backbtn.on.warn .dot { background: var(--warn); }
+.backbtn.on.warn .dot { background: #ffd9cc; }
 /* 短文案只在手机上顶班，桌面上不出现 */
 .backbtn .short { display: none; }
 
 /* 小号大写字距标签——那篇里说"中英结合总能够比较好看，多用于装饰"。
-   这里中西本来就没有，就用字距和小字号做出"铭牌"的感觉。 */
+   ★ 字距 2.4px 是好几个字符的时候才好看；只有一两个字（比如"关于"）拉这么开
+     就散了，所以按钮上的中文不动字距（见 .tool）。 */
 #badge {
-  font-size: 11.5px; color: var(--ink-3); flex: 0 0 auto;
-  letter-spacing: 1.4px; border-left: 2px solid var(--line); padding-left: 10px;
+  font-family: var(--mono); font-size: 11px; color: var(--ink-3); flex: 0 0 auto;
+  letter-spacing: 1.4px; border-left: 2px solid var(--rule); padding-left: 11px;
 }
 
-/* 通用按钮。悬停时右下角冒出一小段角线——那篇讲"交互时的强调方式"，
-   角线比变色更省、比阴影更清楚，而且跟面板四角的角标是同一套语言。 */
+/* 通用按钮。★ 悬停时右下角冒出一小段角线——那篇讲"交互时的强调方式"，
+   角线比变色更省、比阴影更清楚，而且跟面板四角的角标是同一套语言。
+   ★ 散点和光照常驻（那篇第五节："散点……用在按钮上可以使留白不显得单薄"），
+     写在底下的"动效与光照"一节里。这一节只管形状和字。 */
 .tool {
   font: inherit; font-size: 13.5px; position: relative;
   border: 1px solid var(--line); background: var(--panel);
-  color: var(--ink-2); padding: 6px 12px; border-radius: var(--r); cursor: pointer;
-  white-space: nowrap;
+  color: var(--ink-2); padding: 7px 13px; cursor: pointer; white-space: nowrap;
 }
-.tool:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
+/* ★ 悬停只换底色，不动 background 简写——简写会把下面那两层图（散点、光照）
+   一起清掉，悬停的瞬间按钮反而变平了。 */
+.tool:hover { border-color: var(--brand); color: var(--brand); background-color: var(--brand-soft); }
 .tool:hover::after {
-  content: ''; position: absolute; right: -1px; bottom: -1px; width: 6px; height: 6px;
-  border-right: 2px solid var(--brand); border-bottom: 2px solid var(--brand);
+  content: ''; position: absolute; right: -1px; bottom: -1px; width: 7px; height: 7px;
+  border-right: 3px solid var(--brand); border-bottom: 3px solid var(--brand);
 }
 .tool:disabled { opacity: .45; cursor: default; }
 .tool:disabled::after { content: none; }
@@ -210,9 +347,36 @@ main {
 }
 
 .col {
-  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--panel); border: 1px solid var(--line);
   min-height: 0; display: flex; flex-direction: column; overflow: hidden;
 }
+
+/* 空对话区里的鬼影大字。★ 见 index.html 里那段说明。
+   三件事必须一起写，少一件就出事：
+     · z-index:0 且 `#msgs` 抬到 1 —— 不然绝对定位的它会被画在气泡**上面**，
+       一句话都读不了；
+     · pointer-events:none —— 不然它挡住底下选择文字的鼠标操作；
+     · 透明度低到 .06 —— 这是"留白不显得单薄"，不是"加了个大字报"。 */
+.ghost {
+  /* ★ 用 top+translateY 定在对话区的垂直中间，**不要用 bottom**（2026-10-01 截图）：
+     写 bottom:30px 时它正好齐腰压在下面那条输入区上，被不透明的输入框切成两半，
+     看着像渲染坏了，不像设计。中间是唯一不会被任何固定条挡住的地方。 */
+  position: absolute; right: 16px; top: 46%; transform: translateY(-50%); z-index: 0;
+  font-family: var(--song); font-size: 104px; font-weight: 700;
+  letter-spacing: 8px; line-height: 1;
+  color: var(--brand); opacity: .06;
+  pointer-events: none; user-select: none; -webkit-user-select: none;
+}
+#msgs, #thumb, #chips, .composer { position: relative; z-index: 1; }
+
+/* ---------- 栏头铭牌（01 对话 / 02 画板） ---------- */
+.colhead, .boardbar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 0;
+  padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.colhead { padding: 9px 14px; }
+.colhead span, .boardbar span { font-size: 15px; margin-right: 10px; }
+.colhead b, .boardbar b { margin-right: 9px; }
 
 /* ---------- 左：对话 ---------- */
 #msgs { flex: 1 1 auto; overflow-y: auto; padding: 18px 18px 6px; scroll-behavior: smooth; }
@@ -220,22 +384,33 @@ main {
 .msg { display: flex; margin-bottom: 14px; }
 .msg.user { justify-content: flex-end; }
 
-/* 气泡：去掉圆角，改成左侧一道 3px 的色条来标"谁在说"。
-   那篇里讲扁平化不是"平"，是"减少与交互无关的细节"——气泡的圆角、
-   小尾巴、渐变阴影全都是与交互无关的细节；留下色条，一眼就分得清。 */
+/* 气泡：没有圆角、没有阴影，靠左侧一道 3px 色条标"谁在说"，
+   再配一枚说话人铭牌。那篇里讲扁平化的出发点是"减少与交互无关的细节"
+   ——气泡的圆角、小尾巴、渐变阴影全是与交互无关的细节。
+   ★ 说话人铭牌是①画内界面的做法：每一块信息都标着它从哪来，
+     像仪表上的通道标注，而不是"两团颜色猜谁在说"。 */
 .bubble {
   max-width: 88%;
-  padding: 10px 14px;
-  border-radius: 0 var(--r) var(--r) 0;
+  padding: 10px 14px 11px;
   border-left: 3px solid var(--rule);
-  background: var(--sunken);
+  background: var(--panel);
   white-space: normal;
   word-break: break-word;
   overflow-wrap: anywhere;
 }
 .msg.assistant .bubble { border-left-color: var(--brand-line); }
-.msg.user .bubble { background: var(--brand-soft); border-left-color: var(--brand); }
+.msg.user .bubble { background: var(--sunken); border-left-color: var(--brand); }
 body[data-mode="demo"] .msg.user .bubble { background: var(--demo-soft); border-left-color: var(--demo); }
+
+.bubble > .who, .msg.assistant .bubble::before {
+  display: block; font-family: var(--mono); font-size: 10px; letter-spacing: 1.6px;
+  color: var(--ink-3); margin-bottom: 5px;
+}
+/* ★ 用 ::before 写而不是往 DOM 里塞元素：气泡内容是 SR.render.renderInto 直接
+   `innerHTML=` 换掉的（见 js/render.js:157），塞进去的子元素每次重绘都会被抹掉。
+   只有助手气泡挂这枚铭牌——学生那侧靠右对齐 + 深一档的底已经够分了，
+   两边都挂等于每屏多两行小字。 */
+.msg.assistant .bubble::before { content: '数根 / MATHROOT'; }
 
 .bubble p { margin: .45em 0; }
 .bubble p:first-child { margin-top: 0; }
@@ -245,10 +420,10 @@ body[data-mode="demo"] .msg.user .bubble { background: var(--demo-soft); border-
 .bubble strong { color: var(--brand); }
 body[data-mode="demo"] .bubble strong { color: var(--demo); }
 .bubble code {
-  background: var(--code-bg); padding: 1px 5px; border-radius: 2px;
-  font-family: Consolas, "Courier New", monospace; font-size: .93em;
+  background: var(--code-bg); padding: 1px 5px;
+  font-family: var(--mono); font-size: .93em;
 }
-.bubble pre { background: var(--code-bg); padding: 9px 12px; border-radius: var(--r); overflow-x: auto; }
+.bubble pre { background: var(--code-bg); padding: 9px 12px; overflow-x: auto; }
 .bubble pre code { background: none; padding: 0; }
 /* ★ 高度要封顶（2026-10-01 截图发现）：手机竖拍的一张卷子，图本身很长，
    只限宽度的话它能在气泡里铺满整屏，把对话和右边画板一起顶出去——
@@ -256,12 +431,12 @@ body[data-mode="demo"] .bubble strong { color: var(--demo); }
    既看得出是那张卷子，也留得住上下文。 */
 .bubble img.shot {
   max-width: 100%; max-height: 300px; width: auto;
-  border-radius: var(--r); margin-bottom: 6px; display: block;
+  margin-bottom: 6px; display: block; border: 1px solid var(--line);
 }
 /* 学生发来的是 Word/PDF 时，气泡里只挂这一行文件名。
    不把正文摊出来：一整份卷子的文字塞进气泡，这段对话就没法看了。 */
 .bubble .docsent {
-  font-size: 13px; color: var(--ink-3); margin-bottom: 6px;
+  font-family: var(--mono); font-size: 12px; color: var(--ink-3); margin-bottom: 6px;
   border-left: 2px solid var(--line); padding-left: 8px;
 }
 
@@ -271,7 +446,7 @@ body[data-mode="demo"] .bubble strong { color: var(--demo); }
 .err .inlinebtn {
   font: inherit; font-size: 13.5px; margin-left: 8px;
   border: 1px solid var(--brand-line); background: var(--brand-soft); color: var(--brand);
-  padding: 3px 10px; border-radius: var(--r); cursor: pointer;
+  padding: 3px 10px; cursor: pointer;
 }
 .err .inlinebtn:hover { border-color: var(--brand); }
 
@@ -286,15 +461,21 @@ body[data-mode="demo"] .bubble strong { color: var(--demo); }
 #chips { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px 10px; }
 #chips:not(:empty) { padding-top: 10px; border-top: 1px solid var(--line); }
 /* 直角 + 左侧一道粗线。★ 这条粗线不只是装饰：它是"这是一句可以按的话"的记号，
-   跟左边气泡那道色条同族，学生一眼就知道这两种东西不是一回事。 */
+   跟左边气泡那道色条同族，学生一眼就知道这两种东西不是一回事。
+   ★ 悬停时右下角冒出角线，和 .tool 一个语言——全站"能按的东西"共用一种手感。 */
 .chip {
   font: inherit; font-size: 14.5px; position: relative;
-  background: var(--panel); border: 1px solid var(--brand-line); color: var(--brand-deep);
-  padding: 8px 15px 8px 13px; border-left-width: 3px; border-radius: var(--r);
+  background-color: var(--panel); border: 1px solid var(--brand-line); color: var(--brand-deep);
+  padding: 8px 15px 8px 13px; border-left-width: 3px;
   cursor: pointer; text-align: left;
-  transition: background .12s, border-color .12s;
+  /* 过渡、散点、光照、入场都写在底下的"动效与光照"一节里 */
 }
-.chip:hover { background: var(--brand-soft); border-color: var(--brand); }
+/* ★ 同样：只换背景色，不用简写 */
+.chip:hover { background-color: var(--brand-soft); border-color: var(--brand); }
+.chip:hover::after {
+  content: ''; position: absolute; right: -1px; bottom: -1px; width: 7px; height: 7px;
+  border-right: 3px solid var(--brand); border-bottom: 3px solid var(--brand);
+}
 body[data-mode="demo"] .chip { border-color: var(--demo-line); color: var(--demo-dark); }
 body[data-mode="demo"] .chip:hover { background: var(--demo-soft); border-color: var(--demo); }
 
@@ -307,18 +488,20 @@ body[data-mode="demo"] .chip:hover { background: var(--demo-soft); border-color:
 #input {
   /* min-height 要够放一行（padding 22 + 边框 3 + 行高 25.6 ≈ 51），46 会切掉半个字 */
   flex: 1 1 auto; font: inherit; resize: none; min-height: 51px; max-height: 160px;
-  padding: 11px 13px; border: 1.5px solid var(--line); border-radius: var(--r);
+  padding: 11px 13px; border: 1.5px solid var(--line);
   outline: none; line-height: 1.6; background: var(--sunken); color: inherit;
 }
 /* 聚焦＝"这一格现在归你"。给左边一道粗色条，不用外发光圈——
    光圈是软的东西，跟我们这套硬边语言不是一路。 */
-#input:focus { border-color: var(--brand); border-left-width: 4px; padding-left: 10.5px; background: var(--panel); }
+#input:focus { border-color: var(--brand); border-left-width: 5px; padding-left: 9.5px; background: var(--panel); }
 #input:disabled { background: var(--sunken); color: var(--ink-3); }
 
+/* 发送键：全站唯一一个"满色的小块"。★ 那篇讲层级对比度——主按钮就该是
+   整屏最重的一块颜色，别客气。字距拉开是因为它只有两个字。 */
 #send {
-  font: inherit; font-weight: 700; flex: 0 0 auto; letter-spacing: 1px;
+  font: inherit; font-weight: 700; flex: 0 0 auto; letter-spacing: 3px;
   background: var(--brand); color: #fff; border: 0;
-  padding: 12px 22px; border-radius: var(--r); cursor: pointer;
+  padding: 13px 20px 13px 23px; cursor: pointer;
 }
 #send:hover { background: var(--brand-deep); }
 #send:disabled { background: #9fb4a7; cursor: default; }
@@ -326,7 +509,7 @@ body[data-mode="demo"] #send { background: var(--demo); }
 body[data-mode="demo"] #send:hover { background: var(--demo-dark); }
 
 #attach {
-  font-size: 20px; line-height: 1; padding: 10px 13px; border-radius: var(--r);
+  font-size: 20px; line-height: 1; padding: 10px 13px;
   border: 1.5px solid var(--line); background: var(--panel); cursor: pointer;
 }
 #attach:hover { border-color: var(--brand); background: var(--brand-soft); }
@@ -339,51 +522,40 @@ body[data-mode="demo"] #send:hover { background: var(--demo-dark); }
 #thumb .fi { position: relative; }
 #thumb .fi img {
   max-height: 76px; max-width: 120px; border: 1px solid var(--line);
-  border-radius: var(--r); display: block; object-fit: cover; background: var(--panel);
+  display: block; object-fit: cover; background: var(--panel);
 }
 /* 不是图片的文件（PDF / Word）画成一个带名字的方块 */
 #thumb .fi .doc {
-  width: 108px; height: 76px; border: 1px solid var(--line); border-radius: var(--r);
+  width: 108px; height: 76px; border: 1px solid var(--line);
   background: var(--sunken); display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 3px; padding: 4px;
 }
-#thumb .fi .doc b { font-size: 11.5px; color: var(--brand); letter-spacing: .8px; }
+#thumb .fi .doc b { font-family: var(--mono); font-size: 11px; color: var(--brand); letter-spacing: .8px; }
 #thumb .fi .doc span {
   font-size: 10.5px; color: var(--ink-3); max-width: 96px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 #thumb .fi .x {
-  position: absolute; right: -7px; top: -7px; width: 20px; height: 20px; border-radius: 0;
+  position: absolute; right: -7px; top: -7px; width: 20px; height: 20px;
   border: 1px solid var(--rule); background: var(--panel); cursor: pointer;
   font-size: 14px; line-height: 1; padding: 0; color: var(--ink-2);
 }
 #thumb .fi .x:hover { border-color: var(--warn); color: var(--warn); }
-#thumb .meta { font-size: 12.5px; color: var(--ink-3); margin: 7px 0 0; }
+#thumb .meta { font-family: var(--mono); font-size: 12px; color: var(--ink-3); margin: 7px 0 0; }
 
 /* ---------- 右：画板 ---------- */
-.boardbar {
-  flex: 0 0 auto; display: flex; align-items: center; gap: 9px;
-  padding: 8px 14px; border-bottom: 1px solid var(--line);
-}
-/* 中英结合做装饰：中文给看得懂的人，拉丁小字给"读仪器"的感觉。
-   那篇里说这种搭配"总能够比较好看，多用于装饰考虑"。 */
-.boardbar .t {
-  font-size: 14px; color: var(--ink-2); margin-right: auto; font-weight: 700;
-  display: flex; align-items: baseline; gap: 7px;
-}
-.boardbar .t em {
-  font-style: normal; font-size: 10.5px; font-weight: 400; color: var(--ink-3);
-  letter-spacing: 1.8px;
-}
+.boardbar { gap: 9px; }
+.boardbar .t { margin-right: auto; display: flex; align-items: center; }
+.boardbar .t span { margin-right: 10px; }
 
 .boardwrap { position: relative; flex: 1 1 auto; min-height: 0; display: flex; }
 /* 热点效应（vignette）：一圈极淡的内投影，把视线收到画面中间。
-   那篇里说这个效果"来源于影像中心的明度和饱和度比四周高"，
+   那篇第三节说这个效果"来源于影像中心的明度和饱和度比四周高"，
    用在作战章节页上"突出页面中的卡片元素"。这里用来把眼睛按在画板上，
    旁边那些按钮就不抢戏了。 */
 .boardwrap::after {
   content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 4;
-  box-shadow: inset 0 0 48px rgba(31, 122, 84, .085);
+  box-shadow: inset 0 0 54px rgba(11, 107, 69, .10);
 }
 /* ★ `min-height: 0` 是这里的关键，别删（2026-10-01 手机实测）：
    flex 子项默认 `min-height: auto`——**它撑不过内容**。于是 applet 说多高、
@@ -401,93 +573,112 @@ body[data-mode="demo"] #send:hover { background: var(--demo-dark); }
    不挡作图（pointer-events 全关），但截图出去人名就跟在图上。
    淡到平时注意不到，又不能淡到截图缩一缩就糊没——18% 是这个平衡点。
    ★ 字串里带上了站名（KAX · 数根 mathroot）：署名得能"找回来"，
-   光一个人名，看见截图的第三个人不知道这是谁的什么。
-   带站名后整串约 200px，画板 560px 宽，右下角放得下；
-   字距从 2.5px 收到 1.2px，加长的部分才不至于顶到图上去。 */
+   光一个人名，看见截图的第三个人不知道这是谁的什么。 */
 .wm {
   position: absolute; right: 14px; bottom: 10px; z-index: 5;
-  font-size: 15px; font-weight: 700; letter-spacing: 1.2px;
-  color: rgba(31, 122, 84, .18);
+  font-family: var(--lat); font-size: 15px; font-weight: 700; letter-spacing: 1.2px;
+  color: rgba(11, 107, 69, .18);
   pointer-events: none; user-select: none; -webkit-user-select: none;
 }
 
-#status { flex: 0 0 auto; font-size: 12.5px; color: var(--ink-3); padding: 6px 14px; border-top: 1px solid var(--line); min-height: 28px; }
+/* 状态栏＝一块读数条。★ 等距字体 + 拉开字距，让它读起来像仪表的读数，
+   而不是"页脚上的一句提示"。那篇里 Bender 那一段说的就是这个效果。 */
+#status {
+  flex: 0 0 auto; font-family: var(--mono); font-size: 11.5px; letter-spacing: .6px;
+  color: var(--ink-3); padding: 7px 14px; border-top: 1px solid var(--line); min-height: 30px;
+  background: var(--panel);
+}
 
 /* ---------- 页脚（署名第二处） ---------- */
+/* 那篇里方舟的东西没有一件是居中的——居中是"没安排"的形状。
+   改成贴着左右两边的细条，右边补一个站名拉丁字，跟顶栏那块牌子首尾呼应。 */
 footer {
-  flex: 0 0 auto; text-align: center; font-size: 12px; color: var(--ink-3);
-  padding: 2px 14px 8px; letter-spacing: .4px;
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; color: var(--ink-3);
+  padding: 3px 18px 9px; letter-spacing: .4px;
+}
+footer .r {
+  font-family: var(--lat); font-size: 9.5px; letter-spacing: 3.4px;
+  color: var(--brand); opacity: .55;
 }
 
 /* 教师演示模式的角标。
-   ★ 底纹用的是斜条纹——那篇里专门讲了方舟的底图手法，粗条纹"类似警戒线的
+   ★ 底纹用的是斜条纹——那篇第五节专门讲了方舟的底图手法，粗条纹"类似警戒线的
      风格，展现设计的工业感"。警戒线正好对上"现在不是普通模式"这件事。
      条纹用同色系的深浅两档，不用对比色：底纹是背景，字还得看得清。 */
 #demoflag {
   position: fixed; right: 18px; bottom: 34px; z-index: 40;
+  font-family: var(--mono);
   background: repeating-linear-gradient(45deg, var(--demo) 0 9px, var(--demo-dark) 9px 18px);
-  color: #fff; font-size: 13px; font-weight: 700; letter-spacing: 1px;
-  padding: 8px 16px; border-radius: var(--r);
+  color: #fff; font-size: 12.5px; font-weight: 700; letter-spacing: 1.4px;
+  padding: 9px 17px;
   box-shadow: 0 3px 12px rgba(20, 40, 28, .22);
   pointer-events: none;
 }
 
 /* ---------- 弹层（Key 设置 / 关于 / 本地素材，共用一套） ---------- */
-/* 遮罩用毛玻璃。那篇讲 Fluent Design 时说背景模糊的关键好处是**覆盖特性**：
-   让人"窥"见下面那页还在，从而"降低玩家对忽然跳出的新页面的抗拒感"。
+/* 遮罩用毛玻璃。那篇第六节讲"降低玩家对忽然跳出的新页面的抗拒感"：
+   背景模糊的关键好处是**覆盖特性**，让人"窥"见下面那页还在。
    纯色遮罩是"把下面盖死了"，模糊是"下面还在，只是退后一层"。
    浏览器不支持 backdrop-filter 时会退回纯色，不影响可用。 */
 .overlay {
   position: fixed; inset: 0; z-index: 100;
-  background: rgba(18, 36, 27, .42);
-  -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);
+  background: rgba(10, 28, 20, .48);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
   display: none; align-items: center; justify-content: center; padding: 20px;
 }
 .overlay.open { display: flex; }
 .overlay .box {
-  background: var(--panel); border-radius: var(--r);
-  border-top: 3px solid var(--brand);
+  background: var(--panel);
+  border-top: 4px solid var(--brand);
   padding: 24px 26px 20px;
-  width: min(560px, 100%); box-shadow: 0 14px 44px rgba(12, 34, 22, .28);
+  width: min(560px, 100%); box-shadow: 0 18px 50px rgba(6, 24, 15, .34);
   max-height: 86vh; overflow-y: auto;
 }
+/* ★ 字号必须写在 h2 自己身上：弹层 h2 里没有 span，写 `.h2 span{font-size}` 等于没写 */
 .overlay h2 {
-  margin: 0 0 10px; font-size: 19px; color: var(--brand); letter-spacing: .5px;
-  display: flex; align-items: baseline; gap: 9px;
+  margin: 0 0 12px; display: flex; align-items: center;
+  font-size: 22px; font-weight: 700; letter-spacing: 2px;
 }
-.overlay h2 em {
-  font-style: normal; font-size: 10.5px; font-weight: 400; color: var(--ink-3);
-  letter-spacing: 1.8px;
-}
+.overlay h2 span { margin-right: 11px; }
 .overlay p { margin: 0 0 14px; font-size: 14px; color: var(--ink-2); line-height: 1.75; }
+/* 弹层里的加粗走主色，跟气泡里那条（.bubble strong）一致。
+   ★ 之前这里没写，于是同一句"**教材索引**"在气泡里是绿的、在面板里是黑的——
+     同一套强调在两个地方长两个样，读的人会以为它们不是一回事。 */
+.overlay p strong, #about strong { color: var(--brand); font-weight: 700; }
+/* 数字对齐。等宽字体里数字本来就等宽，但中文等宽字体（CJK 那一档）
+   在西文数字上不一定——加上这条，分数字列才是齐的。
+   那篇讲 Bender 那种"工业风伪等距体"读起来像仪表，对齐是仪表感的底子。 */
+#status, .kbscore, #resmeta, #keystate, .kbrow, #thumb .meta, footer { font-variant-numeric: tabular-nums; }
 .overlay a { color: var(--brand); }
-.overlay code { background: var(--code-bg); padding: 1px 5px; border-radius: 2px; font-family: Consolas, monospace; font-size: .93em; }
-.overlay .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
+.overlay code { background: var(--code-bg); padding: 1px 5px; font-family: var(--mono); font-size: .93em; }
+.overlay .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
 .overlay .row .tool { padding: 9px 18px; font-size: 14.5px; }
 .overlay .row .primary { background: var(--brand); color: #fff; border-color: var(--brand); font-weight: 700; }
 .overlay .row .primary:hover { color: #fff; background: var(--brand-deep); border-color: var(--brand-deep); }
 
-/* 弹层里的小标题：左边一道短色条，和气泡、chip 是同一个记号 */
+/* 弹层里的小标题：左边一道短色条 + 中文衬线，和铭牌是同一个记号 */
 .overlay h3 {
-  font-size: 14px; margin: 16px 0 6px; color: var(--ink);
-  border-left: 3px solid var(--brand-line); padding-left: 8px;
+  font-family: var(--song); font-size: 15px; margin: 18px 0 7px; color: var(--ink);
+  border-left: 3px solid var(--brand); padding-left: 9px;
 }
 
 /* ---------- Key 面板的状态牌 ---------- */
 /* 当前用哪条通道、Key 打没打上、尾号多少——一眼看完，不用先读一段话。
-   原来这个面板上来就是两段说明文字，看半天不知道自己现在是什么状态。 */
+   原来是两段说明文字，看半天不知道自己现在是什么状态。
+   ★ 读数全走等距字体，跟状态栏、铭牌是同一套"仪表"语言。 */
 #keystate {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  background: var(--sunken); border: 1px solid var(--line); border-left: 3px solid var(--brand);
-  border-radius: var(--r); padding: 10px 13px; margin: 0 0 16px;
+  background: var(--sunken); border: 1px solid var(--line); border-left: 4px solid var(--brand);
+  padding: 11px 13px; margin: 0 0 16px;
 }
 #keystate.warn { border-left-color: var(--warn); }
-#keystate .k { font-size: 12px; color: var(--ink-3); letter-spacing: 1px; }
+#keystate .k { font-family: var(--mono); font-size: 11px; color: var(--ink-3); letter-spacing: 1.2px; }
 #keystate .v { font-size: 14px; font-weight: 700; color: var(--ink); }
 #keystate .v.ok { color: var(--brand); }
 #keystate .v.no { color: var(--warn); }
 #keystate .tail {
-  font-family: Consolas, monospace; font-size: 13px; color: var(--ink-2);
+  font-family: var(--mono); font-size: 13px; color: var(--ink-2);
   background: var(--panel); border: 1px solid var(--line); padding: 1px 7px;
 }
 
@@ -495,18 +686,18 @@ footer {
 /* 它列的是长路径，560px 的框放不下会折得很难看，所以这一档单独放宽。 */
 .overlay .box.wide { width: min(760px, 100%); }
 /* #resq / #kbq 的样式在下面跟知识库面板写在一起（两个面板的输入框是同一种东西） */
-#resmeta { font-size: 12.5px; color: var(--ink-3); margin: 10px 0 8px; }
+#resmeta { font-family: var(--mono); font-size: 12px; color: var(--ink-3); margin: 10px 0 8px; }
 #resrows { max-height: 46vh; overflow-y: auto; border-top: 1px solid var(--line); }
 .resrow { padding: 9px 2px 10px; border-bottom: 1px solid var(--line); }
 .reshape { font-size: 14px; color: var(--ink); display: flex; align-items: baseline; gap: 8px; }
 .ressrc {
-  font-size: 11px; color: var(--brand); background: var(--brand-soft);
+  font-family: var(--mono); font-size: 10.5px; color: var(--brand); background: var(--brand-soft);
   border-left: 2px solid var(--brand); padding: 1px 7px 1px 5px;
   letter-spacing: .6px; white-space: nowrap; flex: 0 0 auto;
 }
 .respath {
-  display: block; margin-top: 5px; font-family: Consolas, monospace; font-size: 12px;
-  color: var(--ink-2); background: var(--code-bg); border-radius: 2px; padding: 4px 7px;
+  display: block; margin-top: 5px; font-family: var(--mono); font-size: 12px;
+  color: var(--ink-2); background: var(--code-bg); padding: 4px 7px;
   cursor: pointer; word-break: break-all;
 }
 .respath:hover { color: var(--brand); }
@@ -519,20 +710,20 @@ footer {
    两个长得一样的面板会用上两种边框。 */
 #resq, #kbq {
   width: 100%; font: inherit; font-size: 14px; padding: 9px 12px;
-  border: 1px solid var(--line); border-radius: var(--r); background: var(--sunken); color: var(--ink);
+  border: 1px solid var(--line); background: var(--sunken); color: var(--ink);
 }
-#resq:focus, #kbq:focus { outline: none; border-color: var(--brand); border-left-width: 4px; padding-left: 9px; background: var(--panel); }
+#resq:focus, #kbq:focus { outline: none; border-color: var(--brand); border-left-width: 5px; padding-left: 8px; background: var(--panel); }
 #kbstat { margin: 10px 0 12px; border-top: 1px solid var(--line); }
 .kbrow {
-  font-size: 13px; color: var(--ink-2); padding: 7px 2px;
-  border-bottom: 1px solid var(--line); font-family: Consolas, monospace;
+  font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); padding: 7px 2px;
+  border-bottom: 1px solid var(--line);
 }
 /* "没装上"要看得出来。它一般不是坏消息（离线而已），但绝不能看着像"装上了"。 */
 .kbrow.miss { color: var(--ink-3); text-decoration: line-through; }
 #kbhits { max-height: 42vh; overflow-y: auto; margin-top: 10px; }
 #kbhits h3 {
-  font-size: 12.5px; font-weight: 600; color: var(--ink-3); letter-spacing: .5px;
-  margin: 14px 0 6px; padding-left: 7px; border-left: 3px solid var(--brand);
+  font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--ink-3);
+  letter-spacing: 1.2px; margin: 14px 0 6px; padding-left: 8px; border-left: 3px solid var(--brand);
 }
 .kbhit {
   display: flex; align-items: baseline; gap: 9px;
@@ -540,7 +731,7 @@ footer {
 }
 /* 分数是这一屏的主角：阈值卡在哪儿，全靠这一列看出来 */
 .kbscore {
-  font-family: Consolas, monospace; font-size: 11.5px; color: var(--brand);
+  font-family: var(--mono); font-size: 11.5px; color: var(--brand);
   background: var(--brand-soft); padding: 1px 6px; flex: 0 0 auto; min-width: 46px;
   text-align: center;
 }
@@ -556,11 +747,11 @@ footer {
 .keyrow .tool { flex: 0 0 auto; font-size: 14px; }
 
 #keyinput {
-  width: 100%; font: inherit; font-family: Consolas, monospace; font-size: 14px;
-  padding: 11px 13px; border: 1.5px solid var(--line); border-radius: var(--r); outline: none;
+  width: 100%; font: inherit; font-family: var(--mono); font-size: 14px;
+  padding: 11px 13px; border: 1.5px solid var(--line); outline: none;
   background: var(--sunken); color: inherit;
 }
-#keyinput:focus { border-color: var(--brand); border-left-width: 4px; padding-left: 10.5px; background: var(--panel); }
+#keyinput:focus { border-color: var(--brand); border-left-width: 5px; padding-left: 9.5px; background: var(--panel); }
 #keyerr { color: var(--warn); font-size: 13.5px; min-height: 1.4em; margin: 8px 0 0; }
 /* ★ 这一行既报错也报"怎么办"。用同一身红字，会把"用免费通道也行，不用填"
    这种**提示**读成报错——第一次进来的人会以为自己哪儿做错了。
@@ -572,6 +763,178 @@ footer {
 #about ul { margin: 4px 0 12px; padding-left: 1.3em; font-size: 14px; color: var(--ink-2); line-height: 1.75; }
 #about .sig { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 12px; font-size: 13px; color: var(--ink-3); }
 #about .sig b { color: var(--brand); }
+
+/* ══════════════════════════════════════════════════════════════════
+   动效与光照（2026-10-01 第三版加）
+   ──────────────────────────────────────────────────────────────────
+   孔老师看完第二版说："网页里面的这些文字质感，还有交互时候的动态效果，
+   都达不到明日方舟、原神这些网页的程度"。把原文逐字又读了一遍，找出第二版
+   漏掉的两处，都在这一节里补：
+
+   ★ 漏掉的第一处是**第二节里 Fluent 组件的配方本身**。原文：
+     "首先找到这一元素在现实世界中最具有代表性的材质，重现这一种材质的纹理，
+      剥离这种纹理的细部表现，最后**加入光照的变化和交互时的强调方式**。"
+     第二版只做了前三步（网格和散点就是"质感"和"剥离细部"），
+     **最后一步一步都没做**——所以按钮是纯平的色块，按下去除了变色没别的反应。
+     这一节从头补：--hilt 是"光照的变化"（顶亮底暗），
+     :active 那一串是"交互时的强调方式"（按下去真的往下沉一点）。
+
+   ★ 漏掉的第二处是**整个第六节"过场衔接"**。原文：
+     "方舟在每一个需要进行页面切换的地方都加入了过场动画，并且根据页面之间的
+      实际逻辑**针对性地对动画效果进行了选择**。如两个较为独立的系统之间使用
+      简单的深色淡出，而有逻辑联系的关卡主题和关卡选择之间则有明显的
+      zoom-in zoom-out 效果。"
+     第二版的弹层是 `display:none` 一刀切的，开和关都没有过场。
+     现在按原文分两档：遮罩走淡出（两个系统之间没有从属关系），
+     弹层本体走 zoom-in/out（它是从下面那页"长"出来的）。
+
+   ★ 另外补了那篇**第七节它自己承认手游做不到**的那件事。原文说方舟没有指针
+     悬停，光线只能靠陀螺仪，"期待以后有更多产品能够在 UI 层面就开始考虑
+     shading & lighting"。**网页有指针**——所以这里有一手是它没有的：
+     光跟着鼠标走（--mx / --my，由 js/motion.js 写进来）。
+     还有第七节讲的"面板右上角光线的变化……画面的**呼吸感**"，见 .ghost 那条。
+
+   ★★ 全站动效都收在文件末尾的 prefers-reduced-motion 里，一关全关。
+      投影仪那台机器要是开了省电模式，Windows 会把动画关掉，
+      这时候页面必须长得跟原来一模一样，不能塌。
+   ══════════════════════════════════════════════════════════════════ */
+:root {
+  --mo-fast: .13s;   /* 按下、悬停。再长就发粘，"粘手"是廉价感的第一来源 */
+  --mo: .24s;        /* 过场 */
+  --mo-slow: .40s;   /* 入场 */
+  --ease-out: cubic-bezier(.16, .84, .28, 1);   /* 出场：快起慢收，像东西被推出来 */
+  --ease-in:  cubic-bezier(.6, .04, .8, .3);    /* 退场：慢起快收，像东西被收回去 */
+
+  /* 光照：顶亮底暗。白底上用"主色偏亮"当高光、"主色偏暗"当暗面，
+     纯白高光在白面板上等于没有。 */
+  --hilt: linear-gradient(180deg,
+            rgba(11, 107, 69, .062) 0%,
+            rgba(255, 255, 255, 0) 46%,
+            rgba(8, 46, 30, .055) 100%);
+  /* 给满色块（发送键、演示模式角标）用的高光，因为底本来就不白 */
+  --hilt-solid: linear-gradient(180deg, rgba(255, 255, 255, .16) 0%, rgba(0, 0, 0, .07) 100%);
+
+  /* 散点。★ 页面底那层 --grain 是给底图的，浓度对；铺到按钮这种小面积上
+     就太糙了，单独调淡一档。那篇第五节的原话是"散点……用在基础组件
+     （如按钮上）可以使**留白不显得单薄**"——说的正是按钮这个尺寸。 */
+  --grain-soft: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='.13'/%3E%3C/svg%3E");
+
+  /* 指针光。★ --mx/--my 没被写进来时（还没动过鼠标、或者关了动效），
+     落在 50% -40% —— 圆在框子外面，等于看不见。所以默认状态和
+     "这一版没加光照"是完全一样的，不会因为 JS 没跑就多出一块斑。 */
+  --cl:    radial-gradient(220px circle at var(--mx, 50%) var(--my, -40%), rgba(11, 107, 69, .085), transparent 70%);
+  --cl-sm: radial-gradient(64px circle at var(--mx, 50%) var(--my, -40%), rgba(11, 107, 69, .16), transparent 72%);
+}
+
+/* ---------- 光照：把"材质"变成"有光打在上面"的材质 ---------- */
+
+/* 两块大面板。光跟着鼠标在这块面板上游走——那篇第七节讲的 shading &
+   lighting 落到网页上就是这件事。★ 只铺在 .col 自己身上，不另加元素：
+   .col 里的 #msgs 是透明的，所以光从对话区透出来；.colhead / .composer
+   是不透明的白，光走到那儿会被挡住——正好，那两块本来就不该被照亮。 */
+.col {
+  background-color: var(--panel);
+  background-image: var(--cl), var(--hilt);
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, 100% 100%;
+}
+
+/* 弹层那块板。同一套光，但它是"浮起来的"，所以多一层散点——
+   那篇第五节说网点纸用在"各类卡片的背景"上。 */
+.overlay .box {
+  background-color: var(--panel);
+  background-image: var(--cl), var(--grain-soft), var(--hilt);
+  background-repeat: no-repeat, repeat, no-repeat;
+  background-size: 100% 100%, 120px 120px, 100% 100%;
+  background-blend-mode: normal, multiply, normal;
+}
+
+/* 按钮上不给指针光（那么小一块，光一晃像个脏点），给散点 + 光照。
+   ★ 散点在这里是常驻的，不是悬停才冒出来：那篇说的是用它让"留白不显得
+     单薄"——留白是静止状态的事，悬停才补就已经太晚了。 */
+.tool, .chip {
+  transition: background-color var(--mo-fast) var(--ease-out),
+              border-color var(--mo-fast) var(--ease-out),
+              color var(--mo-fast) var(--ease-out),
+              transform var(--mo-fast) var(--ease-out);
+}
+.tool {
+  background-color: var(--panel);
+  background-image: var(--grain-soft), var(--hilt);
+  background-repeat: repeat, no-repeat;
+  background-size: 120px 120px, 100% 100%;
+  background-blend-mode: multiply, normal;
+}
+.chip {
+  background-color: var(--panel);
+  background-image: var(--grain-soft), var(--hilt);
+  background-repeat: repeat, no-repeat;
+  background-size: 120px 120px, 100% 100%;
+  background-blend-mode: multiply, normal;
+}
+/* 悬停：只换底色，**不要用 background 简写**——简写会把上面那两层图一起清掉，
+   按钮悬停的瞬间散点就没了，看着像"贴了张纸又撕了"。 */
+.tool:hover, .chip:hover { background-color: var(--brand-soft); }
+
+/* 满色块的高光。一层就够，别叠太多。 */
+#send { background-image: var(--hilt-solid); transition: background-color var(--mo-fast) var(--ease-out), transform var(--mo-fast) var(--ease-out); }
+body[data-mode="demo"] #demoflag { background-image: var(--hilt-solid); }
+
+/* ---------- 交互时的强调方式：按下去要有回手 ---------- */
+/* 那篇第二节 Fluent 配方的最后半句。只有 hover 变色的按钮是"网页"，
+   按下去会沉一下的按钮才是"产品"。★ 1px 就够，2px 在投影仪上看像在抖。 */
+.tool:active, .chip:active, .modebtn:active, .backbtn:active, .viewbtn:active,
+#attach:active, .err .inlinebtn:active { transform: translateY(1px); }
+#send:active { transform: translateY(2px); }
+/* 主色块按下时压暗一档——它在纸上，不是浮着的东西，不该发光 */
+#send:active { filter: brightness(.92); }
+.tool:active, .chip:active { filter: brightness(.97); }
+
+/* ---------- 过场衔接（那篇第六节） ---------- */
+/* 分两档，照原文的逻辑：
+     · 遮罩 = 两个互不从属的系统之间 → "简单的深色淡出"
+     · 弹层本体 = 从下面那页长出来的 → "明显的 zoom-in zoom-out"
+   ★ 退场那一下必须有 JS 参与：.overlay 是靠 `display:none` 切的，
+     display 不参与过渡，光靠 CSS 收不回去。见 js/main.js 的 hideOverlay。 */
+@keyframes ovIn  { from { opacity: 0; } }
+@keyframes ovOut { to   { opacity: 0; } }
+@keyframes boxIn  { from { opacity: 0; transform: scale(.955) translateY(8px); } }
+@keyframes boxOut { to   { opacity: 0; transform: scale(.975) translateY(5px); } }
+
+.overlay.open { animation: ovIn var(--mo) var(--ease-out) both; }
+.overlay.open .box { animation: boxIn var(--mo-slow) var(--ease-out) both; }
+/* .closing 写在 .open 后面：两条选择器一样重，靠前后决定谁赢 */
+.overlay.closing { animation: ovOut var(--mo-fast) var(--ease-in) both; }
+.overlay.closing .box { animation: boxOut var(--mo-fast) var(--ease-in) both; }
+
+/* ---------- 入场：一条一条出来，不是啪一下全在 ---------- */
+/* 那篇第六节讲方舟养成页"每一个可以点击的按钮都没有引导至一个完全崭新的页面，
+   而是多少保持着和干员信息页的联系：升级 - **横移淡入动画**、升阶 - 人物位移……"
+   横移淡入就是这一条。助手从左来，学生从右来，位置本身也在说"谁在说"。 */
+@keyframes msgIn  { from { opacity: 0; transform: translateX(-14px); } }
+@keyframes msgInR { from { opacity: 0; transform: translateX(14px); } }
+.msg { animation: msgIn var(--mo-slow) var(--ease-out) both; }
+.msg.user { animation-name: msgInR; }
+
+/* 选项和列表条目：错开一点出来（stagger）。★ 全在同一时刻淡入，
+   看着是"一整块图换了"，错开才像"东西一件件摆上来"。
+   --i 由 JS 写（见 js/main.js 的 paintResources、js/kb.js），没写就是 0。 */
+@keyframes riseIn { from { opacity: 0; transform: translateY(7px); } }
+.chip, .kbhit, .resrow {
+  animation: riseIn var(--mo) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 28ms);
+}
+/* 选完就把这一排撤掉了，退场不必做（那篇第六节讲的是"页面之间的切换"，
+   一排按钮消失不属于页面切换，做了反而是拖）。 */
+
+/* ---------- 呼吸感（那篇第七节） ---------- */
+/* 原文夸方舟的粒子："面板右上角光线的变化，管道中溢出的烟雾，飘散的尘埃和
+   雪花……此举下画面的**呼吸感**得到了增强，提升了游戏的整体品质。"
+   这里没有粒子可以做，但对话区那块鬼影大字正好是"背景里的一件活物"——
+   让它极慢地明灭。★ 周期 15s、幅度只在 .045~.078 之间：
+     快了像坏掉的灯管，幅度大了就没法在旁边读字。 */
+@keyframes breath { 0%, 100% { opacity: .045; } 50% { opacity: .078; } }
+.ghost { animation: breath 15s ease-in-out infinite; }
 
 /* ---------- 窄屏 ---------- */
 @media (max-width: 1240px) {
@@ -591,14 +954,20 @@ footer {
      别写 `.brand { flex-basis: 100% }`——那会让品牌独占一行，剩下的按钮再排两行，
      顶栏变成三行，最后一行只剩一个按钮，看着像没做完（截到过）。
      让它自然回卷：排得下就排在站名右边，排不下才整块挪到下一行。 */
-  header { gap: 7px; padding: 7px 11px; row-gap: 6px; flex-wrap: wrap; }
-  .brand .name { font-size: 19px; letter-spacing: 1px; }
-  .brand .by { font-size: 11px; padding: 1px 6px 1px 5px; }
+  header { gap: 7px; padding: 0 11px 0 9px; height: auto; min-height: 56px; row-gap: 6px; flex-wrap: wrap; }
+  /* 牌子这一档要收窄：手机上多出来的宽度会把它挤到第三行去。
+     拉丁小字整行拿掉（3.6px 的字距让它比中文还宽），中文小一档。 */
+  .brand .plate { padding: 5px 11px 5px 10px; }
+  .brand .name { font-size: 20px; letter-spacing: 1.5px; }
+  .brand .lat { display: none; }
+  .brand .logo { width: 28px; height: 28px; }
+  .brand .by { font-size: 10px; padding: 1px 5px; letter-spacing: .8px; }
   .brand { margin-right: 0; }
-  .modebtn { font-size: 13px; padding: 6px 10px 5px; }
-  .backbtn { font-size: 12.5px; padding: 6px 9px 5px; }
+  .modebtn { font-size: 13px; padding: 6px 10px; }
+  .backbtn { font-size: 12.5px; padding: 6px 9px; }
   .backbtn .dot { width: 7px; height: 7px; margin-right: 5px; }
   header .tool { font-size: 13px; padding: 6px 10px; }
+  header .vrule { display: none; }   /* 手机上换行位置本来就变了，竖线会对不齐 */
   .modes { margin-right: auto; }     /* 后面那些按钮往右推，跟桌面一个观感 */
   /* ★ 手机上通道切换**不能藏**（2026-10-01 改）。
      原来这里写的是 `.backs { display: none }`，理由写的是"设置面板里照样能切"——
@@ -607,7 +976,13 @@ footer {
      收窄成"换成短文案"，入口保住了，也还看得出这是个能按的东西。 */
   .backs .backbtn .label { display: none; }
   .backs .backbtn .short { display: inline; }
-  .backs .backbtn { min-height: 34px; display: flex; align-items: center; }
+  .backs .backbtn { min-height: 32px; display: flex; align-items: center; }
+
+  /* 栏头铭牌：手机上两栏各挂一块会白吃两行高度，对话栏这块先收起来
+     （画板那块的编号就留在 .boardbar 里，本来就要占一行）。 */
+  .colhead { display: none; }
+  .boardbar span { font-size: 14px; }
+  .ghost { display: none; }   /* 手机上这一栏本来就不够高，别再铺字 */
 
   /* 输入区。★ 手机上一行放不下「📎 + 输入框 + 发送」：
      按桌面尺寸算，两个按钮加间距吃掉 168px，390 宽的屏只剩 185 给输入框，
@@ -615,8 +990,8 @@ footer {
      截图里就是"贴一道题，或者整张"后面没字了。这里把两边都收一档。 */
   .composer { padding: 9px 10px; gap: 7px; }
   #input { font-size: 15px; padding: 10px 11px; min-height: 47px; }
-  #input:focus { padding-left: 8.5px; }
-  #send { padding: 11px 15px; letter-spacing: .5px; }
+  #input:focus { padding-left: 7.5px; }
+  #send { padding: 12px 15px; letter-spacing: 1.5px; }
   #attach { font-size: 18px; padding: 9px 10px; }
   #thumb { padding: 9px 12px 0; }
 
@@ -624,7 +999,34 @@ footer {
      boardbar 是 nowrap 的 flex，挤不下就溢出，而 .col 是 overflow:hidden，
      溢出的部分直接没了，不是出现滚动条。让它可以换行，按钮也收一档。 */
   .boardbar { flex-wrap: wrap; row-gap: 6px; padding: 8px 11px; gap: 7px; }
-  .boardbar .t { margin-right: auto; font-size: 13px; white-space: nowrap; }
+  .boardbar .t { margin-right: auto; white-space: nowrap; }
   .boardbar .tool { font-size: 12.5px; padding: 5px 9px; }
-  .viewbtn { font-size: 12.5px; padding: 5px 11px 4px; }
+  .viewbtn { font-size: 12.5px; padding: 5px 11px; }
+  .boardbar b, .boardbar em { display: none; }   /* 手机上只留"画板"两个字 */
+
+  footer .r { display: none; }
+  footer { padding: 2px 12px 7px; }
+}
+
+/* ---------- 关掉动效（系统级） ---------- */
+/* ★ 这一块不能省，也不能只关"动画"。
+   ① 投影仪/公用电脑常开省电模式，Windows 会把动画整个关掉——那时候
+      页面必须还是**完整可读**的，所以凡是靠 animation 才显示出来的东西
+      （入场那几条 opacity:0 起手），这里都要显式拉回 opacity:1；
+   ② 前庭敏感的人看横移和缩放会真的不舒服，这不是"讲究"，是基本。
+   ★ 只关时长不关名字：`animation: none` 会把 `both` 的收尾状态一起丢掉，
+     弹层那种靠收尾停在 opacity:1 的会直接消失。所以先统一把时长压到 0，
+     再单独把几个"起始态是透明的"拉回可见。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .msg, .chip, .kbhit, .resrow, .overlay .box { animation: none !important; opacity: 1 !important; }
+  .ghost { animation: none !important; opacity: .06 !important; }
+  /* 指针光一起关：它虽然不"动"，但跟着手跑，同样属于会晃人的那一类 */
+  .col { background-image: var(--hilt) !important; }
+  .overlay .box { background-image: var(--grain-soft), var(--hilt) !important; }
 }

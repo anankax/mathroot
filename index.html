@@ -8,9 +8,24 @@
 <meta name="author" content="KAX">
 <!-- 署名：把作者写进元数据，别人整页扒走也留着出处 -->
 <meta name="copyright" content="© 2026 KAX · 数根 mathroot">
-<meta name="theme-color" content="#277a56">
+<meta name="theme-color" content="#0b6b45">
 <!-- favicon 和顶栏那个 logo 是同一套路径（assets/logo.svg），改一处记得改另一处 -->
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%23277a56'/><g fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round'><path d='M9 31L20 51L35 13L58 13' stroke-width='7'/><path d='M20 50L13 60' stroke-width='5'/><path d='M20 50L28 60' stroke-width='5'/></g></svg>">
+
+<!-- 字体。★ 走 jsdelivr 的 @fontsource 包，它把中日韩字按 unicode-range 切成
+     一百多个小包（每个约 45KB），浏览器只下**页面上真正出现的那几个字**
+     所在的包。
+     ★ 只挂标题这一款（思源宋体 700）。**正文那款（思源黑体 400/700）量过之后
+       砍掉了**：实测光首屏就拉走 13 个包、约 600KB，因为正文的字遍布整页
+       （连藏着的「关于」面板里那些字都算），而且学生每多打一批新字就要再下包。
+       换来的观感差别在 14~16px 下几乎为零——正文留微软雅黑。
+       一条规则：**要下载的字只给"字最少、最显眼"的地方用**（标题、编号），
+       正文永远交给系统字。
+     ★ font-display:swap 是包自带的：字没到先用系统字显示，到了再换，
+       不会白屏等字体。断网/被墙时整条链失效，自动退回 --song 里的系统字
+       （思源宋体 → 宋体），页面照样能用。 -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-sc@5/700.css">
 
 <link rel="stylesheet" href="css/main.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
@@ -40,16 +55,30 @@
 <script defer src="js/files.js"></script>
 <script defer src="js/board.js"></script>
 <script defer src="js/chat.js"></script>
+<!-- 指针光照。不依赖任何别的模块，也不给别的模块用——它做的事就是往元素上写
+     --mx / --my，剩下的交给 main.css 的"动效与光照"那一节。放在 main.js
+     前面，页一能点它就已经在了。 -->
+<script defer src="js/motion.js"></script>
 <script defer src="js/main.js"></script>
 </head>
 
 <body data-mode="student">
 
 <header>
+  <!-- 品牌：一块**实心的深绿牌子**，字反过来挖成白的。
+       ★ 这不是装饰，是那篇里说的"层级对比度极高"最省力的一处落点：
+         整条顶栏都是浅色，只有这一块是满色，眼睛第一下就落在这儿。
+         方舟官网左下角那块白底 "ARKNIGHTS" 是同一个手法，只是黑白反了过来。
+       ★ .lat 那行拉丁小字必须留着：那篇第四节整节在讲"中英结合做装饰"
+         （"字型的变化多样而不单调…给人一种莫名的逼格"），而且拉丁小字能把
+         中文大字从"两个字"撑成一个"标识"。手机上放不下，那一档单独收起来。 -->
   <div class="brand">
-    <img class="logo" src="assets/logo.svg" alt="" width="30" height="30">
-    <span class="name">数根</span>
-    <span class="by" title="本站由 KAX 制作">by KAX</span>
+    <img class="logo" src="assets/logo.svg" alt="" width="34" height="34">
+    <span class="plate">
+      <span class="name">数根</span>
+      <span class="lat">MATHROOT</span>
+    </span>
+    <span class="by" title="本站由 KAX 制作">BY KAX</span>
     <!-- 副标题要短到放得下：顶栏一横排全是按钮，长了会被裁成"…"，
          截图和展板上看着就像没做完。完整那句话在「关于」里说。 -->
     <span class="sub">初中数学错题复盘</span>
@@ -76,6 +105,11 @@
     <button type="button" class="backbtn"    data-backend="deepseek"><span class="dot"></span><span class="label">我的 Key</span><span class="short">Key</span></button>
   </div>
 
+  <!-- 通高竖线：把"选模式/看状态"这一区和右边的工具区隔开。
+       那篇里方舟的导航就是靠一道道 1px 竖线分区的，不靠间距——间距会被
+       窗口宽度拉变形，线不会。 -->
+  <span class="vrule"></span>
+
   <!-- 本地素材（后备资源）。★ 只在孔老师本机跑起来的页面上才会冒出来：
        索引文件 js/resource-index.js 是本地生成的、被 .gitignore 挡着，公开站上没有它，
        按钮就一直藏着，客户看不到。见 js/resources.js 顶上那段。 -->
@@ -90,6 +124,19 @@
 <main>
   <!-- 左：对话 -->
   <section class="col tick">
+    <!-- 栏头。★ 那篇第六节讲"降低页面层级"时反复提到"赋予各系统一种空间上的
+         联系与包装"——两块面板各挂一个编号铭牌（01 对话 / 02 画板），
+         它们就不再是"两个白盒子"，而是同一台仪表上的两个工位。
+         ★ 中英叠排是第四节明写的装饰手法；编号走等距字体（对应那篇里的 Bender），
+         是让"读数"和"正文"一眼分得开。 -->
+    <div class="colhead"><b>01</b><span>对话</span><em>DIALOGUE</em></div>
+    <!-- 空对话区里那块浅到几乎看不见的大字。★ 学生一进来，这一栏九成是白的，
+         光放一句「告诉我你的问题。」，上面那大片留白看着像"没做完"。
+         那篇文章第五节讲的正是这件事——方舟拿网点纸和底图处理来让"留白不显得
+         单薄"；官方站上那块巨大的浅色 RHODES ISLAND 也是同一个用法。
+         这里就用站名本身，压在气泡下面（气泡是不透明的，写正文时它自然被盖住）。
+         aria-hidden：它纯装饰，读屏软件不该念。 -->
+    <div class="ghost" aria-hidden="true">数根</div>
     <div id="msgs"></div>
     <div id="thumb"></div>
     <div id="chips"></div>
@@ -112,7 +159,7 @@
   <!-- 右：画板 -->
   <section class="col tick">
     <div class="boardbar">
-      <span class="t">画板<em>BOARD</em></span>
+      <span class="t"><b>02</b><span>画板</span><em>BOARD</em></span>
       <div class="viewsw">
         <button type="button" class="viewbtn on" data-view="2d">平面</button>
         <button type="button" class="viewbtn"    data-view="3d">三维</button>
@@ -135,7 +182,10 @@
   </section>
 </main>
 
-<footer id="credits">© 2026 KAX · 数根 mathroot · 保留所有权利</footer>
+<!-- 页脚（署名第二处）。★ 原来是一行居中小字——居中是"没安排"的形状，
+     那篇里方舟的东西没有一件是居中的。改成贴着左边的一道细条，
+     右边补一个站名拉丁字，跟顶栏那块牌子首尾呼应。 -->
+<footer id="credits"><span class="c">© 2026 KAX · 数根 mathroot · 保留所有权利</span><span class="r">MATHROOT</span></footer>
 
 <div id="demoflag" style="display:none">教师演示模式</div>
 
