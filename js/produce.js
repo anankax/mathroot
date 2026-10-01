@@ -59,19 +59,167 @@ SR.produce = (function () {
     return paraXml(s.pPr, s.rPr || tpl.bodyRPr || '', text);
   }
 
+  // 这一段该套哪一档格式（图和字共用同一套判法）。
+  function pPrOf(tpl, b) {
+    var slots = tpl.slots || [];
+    var s = null;
+    if (b && typeof b.slot === 'number' && slots[b.slot]) s = slots[b.slot];
+    if (!s) s = slots[tpl.bodySlot] || null;
+    return s ? (s.pPr || '') : '';
+  }
+
+  // ============================================================
+  //  图：一段「图片段」怎么排进 Word
+  // ============================================================
+  // ★ 一切用 **inline**（随文），不用 `wp:anchor`（浮动）。
+  //   浮动图那一族坑（锚点在 XML 里的位置跟题目顺序对不上、整表 replace 会把图吞掉、
+  //   图挤在同一个空单元格里）全是"图跟文字不在一根绳上"造成的。新文件没这个包袱，
+  //   一上来就用 inline，题在哪一段、图就在哪一段，顺序天然绑死。
+  //
+  // ★ 四个命名空间**就地声明**（wp/a/r/pic）。正常的 Word 模板在 `w:document` 上
+  //   已经声明过前三个，但"模板是别人给的"这件事不能赌——就地再声明一遍是合法的 XML，
+  //   多写几个字符，换掉"这份模板刚好没声明所以整份打不开"。
+  var NS = 'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
+         + ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+         + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+         + ' xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
+
+  // 图上纸多大：**宽高都要卡**，不然一张很宽的图会把版心撑破。
+  // 1 cm = 360000 EMU。
+  var FIG_MAX_W = 3400000;      // 约 9.4cm —— 版心 15.9cm 的六成，卷子上常见的大小
+  var FIG_MAX_H = 2400000;      // 约 6.7cm
+  function fitEmu(w, h) {
+    var k = Math.min(FIG_MAX_W / w, FIG_MAX_H / h, 1);
+    return [Math.round(w * k), Math.round(h * k)];
+  }
+
+  function figPara(tpl, b, media) {
+    var m = media && b.fig != null ? media[SR.figures.key(b.fig)] : null;
+    // 图没画出来 → 这一段**什么都不排**。调用方（js/material.js）会把这一行撤掉
+    // 并告诉老师，所以这里不会出现"纸上留一个空洞"。
+    if (!m) return '';
+    var d = fitEmu(m.cx, m.cy);
+    var pPr = pPrOf(tpl, b);
+    // 图默认居中：模板里那一档多半是"题干"的左对齐，图跟着左对齐会贴着版心边。
+    // 只在模板没写对齐的时候补，模板自己说了算。
+    if (!/w:jc /.test(pPr)) pPr = pPr.replace(/<w:pPr>/, '<w:pPr><w:jc w:val="center"/>');
+    var id = m.id;
+    return '<w:p>' + pPr + '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0" ' + NS + '>'
+      + '<wp:extent cx="' + d[0] + '" cy="' + d[1] + '"/>'
+      // 缩放范围：不给的话老版本 Word 拖动时会变形
+      + '<wp:effectExtent l="0" t="0" r="0" b="0"/>'
+      + '<wp:docPr id="' + id + '" name="数根配图' + id + '"/>'
+      + '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>'
+      + '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+      + '<pic:pic>'
+      + '<pic:nvPicPr><pic:cNvPr id="' + id + '" name="mathroot' + id + '.png"/>'
+      + '<pic:cNvPicPr><a:picLocks noChangeAspect="1"/></pic:cNvPicPr></pic:nvPicPr>'
+      + '<pic:blipFill><a:blip r:embed="' + m.relId + '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+      + '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + d[0] + '" cy="' + d[1] + '"/></a:xfrm>'
+      + '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+      + '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>';
+  }
+
   // ============================================================
   //  装包：模板整包原样搬，只换 word/document.xml
   // ============================================================
-  function buildXml(tpl, blocks) {
-    var mid = (blocks || []).map(function (b) { return blockPara(tpl, b); }).join('');
+  // ★ 图一进来，要动的就不止 document.xml 了（同族两处"Word 说文件损坏"：
+  //   新图没在 rels 里注册、png 没在 Content_Types 里登记）。
+  //   三样一起改，少一样那份文件就是打不开：
+  //     ① word/media/<新名字>.png      —— 图片字节本身
+  //     ② word/_rels/document.xml.rels —— rId ↔ 图片文件 的对应
+  //     ③ [Content_Types].xml          —— 扩展名 png 的 Default 项
+  //   名字一律避开模板里已经有的（模板自己可能就有 image1.png 当校徽）。
+  function planMedia(files, blocks) {
+    var figs = [];
+    (blocks || []).forEach(function (b) {
+      if (b && b.fig) {
+        var m = SR.figures && SR.figures.get(b.fig);
+        if (m) figs.push({ key: SR.figures.key(b.fig), m: m });
+      }
+    });
+    if (!figs.length) return null;
+
+    // —— 已经在包里的文件名（避免撞名）——
+    var used = {};
+    files.forEach(function (f) { used[f.name] = 1; });
+
+    var relsName = 'word/_rels/document.xml.rels';
+    var rels = null;
+    for (var i = 0; i < files.length; i++) if (files[i].name === relsName) rels = files[i];
+    var relsXml = rels ? SR.docx.str(rels.data) : '';
+
+    // 已用过的 rId 号，从最大的往后发
+    var maxId = 0, mm;
+    var re = /Id="rId(\d+)"/g;
+    while ((mm = re.exec(relsXml))) maxId = Math.max(maxId, +mm[1]);
+
+    var media = {}, added = [], n = 0;
+    figs.forEach(function (f) {
+      if (media[f.key]) return;                     // 同一张图用两次：一份字节、一个 rId
+      n++;
+      var name = 'word/media/mathroot' + n + '.png';
+      while (used[name]) { n++; name = 'word/media/mathroot' + n + '.png'; }
+      used[name] = 1;
+      var id = ++maxId;
+      media[f.key] = { relId: 'rId' + id, id: 1000 + n, cx: f.m.w * 9525, cy: f.m.h * 9525 };
+      // px → EMU 用 9525（96dpi）。**必须按 PNG 自己的像素算**：
+      // 画板导出的是 2 倍图，按"画板 CSS 尺寸"算会缩成一半，纸上图变小一圈。
+      added.push({ name: name, data: f.m.png });
+      media[f.key].part = name;
+      media[f.key].rid = id;
+    });
+
+    // —— ② rels ——
+    var addRel = Object.keys(media).map(function (k) {
+      var m = media[k];
+      return '<Relationship Id="' + m.relId
+           + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"'
+           + ' Target="' + m.part.replace(/^word\//, '') + '"/>';
+    }).join('');
+    if (relsXml) {
+      relsXml = relsXml.replace(/<\/Relationships>\s*$/, addRel + '</Relationships>');
+    } else {
+      // 模板居然没有 rels？补一份最小的。正常 Word 文件不会走到这儿。
+      relsName = 'word/_rels/document.xml.rels';
+      relsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+              + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+              + addRel + '</Relationships>';
+    }
+
+    // —— ③ Content_Types ——
+    var ctName = '[Content_Types].xml', ct = null;
+    for (var j = 0; j < files.length; j++) if (files[j].name === ctName) ct = files[j];
+    var ctXml = ct ? SR.docx.str(ct.data) : '';
+    if (ctXml && !/Extension="png"/i.test(ctXml)) {
+      ctXml = ctXml.replace(/(<Types\b[^>]*>)/, '$1<Default Extension="png" ContentType="image/png"/>');
+    }
+
+    return { media: media, files: [
+      { name: relsName, data: SR.docx.bytes(relsXml) },
+      { name: ctName, data: SR.docx.bytes(ctXml) }
+    ].concat(added) };
+  }
+
+  function buildXml(tpl, blocks, media) {
+    var mid = (blocks || []).map(function (b) {
+      return (b && b.fig) ? figPara(tpl, b, media) : blockPara(tpl, b);
+    }).join('');
     var body = (tpl.head || []).join('') + mid + (tpl.keepTail || []).join('');
     return tpl.bodyHead + body + tpl.bodyFoot;
   }
 
   function build(tpl, blocks) {
-    var xml = buildXml(tpl, blocks);
     var files = (tpl.pack || []).map(function (f) { return { name: f.name, data: f.data }; });
-    return SR.docx.write(SR.docx.replace(files, 'word/document.xml', SR.docx.bytes(xml)));
+    // 先规划好图（名字、rId、尺寸），再生成正文——正文里要引用 rId。
+    var plan = planMedia(files, blocks);
+    var xml = buildXml(tpl, blocks, plan ? plan.media : null);
+    files = SR.docx.replace(files, 'word/document.xml', SR.docx.bytes(xml));
+    // ★ 走 replace，**不是 concat**：rels 和 [Content_Types].xml 模板里本来就有，
+    //   直接往后追加会变成同一个名字两条记录（zip 里允许，Word 打开就是"文件损坏"）。
+    //   replace 是"有就换掉、没有才追加"，图片那几条新名字自然落到末尾。
+    if (plan) plan.files.forEach(function (u) { files = SR.docx.replace(files, u.name, u.data); });
+    return SR.docx.write(files);
   }
 
   function save(tpl, blocks, filename) {
@@ -96,8 +244,23 @@ SR.produce = (function () {
       var s = ln.replace(/\s+$/, '');
       if (!s.trim()) return;                       // 空行不单独成段：模板自己的空段格式要显式写 `#号`
       var m = /^\s*[#＃]\s*(\d+)\s?(.*)$/.exec(s);
-      if (m) out.push({ slot: +m[1], text: m[2] });
-      else out.push({ slot: null, text: s.trim() });   // 漏了编号 → 落回正文格式
+      if (m) {
+        // ★ 一行要图：`#6 [图] 数轴; A=(-2,0); B=(3,0)`
+        //   带 `#号`（图排在模板的哪一档格式里，一般是居中的那一档），
+        //   后面是画板认的中文命令——**跟「画图」工位同一套方言**，
+        //   模型在那边已经会写了，这儿不用另教一种。
+        //   识别只认**行首的 `[图]`**，宁可严一点：正文里偶尔出现"图"字很常见，
+        //   认宽了会把老师的正文变成一张图。
+        var fm = /^\[图\]\s*(.*)$/.exec(m[2]);
+        if (fm) {
+          // ⚠ 这里只能用 `return`，不能用 `continue`——外头那层是 `forEach` 的**回调**，
+          //   不是循环体。写成 `continue` 整个文件直接 SyntaxError（2026-10-01 实测：
+          //   站点整个白掉，因为 produce.js 一行都执行不了，比"图插不进去"严重得多）。
+          if (fm[1].trim()) out.push({ slot: +m[1], fig: fm[1].trim(), text: '' });
+          return;                                    // `[图]` 后面什么都没有 → 当空行丢掉
+        }
+        out.push({ slot: +m[1], text: m[2] });
+      } else out.push({ slot: null, text: s.trim() });   // 漏了编号 → 落回正文格式
     });
     return out;
   }
@@ -132,6 +295,49 @@ SR.produce = (function () {
     return { body: got.join('\n'), rest: keep.join('\n'), n: got.length };
   }
 
+  // 一段文字有几行（空行不算）。
+  function lineCount(s) {
+    if (!s) return 0;
+    var a = String(s).split(/\r?\n/), n = 0;
+    for (var i = 0; i < a.length; i++) if (a[i].trim()) n++;
+    return n;
+  }
+
+  // ============================================================
+  //  这一轮右栏该摆哪一份？（两条来源比厚度）
+  // ============================================================
+  // ★★ 为什么要有这个函数（2026-10-02 实测，免费通道 glm-4.6v-flash）：
+  //   原来那一档的判据是"**没有围栏才捡**"（`!p.mat.length`）。模型绕过去了，
+  //   而且绕得很难看——它把整份材料写了**三遍**：
+  //     ① 光着写十几行 `#0 … #2 …`（没有围栏）
+  //     ② 开一个 ```材料 围栏，里面**只放那一行 [图]**（围栏有了，旧判据不成立）
+  //     ③ 再把整份重写一遍
+  //   于是：气泡把十几行 `#0 第五周 周练卷` 原样印出来（最难看的那个坏法），
+  //   右栏只摆出一张光图（"最后闭合的围栏"正好是那一行 [图]），卷子一道题都没有——
+  //   文件名还写着"出一份第五周的周练卷….docx"。
+  //
+  //   新判据：**两条来源都拿出来比一比，谁厚用谁**（按行数）。
+  //   `rest` 那一项跟用不用它无关——**编号行永远不许留在气泡里**。
+  //
+  // ★ 为什么单独做成一个纯函数：触发它的那种回复**不是每次都能碰上的**
+  //   （同一句要求，下一次它就规规矩矩只写一个围栏了）。靠重跑模型去碰，
+  //   碰不到就等于没验过。做成纯函数，就能拿当时那份原文当样本反复验。
+  function pickSource(visible, fenced) {
+    var lf = lift(visible);
+    var useLift = lf.n >= LIFT_MIN && lf.n > lineCount(fenced);
+    var from = useLift ? 'lift' : (fenced ? 'fence' : '');
+    return {
+      // ★ 拿掉编号行的条件：**我确实把这些行收走了**（要么捡进了右栏，要么围栏那一份顶着）。
+      //   收都不收还把它们从气泡里抹掉，结果是**气泡整个空掉**——
+      //   老师看到的是一句回复都没有，右栏也没有东西。那比看见两行 `#2 …` 糟得多。
+      //   （实测边界：模型只写一两行编号、又没开围栏，就会走到这儿。）
+      rest: from ? lf.rest : visible,                  // 气泡里该显示的文字
+      n: lf.n,
+      from: from,
+      body: useLift ? lf.body : (fenced || '')
+    };
+  }
+
   // ============================================================
   //  归档前过一道闸：不许悄悄出一份残的
   // ============================================================
@@ -142,6 +348,13 @@ SR.produce = (function () {
     if (!blocks || !blocks.length) bad.push({ at: -1, why: '一个段都没有' });
     (blocks || []).forEach(function (b, i) {
       var t = b && b.text != null ? String(b.text) : '';
+      if (b && b.fig) {
+        // 要图的那一行，只判一件事：**图有没有画出来**。
+        if (!(SR.figures && SR.figures.get(b.fig))) {
+          bad.push({ at: i, why: '这一处要的图还没画出来：' + String(b.fig).slice(0, 24) });
+        }
+        return;
+      }
       if (!t) return;
       if (!SR.omml.balanced(t)) bad.push({ at: i, why: '这一段的 `$` 没配对：' + t.slice(0, 30) });
       if (b.slot === null || b.slot === undefined) {
@@ -242,6 +455,14 @@ SR.produce = (function () {
     var slots = tpl.slots || [];
     var rows = (blocks || []).map(function (b) {
       var t = b && b.text != null ? String(b.text) : '';
+      // 要图的那一行：画好了就把**同一张 PNG**摆出来（跟塞进 docx 的是同一份字节，
+      // 所以"预览里看着对、下载下来不一样"不会发生）；没画好就摆一句实话。
+      if (b && b.fig) {
+        var f = SR.figures && SR.figures.get(b.fig);
+        return '<div class="pv-fig">' + (f
+          ? '<img src="' + f.url + '" alt="配图">'
+          : '<span class="pv-figwait">图还没画出来</span>') + '</div>';
+      }
       if (!t) return '<div class="pv-blank"><i>&nbsp;</i></div>';
       var s = (typeof b.slot === 'number' && slots[b.slot]) ? slots[b.slot] : slots[tpl.bodySlot];
       var jc = s && /w:jc w:val="(\w+)"/.test(s.pPr) ? /w:jc w:val="(\w+)"/.exec(s.pPr)[1] : 'left';
@@ -257,6 +478,7 @@ SR.produce = (function () {
   return {
     build: build, buildXml: buildXml, save: save, check: check,
     parseBlocks: parseBlocks, lift: lift, LIFT_MIN: LIFT_MIN,
+    pickSource: pickSource, lineCount: lineCount,
     previewHtml: previewHtml, inlineHtml: inlineHtml, paraXml: paraXml
   };
 })();

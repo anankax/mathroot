@@ -126,7 +126,13 @@ for (const sha of list) {
   const AUTHOR = ident(RAW, 'author'), COMMITTER = ident(RAW, 'committer');
   const MSG = git(['log', '-1', '--format=%B', sha]).toString('utf8').replace(/\n+$/, '');
 
-  const st = git(['diff', '--name-status', '-z', sha + '^', sha]).toString('utf8').split('\0').filter(Boolean);
+  // ★ `--no-renames` 不能省（2026-10-01 踩到）：`-z` 下每一行的字段数是**会变的**——
+  //   普通变更 `M\0路径\0` 两个字段，改名却是 `R100\0旧路径\0新路径\0` **三个**。
+  //   下面按"两个一读"解析，一碰上改名整串就错位：把旧路径当成了新路径的状态，
+  //   于是对着一个**已经不存在**的路径去 `git cat-file`，
+  //   报 `fatal: path 'js/prompt-demo.js' does not exist`（其实是被当成改名源了）。
+  //   加了这个开关，改名一律拆成"删一个 + 加一个"，字段数恒定，建出来的树一模一样。
+  const st = git(['diff', '--name-status', '--no-renames', '-z', sha + '^', sha]).toString('utf8').split('\0').filter(Boolean);
   const changes = [];
   for (let i = 0; i < st.length; i += 2) changes.push({ st: st[i][0], p: st[i + 1] });
 

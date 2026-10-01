@@ -404,6 +404,18 @@ SR.chat = (function () {
     return s;
   }
 
+  // 本机在气泡底下补的一句（**不是模型说的**）。
+  // ★ 挂在气泡**外面**：气泡的 innerHTML 在流式期间会被整块换掉，
+  //   挂在里面的一句话活不过下一帧。
+  function noteUnder(el, text) {
+    if (!el) return;
+    var p = document.createElement('p');
+    p.className = 'localnote';
+    p.textContent = text;
+    el.appendChild(p);
+    scroll();
+  }
+
   // ---- 收流：正文、围栏、chips 一起更新 ----
   function paint(msg) {
     // ★ 备课／讲评多删一档"整行就是一条画板赋值"的行（掉围栏时漏出来的 A=(-2,0)）。
@@ -421,12 +433,23 @@ SR.chat = (function () {
     // ★ 只捡不猜：`#数字` 顶格开头，在中文正文里不可能是别的东西。
     //   捡回来的照样走 produce 那条路（同一个中间结构 → 右栏预览 + 下载），
     //   所以"围栏写的"和"捡回来的"出的是同一种文件。
-    if (work === 'material' && SR.produce && SR.material && !p.mat.length) {
-      var lf = SR.produce.lift(v);
-      v = lf.rest;                       // ← 无论如何，编号行都不许留在气泡里
-      if (lf.n >= SR.produce.LIFT_MIN) {
-        msg.matFed = SR.material.feed(lf.body, fileTitle(msg.ask, SR.material.current()));
-        msg.matLifted = lf.n;
+    // ⚠ 2026-10-02 改：原来这一档的条件是 `&& !p.mat.length`（"没有围栏才捡"）。
+    //   **那条判据被免费通道那颗模型绕过去了**，而且绕得很难看：
+    //   它这一轮把整份材料写了**三遍**——先光着写十几行 `#0 … #2 …`，
+    //   再开一个 ```材料 围栏里**只放那一行 [图]**，最后把整份又写一遍。
+    //   围栏是有的（新判据不成立），于是：
+    //     · 气泡把十几行 `#0 第五周 周练卷` 原样印出来（最难看的那个坏法）；
+    //     · 右栏只摆出**一张光图**（取的"最后闭合的围栏"正好是那一行 [图]），
+    //       卷子一道题都没有——文件名还写着"出一份第五周的周练卷….docx"。
+    //   现在改成：**两条来源都拿出来比一比，谁厚用谁**（按编号行数）。
+    //   顺带一条不变：编号行**从气泡里一律拿掉**，跟用不用它无关。
+    if (work === 'material' && SR.produce && SR.material) {
+      var pk = SR.produce.pickSource(v, p.mat.length ? p.mat[p.mat.length - 1] : '');
+      v = pk.rest;                       // ← 无论如何，编号行都不许留在气泡里
+      if (pk.from) {
+        msg.matFed = SR.material.feed(pk.body, fileTitle(msg.ask, SR.material.current()));
+        msg.matLifted = pk.n;
+        msg.matFrom = pk.from;           // 'lift' 还是 'fence'——下面那段别再喂一遍
       }
     }
 
@@ -437,6 +460,10 @@ SR.chat = (function () {
     //   这种时候沉默比一句大白话糟得多——**说清东西去哪儿了**就够。
     //   （跟 board.js 的 giveBlank、chips.js 的本地兜底是同一条规矩：
     //     凡是在免费通道上守不住的，都得有本地兜底兜着。）
+    // ★ 为什么这一喂要在**流式当中反复做**（而不是等收完流再一次性摆）：
+    //   一份周练卷两百来行，等收完再出现，老师盯着空右栏要盯十几秒，
+    //   中间还会以为它没在干活。一行行长出来本身就是"它在做"的反馈——
+    //   而且 `feed` 是纯的，重画不花钱。
     if (!v && !msg.streaming && msg.matFed && msg.matFed.ok) {
       v = '这份材料按你传的模板排好了，在右边——预览和下载都在那儿。';
     }
@@ -464,19 +491,10 @@ SR.chat = (function () {
       msg.ggbDone++;
     }
 
-    // 出材料：围栏里的东西直接摆进右栏产物。
-    // ★ 为什么要**在流式当中反复摆**（而不是等收完）：一份周练卷两百来行，
-    //   等收完再一次性出现，老师盯着空右栏要盯十几秒，中间还会以为它没在干活。
-    //   一行行长出来，本身就是"它在做"的反馈——而且 `feed` 是纯的，重画不花钱。
-    // ★ 只有**最后闭合的那个围栏**算数（`p.mat.length - 1`）：模型偶尔会先写一稿再重写，
-    //   取最后一个才跟对话里最后那段话对得上。
-    if (p.mat.length && SR.material && work === 'material') {
-      var body = p.mat[p.mat.length - 1];
-      // 拿最后一条老师说的话当文件名的主体，别用模板名——一周一份，
-      // 全叫「周练卷模板.docx」的话，下载三次就分不清哪个是哪个了。
-      var title = fileTitle(msg.ask, SR.material.current());
-      msg.matFed = SR.material.feed(body, title);
-    }
+    // ⚠ 原来这里还有一段「摆最后一个闭合的围栏」，2026-10-02 挪走了。
+    //   现在**只有上面那一处**做决定（`SR.produce.pickSource`：两条来源比厚度），
+    //   两处都喂的话，后喂的那一份会把先喂的对的一份顶掉——实测就是这么
+    //   把一份完整卷子顶成"一张光图"的。
 
     // chips 等收完再出，免得半截就被点了
     msg.lastSay = p.say;
@@ -567,6 +585,19 @@ SR.chat = (function () {
         // 档位进度条：判的是**这一轮它问出口的那句话**——模型跳到哪一档是它自己按学生
         // 答话定的，只有它问出来的那句话能证明它到了哪儿（见 chips.js 的 SR.inferStep）。
         paintStepBar(SR.inferStep({ prevAssistant: String(res.text || ''), first: isFirstTurn, lastUser: text }));
+        // 出材料：收完流了，**现在才画配图**（流式期间只摆文字，理由见 material.js 的 finish）。
+        // ★ 放在这儿而不是 paint() 里：paint 每收到一截就调一次，
+        //   在那儿画会让画板反复重画几十遍。
+        if (work === 'material' && SR.material && msg.matFed && msg.matFed.ok) {
+          SR.material.finish(function (r) {
+            // 有图没画出来 → 那一行已经撤掉了，但**得说一声**：
+            // 悄悄少一张图，老师翻到那道题才发现，那时候他已经印了。
+            if (r && r.dropped) {
+              noteUnder(el, '有 ' + r.dropped + ' 张图没画出来，那几行我撤掉了——'
+                + '要么把题目里要画的东西说得再具体点，要么去画板那边自己画好、存图贴进来。');
+            }
+          });
+        }
         // 出题工位：这一轮带了几张图，就在气泡下面挂几个切换钮（见 attachFigSwitch）。
         // ★ 收完流再挂，不在 paint() 里挂——流式当中围栏是一块一块闭合的，
         //   在那儿挂会看着按钮一个个往外蹦。

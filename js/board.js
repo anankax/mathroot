@@ -145,6 +145,14 @@ SR.board = (function () {
   }
 
   var pendingLines = null;
+
+  // 画板上还有没有活。★ 只留**这一处**定义，导出给外面的 `isBusy` 和 draw() 内部
+  //   判"画完了没有"用的是同一个函数。
+  //   ⚠ 2026-10-02 栽过一跤：draw() 里直接写了 `isBusy()`——这个名字在模块作用域里
+  //     **根本不存在**（它只是返回对象上的一个属性），于是每一张图都在
+  //     第一轮轮询就抛 ReferenceError。同一件事抄两遍迟早会分叉，索性只留一处。
+  function busyNow() { return queueLeft > 0 || !!pendingLines; }
+
   function flushPending() {
     if (pendingLines) { var p = pendingLines; pendingLines = null; run(p); }
   }
@@ -229,6 +237,88 @@ SR.board = (function () {
         cb(c.toDataURL('image/png'));
       } catch (e) {
         if (window.console) window.console.warn('exportPNG 失败：', e);
+        cb('');
+      }
+    };
+    im.src = src;
+  }
+
+  // ---- 按一组命令画好，**画完了再回话** ----
+  //
+  // ★ 为什么不直接用 run()：run() 是**排队即返回**的——每条命令隔 550ms 才放出去，
+  //   调用方拿到返回值的那一刻，画板上还什么都没有。这时候去 toPNG，
+  //   导出的是**上一张图**（或者一张空白）。出材料要"画完这张再画下一张"，
+  //   所以非有一个"我画完了"的回话不可。
+  // ★ 上限给足（一张复杂的图十几条命令也就十来秒），但也必须有上限：
+  //   画板要是卡住，不能让整份材料跟着一起卡死——超时就当这张画不出来，
+  //   由调用方决定怎么办（出材料那边的做法是：这张图撤掉，并告诉老师）。
+  var DRAW_MAX = 30000;
+  function draw(lines, cb) {
+    var t0 = Date.now(), done = false, hard = null;
+    function fin(ok) { if (done) return; done = true; clearTimeout(hard); cb(ok); }
+    hard = setTimeout(function () { fin(false); }, DRAW_MAX);
+    run(lines);
+    (function wait() {
+      if (done) return;
+      // ★ 判"画完了"要问两件事：就绪了没有、队列里还有没有东西。
+      //   只看 isBusy() 的话，画板还没就绪时队列是空的，会被判成"早就画完了"。
+      if (ready && !busyNow()) {
+        // 再留一帧：exec 里最后一条是 evalCommand，GeoGebra 画到画布上要一点时间。
+        setTimeout(function () { fin(true); }, 160);
+        return;
+      }
+      if (Date.now() - t0 > DRAW_MAX) { fin(false); return; }
+      setTimeout(wait, 150);
+    })();
+  }
+
+  // ---- 出一张**干净的**图：不烧署名、按内容裁掉四周空白 ----
+  //
+  // ★ 跟 exportPNG（工具条"存图"那条路）分开，因为两边的要求是**反的**：
+  //   "存图"是给人拿去用的，署名必须烧进去（防"截图当自己的作品"）；
+  //   而插进卷子里的图是**老师自己那份材料的一部分**，会印到每个学生手上——
+  //   右下角挂一行 KAX，是给全班看的广告，不能这么干。
+  // ★ 顺手裁边：画板是个方方正正的格子，图往往只占中间一条。
+  //   不裁的话，卷子上会出现"图很小、周围一大片空"的怪样子。
+  //   裁的判据是"这一圈像不像空白"，**只裁白边，不动内容**。
+  function shoot(cb) {
+    var raw = toPNG();
+    if (!raw) { cb(''); return; }
+    var src = /^data:/.test(raw) ? raw : 'data:image/png;base64,' + raw;
+    var im = new Image();
+    im.onerror = function () { cb(''); };
+    im.onload = function () {
+      try {
+        var c = document.createElement('canvas');
+        c.width = im.width; c.height = im.height;
+        var g = c.getContext('2d');
+        g.drawImage(im, 0, 0);
+        var d = g.getImageData(0, 0, im.width, im.height).data;
+        var x0 = im.width, y0 = im.height, x1 = -1, y1 = -1;
+        for (var y = 0; y < im.height; y++) {
+          for (var x = 0; x < im.width; x++) {
+            var i = (y * im.width + x) * 4;
+            // 阈值别抠太紧：抗锯齿的浅灰也要算成内容，
+            // 不然数轴那根细线的两端会被裁掉一小截。
+            if (d[i] < 245 || d[i + 1] < 245 || d[i + 2] < 245) {
+              if (x < x0) x0 = x;
+              if (x > x1) x1 = x;
+              if (y < y0) y0 = y;
+              if (y > y1) y1 = y;
+            }
+          }
+        }
+        if (x1 < 0) { cb(''); return; }          // 整张全白＝什么都没画出来
+        var pad = 10;
+        x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad);
+        x1 = Math.min(im.width - 1, x1 + pad); y1 = Math.min(im.height - 1, y1 + pad);
+        var w = x1 - x0 + 1, h = y1 - y0 + 1;
+        var o = document.createElement('canvas');
+        o.width = w; o.height = h;
+        o.getContext('2d').drawImage(c, x0, y0, w, h, 0, 0, w, h);
+        cb(o.toDataURL('image/png'), w, h);
+      } catch (e) {
+        if (window.console) window.console.warn('shoot 失败：', e);
         cb('');
       }
     };
@@ -430,6 +520,7 @@ SR.board = (function () {
 
   return {
     init: init, run: run, clear: clear, redraw: redraw, giveBlank: giveBlank,
+    draw: draw, shoot: shoot,
     togglePlay: togglePlay, stopPlay: stopPlay,
     toPNG: toPNG, exportPNG: exportPNG,
     isReady: function () { return ready; },
@@ -442,7 +533,7 @@ SR.board = (function () {
       return is3D;
     },
     // 还有命令排着队没执行完吗（测试和"重画"按钮都用得上）
-    isBusy: function () { return queueLeft > 0 || !!pendingLines; },
+    isBusy: busyNow,
     translate: translate            // 给测试用：看中文命令翻成了什么
   };
 })();

@@ -1171,6 +1171,16 @@ footer .r {
 }
 .pv-p { margin: 0; }
 .pv-blank { height: 1.1em; }
+/* 配图那一段。★ 给 img 一个宽度上限，跟 docx 那边的 FIG_MAX_W（约 9.4cm）对齐——
+   两边算的不是同一个数的话，预览里图占半页、印出来只有巴掌大，老师会以为哪儿错了。
+   预览是 12pt 正文，9.4cm ≈ 355px。 */
+.pv-fig { text-align: center; margin: 4px 0; }
+.pv-fig img { max-width: 355px; max-height: 250px; height: auto; }
+.pv-figwait { font-size: 11px; color: var(--ink-3); }
+/* 画图进度。★ 一句实话：这几秒里右栏是"半成品"，不说清楚老师会以为卡住了。 */
+p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
+/* 本机在气泡底下补的一句（不是模型说的）。压暗一档，跟气泡里的话区分开。 */
+.localnote { margin: 5px 0 0 2px; font-size: 11.5px; color: var(--ink-3); line-height: 1.6; }
 .pvwrap .mth { font-family: 'Cambria Math', 'Times New Roman', serif; font-style: italic; }
 .pvwrap .mth sup, .pvwrap .mth sub { font-size: .72em; }
 /* 分数：预览里用上下叠的两行 + 一条横线，跟 Word 里那个形状对得上。

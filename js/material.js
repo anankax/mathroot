@@ -15,6 +15,7 @@ var SR = (window.SR = window.SR || {});
 SR.material = (function () {
 
   var cur = null;          // 当前选中的模板（模板对象，见 SR.tpl.parse 的返回值）
+  var lastFeed = null;     // 最近一次喂进来的 { body, title }，收完流之后画配图要用
 
   function $(id) { return document.getElementById(id); }
   function esc(t) {
@@ -253,9 +254,12 @@ SR.material = (function () {
   // 把一份材料摆到右栏。★ 用 SR.produce 生成的是**同一份 blocks**——
   //   右栏预览和下载下来的 docx 出自同一个中间结构，所以
   //   "预览里看着对、下载下来不对"这种事不会发生。
-  function show(tpl, blocks, title) {
+  function show(tpl, blocks, title, note) {
     var box = $('out');
     if (!box || !SR.produce) return null;
+    // ★ 打包放在更新 DOM **之前**：现在图是字节，进 `SR.docx.write` 那一步。
+    //   顺序反了的话，界面先显示出"已就绪"，文件其实还没拼出来；
+    //   中间要是抛错，老师看到的就是"右栏好端端的、点下载没反应"。
     var blob = SR.produce.build(tpl, blocks);
     var bad = SR.produce.check(tpl, blocks);
     var name = (title || tpl.name || '材料') + '.docx';
@@ -267,6 +271,7 @@ SR.material = (function () {
     +     '<button type="button" class="tool primary" id="outdl">下载 .docx</button>'
     +   '</div>'
     + '</div>'
+    + (note ? '<p class="figwait">' + esc(note) + '</p>' : '')
     + (bad.length
         ? '<p class="err">有 ' + bad.length + ' 处要修：' + esc(bad.map(function (b) { return b.why; }).join('；')) + '</p>'
         : '')
@@ -297,8 +302,50 @@ SR.material = (function () {
     if (!SR.produce) return { ok: false, why: '出材料的模块没装上' };
     var blocks = SR.produce.parseBlocks(body);
     if (!blocks.length) return { ok: false, why: '空的' };
+    lastFeed = { body: body, title: title };
     show(cur, blocks, title);
     return { ok: true, n: blocks.length, bad: SR.produce.check(cur, blocks) };
+  }
+
+  // ============================================================
+  //  收完流之后：把这一轮要的配图画出来
+  // ============================================================
+  // ★ 为什么**不能**放在 feed 里顺手做：feed 在流式当中每收到一截正文就被调一次，
+  //   而画一张图要几秒（命令 550ms 一条排着走）。在 feed 里画，一份两百行的卷子
+  //   会让画板反复重画几十遍——老师看着画板抽风，卷子半天出不来。
+  //   所以分成两拍：**流式期间只摆文字**（要图的那一行先摆一句"图还没画出来"），
+  //   **收完流再画**，画完把右栏重摆一遍。
+  //
+  // ★ 一张没画出来就**把那一行撤掉**，绝不硬塞：卷子上写着"如图"、后面空着，
+  //   是比少一道题更坏的坏法。撤了要**说给老师听**（返回值里的 dropped）。
+  function dropDeadFigs(blocks) {
+    var out = [], dropped = 0;
+    (blocks || []).forEach(function (b) {
+      if (b && b.fig && !(SR.figures && SR.figures.get(b.fig))) { dropped++; return; }
+      out.push(b);
+    });
+    return { blocks: out, dropped: dropped };
+  }
+
+  function finish(cb) {
+    if (!cur || !lastFeed || !SR.produce || !SR.figures) { if (cb) cb(null); return; }
+    var body = lastFeed.body, title = lastFeed.title;
+    var blocks = SR.produce.parseBlocks(body);
+    var st = SR.figures.stats(blocks);
+    if (!st.need || st.ok === st.need) { if (cb) cb({ need: st.need, dropped: 0 }); return; }
+
+    SR.figures.drawAll(blocks,
+      function (i, n) {                       // 每画完一张，把进度摆出来
+        // ★ 这儿得**重新解析** lastFeed.body：模型流式期间可能又补了几行，
+        //   拿着画图开始时那一份重画，会把后长出来的东西吃掉。
+        show(cur, SR.produce.parseBlocks(lastFeed.body), title,
+             '正在画第 ' + i + '/' + n + ' 张图…');
+      },
+      function () {
+        var rt = dropDeadFigs(SR.produce.parseBlocks(lastFeed.body));
+        show(cur, rt.blocks, title);
+        if (cb) cb({ need: st.need, dropped: rt.dropped });
+      });
   }
 
   // 点按钮的分发（事件委托，paint 重画之后不用重新绑）
@@ -311,7 +358,8 @@ SR.material = (function () {
   });
 
   return {
-    open: open, use: use, drop: drop, show: show, slotBrief: slotBrief, feed: feed,
+    open: open, use: use, drop: drop, show: show, slotBrief: slotBrief,
+    feed: feed, finish: finish,
     restore: restore,
     current: function () { return cur; },
     setCurrent: function (t) { cur = t; }
