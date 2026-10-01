@@ -391,7 +391,14 @@ SR.chat = (function () {
       pendingImage = null; el.innerHTML = ''; el.style.display = 'none';
     });
     el.appendChild(im); el.appendChild(x);
-    el.style.display = '';
+    // ★ 这里必须写死 `block`，**不能**写 `el.style.display = ''`（2026-10-01 实测的 bug）。
+    //   清空行内样式 = 让**样式表**说了算，而 `#thumb` 在 main.css:198 就是 `display:none`。
+    //   于是：图上去了、`#thumb img` 也在、探针量到的 len 也不为 0，**屏幕上就是看不见**。
+    //   学生的感受是"我拍了照，什么反应都没有"，看不见自己贴的是哪张，也没法点 × 撤掉。
+    //   ⚠ 判断"清除行内样式能不能显示"要看这条 `display:none` 在哪儿：
+    //     写在 HTML 的 style 属性里（#resbtn、#btn-play）→ 清掉就显；
+    //     写在样式表里（#thumb）→ 清掉反而按样式表藏起来。两者长得一样，结果相反。
+    el.style.display = 'block';
   }
 
   function onPick(file) {

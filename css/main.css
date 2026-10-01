@@ -52,7 +52,13 @@ header {
   box-shadow: 0 1px 0 rgba(39,122,86,.05);
 }
 
-.brand { display: flex; align-items: center; gap: 9px; margin-right: auto; min-width: 0; }
+/* ★ `flex: 0 0 auto` 不能省（2026-10-01 手机实测）：不写就是默认的 `0 1 auto`，
+   顶栏一挤它**可以被压到 0 宽**——logo、站名、by KAX 一起消失得干干净净。
+   在 390px 宽的手机上就长这样：顶栏只剩"学生模式/教师演示模式/关于/Key"，
+   左边露出半截被切掉的 logo，「数根」两个字没了。
+   这跟"不让人盗用"正好相反：手机上看这一页，页面上根本没写是谁做的。
+   ⚠ 里面的 .sub 还要能被省略号截断，所以 min-width:0 得留着。 */
+.brand { display: flex; align-items: center; gap: 9px; margin-right: auto; min-width: 0; flex: 0 0 auto; }
 .brand .logo { width: 30px; height: 30px; flex: 0 0 auto; display: block; }
 /* nowrap + 不压缩：顶栏一挤，「数根」两个字会被从中间折断成竖排（实测截到过） */
 .brand .name { font-size: 21px; font-weight: 700; letter-spacing: .5px; color: var(--brand); white-space: nowrap; flex: 0 0 auto; }
@@ -218,7 +224,16 @@ body[data-mode="demo"] #send { background: var(--demo); }
 .viewbtn.on { background: var(--brand); color: #fff; font-weight: 600; }
 
 .boardwrap { position: relative; flex: 1 1 auto; min-height: 0; display: flex; }
-#ggb { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 8px; }
+/* ★ `min-height: 0` 是这里的关键，别删（2026-10-01 手机实测）：
+   flex 子项默认 `min-height: auto`——**它撑不过内容**。于是 applet 说多高、
+   它就有多高，而画板又是照它的高度去量的：`fit()` 量到 240，就给 applet 设 240，
+   容器再被顶高，下一轮再量更大……自己咬自己。手机上是 347×240 塞进 361×224，
+   `#ggb` 又是 overflow:hidden，底下一条被切掉。
+   父级 `.boardwrap` 早就有 min-height:0，**子级漏了**。宽度同理，一起写。 */
+#ggb {
+  flex: 1 1 auto; min-height: 0; min-width: 0;
+  display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 8px;
+}
 #ggb .applet_scaler { margin: 0 auto; }
 
 /* 画板水印。★ 这一档是真正防"截图当自己的作品"的：
@@ -322,5 +337,14 @@ footer {
 @media (max-width: 900px) {
   main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
   .backs { display: none; }          /* 挤不下就不显；设置面板里照样能切 */
-  header { gap: 8px; padding: 8px 12px; }
+  /* ★ 顶栏改成两行：第一行整行给"logo＋数根＋by KAX"，第二行才是那些按钮
+     （2026-10-01 手机实测）。一行排不下时，光把 .brand 设成不许压缩是没用的——
+     它不缩了，别的按钮就被挤出屏幕外，还是得横着拖。让它独占一行最省事。
+     代价：手机上顶栏高一档。换来的是**页面上始终写着这是谁做的**。 */
+  header { gap: 8px; padding: 8px 12px; flex-wrap: wrap; row-gap: 7px; }
+  /* 别写 `.brand { flex-basis: 100% }`——那会让品牌独占一行，剩下的按钮再排两行，
+     顶栏变成三行，最后一行只剩一个"免费通道"，看着像没做完（截到过）。
+     让它自然回卷：排得下就排在站名右边，排不下才整块挪到下一行。 */
+  .brand { margin-right: 0; }
+  .modes { margin-right: auto; }     /* 后面那些按钮往右推，跟桌面一个观感 */
 }

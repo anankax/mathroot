@@ -239,11 +239,24 @@ SR.board = (function () {
   var hostId = null;
 
   // 画板跟着容器走，别写死尺寸——投影仪、笔记本、半屏，窗口大小都不一样
+  //
+  // ★ 量的是**外面那个盒子**（.boardwrap），不是 `#ggb` 自己（2026-10-01 手机实测）。
+  //   GeoGebra 的 `inject()` 会把尺寸**写回容器本身**——`#ggb` 上一直挂着行内样式
+  //   `width: 347px; height: 232px;`。于是"照容器的高度算 → 再写回容器"成了自问自答：
+  //   量到的永远是上一轮写进去的数，容器再被顶大一点，下一轮量到更大……收敛不了。
+  //   手机上的表现是 applet 232px 塞进 224px 的格子，`#ggb` 又是 overflow:hidden，底下切掉一条。
+  //
+  // ★ 两个下限是"容器小到离谱时别算出 0 或负数"，**不是**"保证至少多大"。
+  //   原来写 320/240，比手机能给的高度还高，直接被顶穿。宁可让它小，也别让它溢出。
   function fit() {
     var c = hostId && document.getElementById(hostId);
     if (!c) return [SR.GGB_WIDTH, SR.GGB_HEIGHT];
-    var w = Math.max(320, Math.floor(c.clientWidth - 14));
-    var h = Math.max(240, Math.floor(c.clientHeight - 14));
+    var box = c.parentElement || c;
+    var cs = window.getComputedStyle(c);
+    var px = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+    var py = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    var w = Math.max(240, Math.floor(box.clientWidth - px - 2));
+    var h = Math.max(160, Math.floor(box.clientHeight - py - 2));
     return [w, h];
   }
 
@@ -343,16 +356,32 @@ SR.board = (function () {
     }, true);
     app.inject(containerId);
 
-    // 窗口一变，画板跟着变
-    var t = null;
-    window.addEventListener('resize', function () {
+    // 容器一变，画板跟着变
+    var t = null, lastW = 0, lastH = 0;
+    function refit() {
       clearTimeout(t);
       t = setTimeout(function () {
         if (!api) return;
         var n = fit();
+        // 尺寸没真变就别喊 setSize —— 它自己会改 DOM，不设这道闸容易和下面那个
+        // ResizeObserver 互相触发个没完。
+        if (n[0] === lastW && n[1] === lastH) return;
+        lastW = n[0]; lastH = n[1];
         try { api.setSize(n[0], n[1]); } catch (e) {}
       }, 220);
-    });
+    }
+    window.addEventListener('resize', refit);
+    // ★ 光听 window.resize 不够（2026-10-01 手机实测）：顶栏在窄屏上会回卷成两行、
+    //   字体后到会改行高——这些都会让盒子变矮，**但不触发 window.resize**。
+    //   结果就是 applet 比容器高出一截（实测手机上是 347×240 塞进 361×224），
+    //   而 `#ggb` 是 overflow:hidden，底下那一条被切掉，画板看着像没画完。
+    //   盯着这个盒子本身，谁把它改了都算数。
+    if (window.ResizeObserver) {
+      try {
+        var box = document.getElementById(containerId);
+        if (box) new ResizeObserver(refit).observe(box);
+      } catch (e) {}
+    }
   }
 
   // ---- 学生说"画不出来"，而模型没给围栏 → 本地递一把尺子 ----

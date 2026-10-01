@@ -139,8 +139,20 @@ function put(p) {
       len: (document.querySelector("#thumb img")||{}).src ? document.querySelector("#thumb img").src.length : 0
     })`);
   console.log('缩略图:', picked);
+  // ★ 量三样，一样都不能省（2026-10-01 补）：
+  //   图**在不在 DOM 里**（len）、**显没显示出来**（thumb）、**是不是给学生的**（src 前缀）。
+  //   原来只判 len —— 于是缩略图明明 `display:none` 挂在屏幕上，
+  //   探针把 `"thumb":"none"` 原样打印出来，然后**照样报通过**。
+  //   学生的感受是"我拍了照，什么反应都没有"：看不见贴的哪张，也没法点 × 撤掉。
+  //   检测脚本打了数字却没判那个数字，等于没测——这条要求对后面几样同样有效。
   if (!picked || picked === 'null' || /"len":0/.test(picked)) {
     console.log('★ 图没进输入框——先修这一步，别往下测');
+    process.exit(1);
+  }
+  if (/"thumb":"none"/.test(picked)) {
+    console.log('★ 图进去了、但**没显示出来**：`#thumb` 是 display:none。');
+    console.log('  查那个"显示它"的地方：清行内样式（style.display = ""）对写在**样式表**里的');
+    console.log('  display:none 是没用的，得写死 display:block。');
     process.exit(1);
   }
 
