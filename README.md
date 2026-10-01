@@ -172,6 +172,23 @@ node test/e2e.cjs demo 90 "画个数轴，带个动点 P"
 
 `main` 分支根目录，`git push` 一两分钟生效。没有 CI、没有构建步骤。
 
+**github.com 连不上的时候**（国内网络常见的连接重置，`git push` 和 `curl github.com`
+都是 21 秒超时），`api.github.com` 往往还是通的，就用
+
+```bash
+node test/push_via_api.cjs        # 推 HEAD 到 origin/main
+DRY=1 node test/push_via_api.cjs  # 只造对象、到改 ref 前停下，拿来核对
+```
+
+它绕开 git 的传输层，走 GitHub 的 Git Data API 自己拼 blob → tree → commit → ref，
+身份／时间戳／树／父提交全从本地提交对象里读出来原样传过去。
+跑完会**逐字节自检**：重造一颗提交、sha 必须和远端那颗一模一样，对不上就报错、
+本地 refs 一个字都不改。远端不是快进关系它也会拒绝（`exit 4`）。
+
+两个实测的坑记在脚本注释里：API 要 ISO 的 `+08:00` 而 git 对象头写的是 `+0800`；
+GET 回来的 `author.date` 显示成 `Z`（UTC），但对象里存的还是原来的时区——
+照着显示值重造，sha 永远对不上。
+
 ## 踩过的坑
 
 ### 画板（GeoGebra）
