@@ -21,7 +21,8 @@ if (/^(student|demo)$/.test(ARGS[0]) || /^\d+$/.test(ARGS[0])) {
 }
 if (!SAYS.length) SAYS = ['老师，这道题我不会：比较 -2 和 1 的大小。'];
 const SR_GAP = 1500;   // 轮与轮之间喘口气，等画板的逐条出图跑完
-const PAGE = 'http://localhost:8138/index.html';
+// 默认打本地；要验线上就 SR_PAGE=https://anankax.github.io/mathroot/ node test/e2e.cjs …
+const PAGE = process.env.SR_PAGE || 'http://localhost:8138/index.html';
 
 const KEY = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'settings.json'), 'utf8'))
   .env.ANTHROPIC_AUTH_TOKEN;
