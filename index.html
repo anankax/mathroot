@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>数根 · 初中数学错题复盘</title>
+<meta name="description" content="只问不答的初中数学错题复盘助手，带一块随讲随画的互动画板。">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231f7a5a'/><text x='16' y='23' font-size='19' text-anchor='middle' fill='%23fff' font-family='sans-serif'>根</text></svg>">
+
+<link rel="stylesheet" href="css/main.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+
+<!-- 第三方库（全部 CDN，本地不落 vendor） -->
+<script defer src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script defer src="https://www.geogebra.org/apps/deployggb.js"></script>
+
+<!-- 本项目（按依赖顺序） -->
+<script defer src="js/config.js"></script>
+<script defer src="js/prompt-student.js"></script>
+<script defer src="js/prompt-demo.js"></script>
+<script defer src="js/textbook.js"></script>
+<script defer src="js/retrieve.js"></script>
+<script defer src="js/api.js"></script>
+<script defer src="js/render.js"></script>
+<script defer src="js/board.js"></script>
+<script defer src="js/chat.js"></script>
+<script defer src="js/main.js"></script>
+</head>
+
+<body data-mode="student">
+
+<header>
+  <div class="brand">
+    <span class="name">数根</span>
+    <span class="sub">初中数学错题复盘 · 只问不答，问到你自己说出来</span>
+  </div>
+  <div class="modes">
+    <button type="button" class="modebtn on" data-mode="student">学生模式</button>
+    <button type="button" class="modebtn"    data-mode="demo">教师演示模式</button>
+  </div>
+  <span id="badge">只问不答 · 不给答案</span>
+  <button type="button" class="tool" id="keybtn">Key</button>
+</header>
+
+<main>
+  <!-- 左：对话 -->
+  <section class="col">
+    <div id="msgs"></div>
+    <div id="thumb"></div>
+    <div id="chips"></div>
+    <div class="composer">
+      <button type="button" id="attach" title="上传错题或解答的照片（也可以直接粘贴截图）">📷</button>
+      <input type="file" id="file" accept="image/*" capture="environment" style="display:none">
+      <textarea id="input" rows="1" placeholder="把做错的题贴进来，再说说你当时是怎么想的……"></textarea>
+      <button type="button" id="send">发送</button>
+    </div>
+  </section>
+
+  <!-- 右：画板 -->
+  <section class="col">
+    <div class="boardbar">
+      <span class="t">画板</span>
+      <button type="button" class="tool" id="btn-play" style="display:none">▶ 播放</button>
+      <button type="button" class="tool" id="btn-redraw">重画</button>
+      <button type="button" class="tool" id="btn-clear">清空</button>
+    </div>
+    <div id="ggb"></div>
+    <div id="status"></div>
+  </section>
+</main>
+
+<div id="demoflag" style="display:none">教师演示模式</div>
+
+<!-- Key 设置层 -->
+<div id="keyset">
+  <div class="box">
+    <h2>先填一个 DeepSeek Key</h2>
+    <p>
+      数根是一个纯静态网页，<strong>自己不带任何密钥</strong>，得用你自己的 DeepSeek Key 去调模型。
+      Key 只存在<strong>这台电脑的浏览器里</strong>（localStorage），不会发给别人，也不会写进网页。
+      换台电脑、换个浏览器，要重新填一次。
+    </p>
+    <p>
+      没有 Key 的话，去 <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">platform.deepseek.com</a>
+      注册后建一个，形如 <code>sk-…</code>。
+    </p>
+    <input id="keyinput" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false">
+    <p id="keyerr"></p>
+    <div class="row">
+      <button type="button" class="tool" id="keyforget">忘掉 Key</button>
+      <button type="button" class="tool primary" id="keysave">保存</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

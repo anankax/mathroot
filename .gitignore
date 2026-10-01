@@ -1,0 +1,3 @@
+# 测试跑出来的图，不进仓库
+test/_*.png
+test/_prompt-student.txt
