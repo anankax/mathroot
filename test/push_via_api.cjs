@@ -128,6 +128,15 @@ if (DRY) { console.log('\nDRY=1：到此为止，没动 refs。要真推就去�
 
 git(['update-ref', 'refs/heads/' + BRANCH, back.sha]);
 git(['update-ref', 'refs/remotes/origin/' + BRANCH, back.sha]);
+// ★ 本地这颗被换成远端那颗，sha 会变（树一模一样，只是结尾差个换行）。
+//   不印出来的话，用的人看到上面"本地提交"和"远端提交"是两个 sha，
+//   下面又写"同一颗"，会以为脚本在自相矛盾——我自己就先愣了一下。
+//   旧的 sha 还在 reflog 里，`git reflog` 找得回来。
+if (back.sha !== HEAD) {
+  console.log('\n★ 本地 ' + BRANCH + ' 已改指到远端那颗（' + HEAD.slice(0, 8) + ' → ' + back.sha.slice(0, 8) + '）。');
+  console.log('  原因：`git commit` 造的正文末尾带一个换行，GitHub 存的没有——内容一样，sha 就不一样。');
+  console.log('  树上面已经逐字比过了。旧的 sha 在 reflog 里，要回退 `git reflog` 找。');
+}
 const r = gh('PATCH', 'repos/' + REPO + '/git/refs/heads/' + BRANCH, { sha: back.sha, force: false });
 console.log('\n远端 refs/heads/' + BRANCH + ' → ' + r.object.sha);
 // ★ 这里比的是 back.sha（上面刚对齐过的那颗），不是 HEAD。
