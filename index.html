@@ -34,6 +34,7 @@
 <script defer src="js/api.js"></script>
 <script defer src="js/render.js"></script>
 <script defer src="js/chips.js"></script>
+<script defer src="js/resources.js"></script>
 <script defer src="js/board.js"></script>
 <script defer src="js/chat.js"></script>
 <script defer src="js/main.js"></script>
@@ -62,6 +63,10 @@
     <button type="button" class="backbtn"    data-backend="deepseek"><span class="dot"></span>用自己的 Key</button>
   </div>
 
+  <!-- 本地素材（后备资源）。★ 只在孔老师本机跑起来的页面上才会冒出来：
+       索引文件 js/resource-index.js 是本地生成的、被 .gitignore 挡着，公开站上没有它，
+       按钮就一直藏着，客户看不到。见 js/resources.js 顶上那段。 -->
+  <button type="button" class="tool" id="resbtn" style="display:none">素材</button>
   <button type="button" class="tool" id="aboutbtn">关于</button>
   <button type="button" class="tool" id="keybtn">Key</button>
 </header>
@@ -164,6 +169,25 @@
       <button type="button" class="tool" id="keyfree">免费通道就行</button>
       <button type="button" class="tool" id="keyforget">忘掉 Key</button>
       <button type="button" class="tool primary" id="keysave">保存并使用</button>
+    </div>
+  </div>
+</div>
+
+<!-- 本地素材（后备资源）——只在本机出现。里面是"哪一节手上有哪些文件"，
+     不显示、也不检索素材内容本身。 -->
+<div class="overlay" id="reslist">
+  <div class="box wide">
+    <h2>本地素材</h2>
+    <p>
+      这一份<strong>只在本机有</strong>：扫的是本机的课件、教案、例题册，记的是
+      <strong>哪一节手上有哪些文件</strong>。素材本身的著作权不在我们手上，
+      所以它不随公开站发布，公开站上也没有这个按钮。
+    </p>
+    <input id="resq" type="text" placeholder="搜节号或知识点，例如 2.3、绝对值、学科网" autocomplete="off">
+    <p id="resmeta"></p>
+    <div id="resrows"></div>
+    <div class="row">
+      <button type="button" class="tool primary" data-close="reslist">关了</button>
     </div>
   </div>
 </div>

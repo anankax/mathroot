@@ -102,6 +102,71 @@ SR.main = (function () {
     for (var i = 0; i < all.length; i++) all[i].classList.remove('open');
   }
 
+  // ---- 本地素材面板 ----
+  // 列的是"哪一节手上有哪些文件"，不碰素材内容（见 js/resources.js 顶上的边界说明）。
+  function openResources() {
+    openOverlay('reslist');
+    paintResources($('resq') ? $('resq').value : '');
+    var q = $('resq');
+    if (q) { q.focus(); q.select(); }
+  }
+
+  function paintResources(q) {
+    var box = $('resrows'), meta = $('resmeta');
+    if (!box) return;
+    var rows = SR.resources.find(q);
+    if (meta) {
+      meta.textContent = '共 ' + SR.resources.total() + ' 个文件（' + SR.resources.when() + ' 扫的）' +
+        (q ? '，这次筛出 ' + rows.length + ' 个' : '');
+    }
+    box.innerHTML = '';
+    if (!rows.length) {
+      var p = document.createElement('p');
+      p.className = 'resempty';
+      p.textContent = '没筛出来。试试节号（2.3）或者知识点（绝对值、勾股定理），也可以直接搜"学科网""葛""胡小群"。';
+      box.appendChild(p);
+      return;
+    }
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var el = document.createElement('div');
+      el.className = 'resrow';
+      var head = document.createElement('div');
+      head.className = 'reshape';
+      head.textContent = (r.册 ? r.册 + ' · ' : '') + (r.节 ? r.节 + ' ' : '') + r.名 + '（' + r.型 + '）';
+      var src = document.createElement('span');
+      src.className = 'ressrc';
+      src.textContent = r.源;
+      head.appendChild(src);
+      var path = document.createElement('code');
+      path.className = 'respath';
+      // 相对路径补上基准目录，直接粘到资源管理器就能找到
+      path.textContent = /^[A-Za-z]:\\/.test(r.路径) ? r.路径 : SR.resources.base() + '\\' + r.路径;
+      path.title = '点一下复制这个路径';
+      path.addEventListener('click', function (p) {
+        return function () {
+          var t = p.textContent;
+          var done = function () { p.classList.add('copied'); setTimeout(function () { p.classList.remove('copied'); }, 900); };
+          // navigator.clipboard 在 http://localhost 下能用；万一不行还有老办法，
+          // 都没有就让用户自己选中——所以要 title 提示它。
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(t).then(done, function () { selectNode(p); });
+          } else selectNode(p);
+        };
+      }(path));
+      el.appendChild(head);
+      el.appendChild(path);
+      box.appendChild(el);
+    }
+  }
+
+  function selectNode(n) {
+    try {
+      var r = document.createRange(); r.selectNodeContents(n);
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    } catch (e) { /* 选不中就算了，路径本来就看得见 */ }
+  }
+
   // ============================================================
   //  启动
   // ============================================================
@@ -142,6 +207,21 @@ SR.main = (function () {
 
     // ---- 顶栏按钮 ----
     $('aboutbtn').addEventListener('click', function () { openOverlay('about'); });
+
+    // ---- 本地素材（后备资源）----
+    // ★ 按钮平时是藏着的。只有本机那份索引真在、真读进来了，才让它露面——
+    //   公开站上没有那个文件，客户那边从头到尾看不到这个按钮。
+    //   探一下是首页之后才做的，不挡开机。
+    var rb = $('resbtn');
+    if (rb) {
+      rb.addEventListener('click', openResources);
+      var rq = $('resq');
+      if (rq) rq.addEventListener('input', function () { paintResources(rq.value); });
+      SR.resources.load(function (ok) {
+        if (ok) rb.style.display = '';
+        else if (window.console) console.info('数根：本机没有 js/resource-index.js，「素材」按钮就不显示了。');
+      });
+    }
     $('keybtn').addEventListener('click', function () {
       // 正在用免费通道：点它就切到"用自己的 Key"，顺手把设置层打开
       if (SR.api.getBackendId() === 'glm') applyBackend('deepseek');
