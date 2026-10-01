@@ -35,7 +35,7 @@ const git = (a, o) => execFileSync('git', ['-C', ROOT].concat(a), Object.assign(
 
 // gh api：JSON 走临时文件（base64 有大段，塞命令行会被截）
 let seq = 0;
-function gh(method, endpoint, body) {
+function ghOnce(method, endpoint, body) {
   const args = ['api', '-X', method, endpoint.replace(/^\//, '')];
   if (body !== undefined) {
     const tmp = path.join(os.tmpdir(), '_ghbody' + (++seq) + '.json');
@@ -45,6 +45,27 @@ function gh(method, endpoint, body) {
     finally { fs.unlinkSync(tmp); }
   }
   return JSON.parse(execFileSync('gh', args, { maxBuffer: 1 << 28 }).toString('utf8'));
+}
+
+// ★ 这条路上每建一个对象就打一次 API，推 8 个文件就是十几次调用。
+//   而这台机器到 api.github.com 的路**不稳**：2026-10-01 实测推到一半撞上
+//   `http2: Transport: cannot retry err`，整趟从头再来（前面建的只是悬空对象，
+//   不影响仓库，但白跑）。所以每次都重试几趟。
+//   重试是安全的：blob/tree/commit 都是内容寻址的，同样的内容再 POST 一次还是同一个 sha。
+function gh(method, endpoint, body) {
+  let last;
+  for (let i = 0; i < 4; i++) {
+    try { return ghOnce(method, endpoint, body); }
+    catch (e) {
+      last = e;
+      const msg = String(e.stderr || e.message || e).slice(0, 120);
+      if (i < 3) {
+        console.log('  （API 第 ' + (i + 1) + ' 次没通，' + (i + 1) * 2 + ' 秒后重试：' + msg.replace(/\s+/g, ' ') + '）');
+        execFileSync(process.execPath, ['-e', 'setTimeout(()=>{},' + ((i + 1) * 2000) + ')']);
+      }
+    }
+  }
+  throw last;
 }
 
 // 本地提交对象里的 `author 名字 <邮箱> 1790830141 +0800`
