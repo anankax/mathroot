@@ -41,7 +41,36 @@ for (const c of CASES) {
     console.log('      期望 ' + (c.void ? '作废' : '留下') + '，实际 ' + (gotVoid ? '作废' : '留下 ' + out.length + ' 条：' + out.join(' | ')));
   }
 }
-console.log('\n===== 按钮过滤 ' + (CASES.length - bad) + '/' + CASES.length + ' 通过 =====');
+// ---- 挑哪一档：演示模式不能出学生的话 ----
+// ★ 这一格是 2026-10-01 从 e2e 的收摊输出里看出来的：教师演示模式下，
+//   老师刚说"画个正方体，让它慢慢转起来"，屏幕上摆的三个按钮却是
+//   "我第一步就不知道从哪下手 / 我大致有个想法，但说不清楚 / 这题我读了两遍还是没看懂"
+//   ——全是学生的话。公开课和评审演示最容易在这儿露怯。
+//   判两件事：演示模式给的是不是 demo 那一档；学生模式有没有被顺手带跑。
+console.log('');
+const FB = W.SR.fallbackChips;
+let bad2 = 0;
+const MODE_CASES = [
+  { name: '演示模式 → demo 那一档', opts: { demo: true, first: true }, want: 'demo' },
+  { name: '演示模式·第几轮都一样（不吃 first）', opts: { demo: true, first: false, lastUser: '我不会' }, want: 'demo' },
+  { name: '演示模式·不因为"我不会"掉进学生那档', opts: { demo: true, lastUser: '我不会画' }, want: 'demo' },
+  { name: '学生模式·第一轮 → open', opts: { first: true }, want: 'open' },
+  { name: '学生模式·说不会 → stuck', opts: { lastUser: '我不会画' }, want: 'stuck' },
+  { name: '学生模式·说完了 → said', opts: { lastUser: '我标好点了，-2 在 0 左边两格' }, want: 'said' }
+];
+for (const c of MODE_CASES) {
+  const got = FB(c.opts);
+  const same = got === W.SR.CHIPS[c.want];
+  // 演示那一档里混进学生口吻就算不过——这一条是这一格的**目的**，
+  // 光比"是不是同一个数组"不够：哪天有人把两句学生话挪进 demo 数组，比数组照样绿。
+  const studentVoice = /不知道从哪下手|我算到这儿就不会了|我不太确定/.test(got.join(''));
+  const ok = same && !(c.opts.demo && studentVoice);
+  if (!ok) bad2++;
+  console.log((ok ? '  ✓ ' : '  ✗ ') + c.name);
+  if (!ok) console.log('      ' + got.join(' | '));
+}
+console.log('\n===== 按钮过滤 ' + (CASES.length - bad) + '/' + CASES.length + ' 通过，'
+  + '演示/学生分档 ' + (MODE_CASES.length - bad2) + '/' + MODE_CASES.length + ' 通过 =====');
 // 上面那条"三句全是改过的"是已知抓不住的一条，标了 void:false —— 它是**边界**，
 // 不是靠它拿分：它要是哪天被抓住了，这一格会红，提醒把这行注释一起改掉。
-process.exit(bad ? 1 : 0);
+process.exit(bad + bad2 ? 1 : 0);

@@ -361,7 +361,7 @@ SR.chat = (function () {
         var modelChips = (msg.lastSay && msg.lastSay[0]) ? msg.lastSay[0].split('\n') : [];
         modelChips = SR.filterCopiedChips(modelChips);   // 把提示词里那段示范原样抄回来的挡掉
         showChips(modelChips.length ? modelChips : SR.fallbackChips({
-          first: isFirstTurn, lastUser: text, prevAssistant: prevAssistant
+          demo: mode === 'demo', first: isFirstTurn, lastUser: text, prevAssistant: prevAssistant
         }));
         setStatus(SR.api.usageText());
       }
