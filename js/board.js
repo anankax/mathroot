@@ -319,10 +319,32 @@ SR.board = (function () {
     try { api.setCoordSystem(g[0], g[1], g[2], g[3], g[4], g[5], true); } catch (e) {}
   }
 
+  // 加载提示写在哪：boardbar 上的一个**真节点**（`#ggbstate`）。
+  //
+  // ★ 为什么不用 `#ggb::after` 那种省事的写法（2026-10-01 实测）：
+  //   写是写上了——getComputedStyle 说 content 有、display:flex、position:absolute、
+  //   父节点 relative、盒子在 (834,258) 591×546，样样齐全，**截图上一个字看不见**。
+  //   原因是 GeoGebra 往 #ggb 里塞了自己的 .applet_scaler（带 transform 的），
+  //   伪元素被压在它底下。教训：**别在别人 inject 的容器里跟它抢层叠**，
+  //   提示挪到自己这一行上（boardbar），一行 textContent 就够了。
+  function note(txt) {
+    var el = document.getElementById('ggbstate');
+    if (!el) return;
+    if (txt) { el.textContent = txt; el.style.display = ''; }
+    else { el.style.display = 'none'; }
+  }
+
   function init(containerId, h) {
     if (h) for (var k in h) if (h.hasOwnProperty(k)) hooks[k] = h[k];
     hostId = containerId;
+    // 画板那一包要从 geogebra.org 拉，冷缓存实测约 3 秒（最快 3 秒，最慢量到过 15 秒）。
+    // 这期间给一句话，别让老师盯着一块纯白方块猜是不是坏了。
+    // ⚠ 话要短：左边那个「画板」标题已经说清是什么了，这儿再说一遍"画板正在加载"
+    //   就是「画板　画板正在加载…」——截图核过，两个字重复得扎眼。
+    note('正在加载…');
     if (typeof GGBApplet === 'undefined') {
+      // ★ 这一档跟"正在加载"要分开说：一个等一会儿会好，一个等到天亮也不会好。
+      note('没加载出来，刷新试试');
       log('GeoGebra 脚本没加载出来（检查网络，或换用 https 打开）');
       return;
     }
@@ -344,6 +366,8 @@ SR.board = (function () {
       appletOnLoad: function (a) {
         api = a;
         ready = true;
+        // 加载提示到这儿收工。
+        note('');
         // 命令写错时，别弹那个糊在画板中间的模态框。错误改走控制台。
         try { a.setErrorDialogsActive(false); } catch (e) {}
         // 只要图形区。`perspective:'G'` 这个启动参数不管用（实测还是带出代数面板，

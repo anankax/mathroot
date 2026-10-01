@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>数根 mathroot · 初中数学辅导 · by KAX</title>
-<meta name="description" content="KAX 做的只问不答的初中数学辅导助手，带一块随讲随画的互动画板，能画平面也能画三维。">
+<title>数根 mathroot · 初中数学备课台 · by KAX</title>
+<meta name="description" content="KAX 做的初中数学备课台：画图、备课追问预演、出题变式、整卷挑题，带一块能画平面也能画三维的互动画板。">
 <meta name="author" content="KAX">
 <!-- 署名：把作者写进元数据，别人整页扒走也留着出处 -->
 <meta name="copyright" content="© 2026 KAX · 数根 mathroot">
@@ -39,12 +39,28 @@
 
 <!-- 本项目（按依赖顺序） -->
 <script defer src="js/config.js"></script>
-<script defer src="js/prompt-student.js"></script>
-<script defer src="js/prompt-lean.js"></script>
-<script defer src="js/prompt-tail.js"></script>
-<script defer src="js/prompt-demo.js"></script>
+<!-- 四份提示词，一个工位一份（见 js/config.js 的 SR.WORKS）。
+     ★ 备课和讲评共用 rehearse 那一份——讲评是备课的一个阶段，不是另一个职责。
+     ★ rehearse 那三份由 test/build_prompt.py 生成，别手改；
+       draw / vary 两份是手写的。 -->
+<script defer src="js/prompt-rehearse.js"></script>
+<script defer src="js/prompt-rehearse-lean.js"></script>
+<script defer src="js/prompt-rehearse-tail.js"></script>
+<script defer src="js/prompt-draw.js"></script>
+<script defer src="js/prompt-vary.js"></script>
+<!-- 出材料工位（这一版的主线）。★ 它只管"说话"那部分——套模板、出 docx
+     由 js/tpl.js + js/produce.js 做，提示词里明说了不许它吐 XML。 -->
+<script defer src="js/prompt-material.js"></script>
+<!-- 模板解析 / 出 docx / 右栏预览。三个都是纯前端、零依赖，
+     在任何别的模块之前装好，免得 chat.js 要用时还没到。 -->
+<script defer src="js/docx.js"></script>
+<script defer src="js/omml.js"></script>
+<script defer src="js/tpl.js"></script>
+<script defer src="js/produce.js"></script>
+<!-- 出材料工位的流程控制（模板库、认错了能改、出完摆进右栏）。放在 tpl/produce 之后。 -->
+<script defer src="js/material.js"></script>
 <!-- ★ 教材索引(55KB)和追问条目库(62KB)原来挂在这儿，**首屏就得下、得解析**。
-     可它们真正派上用场是学生点「发送」那一刻。挪到 js/kb.js 按需拿，
+     可它们真正派上用场是点「发送」那一刻。挪到 js/kb.js 按需拿，
      首屏少 117KB。见 js/kb.js 顶上那段。 -->
 <script defer src="js/retrieve.js"></script>
 <script defer src="js/kb.js"></script>
@@ -59,10 +75,13 @@
      --mx / --my，剩下的交给 main.css 的"动效与光照"那一节。放在 main.js
      前面，页一能点它就已经在了。 -->
 <script defer src="js/motion.js"></script>
+<!-- 备课卡片（公开面板）。读的是 js/kb.js 装进来的**追问条目库**，一份也不多拿：
+     教材索引在这条路径上一个字都不碰。见 js/cards.js 顶上那段。 -->
+<script defer src="js/cards.js"></script>
 <script defer src="js/main.js"></script>
 </head>
 
-<body data-mode="student">
+<body data-work="material">
 
 <header>
   <!-- 品牌：一块**实心的深绿牌子**，字反过来挖成白的。
@@ -81,14 +100,13 @@
     <span class="by" title="本站由 KAX 制作">BY KAX</span>
     <!-- 副标题要短到放得下：顶栏一横排全是按钮，长了会被裁成"…"，
          截图和展板上看着就像没做完。完整那句话在「关于」里说。 -->
-    <span class="sub">初中数学辅导</span>
+    <span class="sub">初中数学备课台</span>
   </div>
 
-  <div class="modes">
-    <button type="button" class="modebtn on" data-mode="student">学生模式</button>
-    <button type="button" class="modebtn"    data-mode="demo">教师演示模式</button>
-  </div>
-  <span id="badge">只问不答 · 不给答案</span>
+  <!-- ★ 工位那一排（画图/备课/出题/讲评）2026-10-01 从顶栏**下到左栏**了。
+       理由：顶栏原来挤了十来个控件，"看着不像成熟产品"最直接的原因就在这儿。
+       现在顶栏只剩三件事——**我是谁（品牌）／用哪条通道／关于**。
+       按钮还是 `.workbtn`，main.js 照类名找，一行没改。 -->
 
   <!-- 通道切换：两格。左边是 GLM 免费模型的免费通道，右边用访客自己的 Key。
        ★ 文字包在 .label 里，是为了手机上能只留那个状态点、把字收起来（见 css 的 900px 档），
@@ -113,23 +131,58 @@
   <!-- 本地素材（后备资源）。★ 只在孔老师本机跑起来的页面上才会冒出来：
        索引文件 js/resource-index.js 是本地生成的、被 .gitignore 挡着，公开站上没有它，
        按钮就一直藏着，客户看不到。见 js/resources.js 顶上那段。 -->
-  <button type="button" class="tool" id="resbtn" style="display:none">素材</button>
+  <!-- 备课卡片（公开）。列的是那 118 条追问条目库——**孔老师自己写的**，可以公开。
+       ★ 跟「知识库」不是一回事：这个只显示条目正文，按册别分组、能搜，
+         不显示分数、不显示阈值。教材索引和任何教材原文都不在这儿出现。 -->
   <!-- 知识库（验货用）。跟「素材」一样只在本机露头：它拿的是 js/textbook.js 和
-       js/zhuawen.js（这两份是自写内容、公开站上也有），平时由 kb.js 在第一次提问时
-       静静装进来，学生那边一个字都看不见。这个按钮是给孔老师查条目、验召回的。 -->
-  <button type="button" class="tool" id="kbbtn" style="display:none">知识库</button>
+       js/zhuawen.js，平时由 kb.js 在第一次提问时静静装进来，访客一个字都看不见。
+       这个按钮是给孔老师查条目、验召回的——它会显示分数和阈值，所以**只在本机出现**。 -->
+  <!-- ★ 上面这四个按钮 2026-10-01 一起搬去了左栏「我的」区。
+       它们跟"工位"是同一类东西（都是换一件要干的事），挤在顶栏里反而
+       跟通道、关于混成一片；左栏按"工具／我的"分了两组之后，
+       「素材」是查我手上有哪些文件、「知识库」是验召回，各归各位。 -->
+
   <button type="button" class="tool" id="aboutbtn">关于</button>
 </header>
 
 <main>
-  <!-- 左：对话 -->
+  <!-- ── 左栏：工位导航 ──────────────────────────────────────────
+       ★ 三栏（左导航／中对话／右产物）是照腾讯 WorkBuddy、扣子那类成熟产品排的。
+         原来顶栏一横排十来个按钮，是"看着不像成熟产品"最直接的原因。
+       ★ 两组分开：上面是**工位**（换一件要干的事），下面是**我的**（我手上有哪些
+         东西、本机验货的口子）。工位按钮还是 `.workbtn` 这个类名——
+         main.js 照类名找、照 `data-work` 高亮，一行都没动。 -->
+  <nav class="rail tick">
+    <div class="railhead"><span>工位</span></div>
+    <div class="works">
+      <button type="button" class="workbtn" data-work="material">出材料</button>
+      <button type="button" class="workbtn" data-work="draw">画图</button>
+      <button type="button" class="workbtn" data-work="prep">备课</button>
+      <button type="button" class="workbtn" data-work="vary">出题</button>
+      <button type="button" class="workbtn" data-work="review">讲评</button>
+    </div>
+    <!-- 高亮那一格底下的那句话（#badge）。★ 五个按钮光看名字分不出
+         「备课」和「讲评」差在哪儿，这一行是唯一说清的地方。 -->
+    <div id="badge"></div>
+
+    <div class="railhead"><span>我的</span></div>
+    <div class="railtools">
+      <button type="button" class="railbtn" id="tplbtn" title="我上传过的学校模板">我的模板</button>
+      <button type="button" class="railbtn" id="resbtn" style="display:none">本地素材</button>
+      <button type="button" class="railbtn" id="cardbtn">备课卡片</button>
+      <button type="button" class="railbtn" id="kbbtn" style="display:none">知识库</button>
+      <button type="button" class="railbtn" id="newbtn" title="清空重新开始这一件">新的一件</button>
+    </div>
+  </nav>
+
+  <!-- 中：对话 -->
   <section class="col tick">
     <!-- 栏头。★ 那篇第六节讲"降低页面层级"时反复提到"赋予各系统一种空间上的
-         联系与包装"——两块面板各挂一个编号铭牌（01 对话 / 02 画板），
-         它们就不再是"两个白盒子"，而是同一台仪表上的两个工位。
+         联系与包装"——每块面板各挂一个编号铭牌（01 工位 / 02 对话 / 03 产物 /
+         04 画板），它们就不再是"一堆白盒子"，而是同一台仪表上的几个工位。
          ★ 中英叠排是第四节明写的装饰手法；编号走等距字体（对应那篇里的 Bender），
          是让"读数"和"正文"一眼分得开。 -->
-    <div class="colhead"><b>01</b><span>对话</span><em>DIALOGUE</em></div>
+    <div class="colhead"><span>对话</span></div>
     <!-- 空对话区里那块浅到几乎看不见的大字。★ 学生一进来，这一栏九成是白的，
          光放一句「告诉我你的问题。」，上面那大片留白看着像"没做完"。
          那篇文章第五节讲的正是这件事——方舟拿网点纸和底图处理来让"留白不显得
@@ -139,6 +192,12 @@
     <div class="ghost" aria-hidden="true">数根</div>
     <div id="msgs"></div>
     <div id="thumb"></div>
+    <!-- 档位进度条。★ 「一档一档走」是这个产品的核心交互，所以它得看得见：
+         现在走到哪一档、还剩几档、点一下从哪一档接着走。
+         档位是**前端推断**出来的（js/chips.js 的 SR.inferStep），不靠模型写档号——
+         小模型一次只服从得了一件事，让它写围栏之外再记一个档号，第三件一定先丢。
+         画图／出题两个工位没有台阶，这一条整根藏起来。 -->
+    <div id="steps"></div>
     <div id="chips"></div>
     <div class="composer">
       <button type="button" id="attach" title="上传照片、扫描件、PDF 或 Word（也可以直接粘贴截图）">📎</button>
@@ -151,15 +210,32 @@
       <input type="file" id="file" accept="image/*,.pdf,.docx,.txt,.md" multiple style="display:none">
       <!-- placeholder 要短：输入框最矮只放得下一行，长占位符会被边框切掉半行
            （2026-10-01 截图里就切着）。详细的引导在左边开场白里已经说过了。 -->
-      <textarea id="input" rows="1" placeholder="贴一道题，或者整张卷子"></textarea>
+      <textarea id="input" rows="1" placeholder="贴一道题，或者写一个课题，例如 3.1 代数式的值"></textarea>
       <button type="button" id="send">发送</button>
     </div>
   </section>
 
-  <!-- 右：画板 -->
-  <section class="col tick">
+  <!-- 右：上产物、下画板（上下分，一栏里两块）
+       ★ 为什么合成一栏：出材料的时候这两样是**同屏要用**的——一边看生成的卷子、
+         一边调题目要的图。"再开第三栏"在 1280 的屏上会把对话栏挤到没法读。
+       ★ 不在出材料工位时产物栏收起（见 css 里 `body:not([data-work="material"])`），
+         画板自动占满整栏。 -->
+  <section class="col tick side">
+    <!-- 上：产物。★ 这是三栏里"右栏"的正身——出材料出的卷子得有地方预览、
+         有地方下载。出材料工位之外它是空的，所以整块收起来。 -->
+    <div class="outbox">
+      <div class="colhead"><span>产物</span></div>
+      <div id="out">
+        <p class="outempty">还没有产物。<br>在左边选<strong>出材料</strong>，传一份你学校自己的模板，出的卷子会摆在这儿。</p>
+      </div>
+    </div>
+
+    <!-- 下：画板 -->
+    <div class="boardbox">
     <div class="boardbar">
-      <span class="t"><b>02</b><span>画板</span><em>BOARD</em></span>
+      <!-- 加载提示：GeoGebra 那一包从网上拉，几秒钟里画板是块白的。
+           放在这一行（boardbar）而不是塞进 #ggb 里——见 js/board.js 里 note() 的注释。 -->
+      <span class="t"><span>画板</span><span class="ggbstate" id="ggbstate"></span></span>
       <div class="viewsw">
         <button type="button" class="viewbtn on" data-view="2d">平面</button>
         <button type="button" class="viewbtn"    data-view="3d">三维</button>
@@ -179,6 +255,7 @@
       <div class="wm">KAX · 数根 mathroot</div>
     </div>
     <div id="status"></div>
+    </div><!-- /.boardbox -->
   </section>
 </main>
 
@@ -187,27 +264,33 @@
      右边补一个站名拉丁字，跟顶栏那块牌子首尾呼应。 -->
 <footer id="credits"><span class="c">© 2026 KAX · 数根 mathroot · 保留所有权利</span><span class="r">MATHROOT</span></footer>
 
-<div id="demoflag" style="display:none">教师演示模式</div>
-
 <!-- 关于 -->
 <div class="overlay" id="about">
   <div class="box tick">
     <h2>数根<em>MATHROOT</em></h2>
-    <p>一个<strong>初中数学辅导</strong>助手。它不判对错、不给答案，只顺着学生的思路往下问，问到他自己说出错在哪一步为止。</p>
+    <p>一个<strong>初中数学备课台</strong>。备课那一段里，它<strong>只问不答</strong>——它替你把学生要说的话说一遍，逼你把这条追问链在脑子里走完，再进教室。</p>
+
+    <h3>四个工位</h3>
+    <ul>
+      <li><strong>画图</strong>——说一句"画个正方体，让它转起来"，右边画板就出来。题目里能画的东西它都画：坐标系、数轴、三角形、圆、函数图象，立体图形另有三维画板。画完点<strong>「存图」</strong>，右下角带着出处，直接贴进课件、卷子、学案。</li>
+      <li><strong>备课</strong>——把这一课要上的<strong>题</strong>贴进来，或者只写一个<strong>课题</strong>（例如"3.1 代数式的值"）都行。它不给你答案，而是<strong>一轮只问一句</strong>：先请"学生"复述做法，再定位卡在哪一步，再追问为什么，答不上来就递台阶，最后收口。底下有<strong>档位条</strong>，走到第几档一目了然，也可以点一下从哪一档接着走。</li>
+      <li><strong>出题</strong>——给一道题，它出几个变式：换数字、改条件、反过来问、改成开放题，<strong>每个变式都配一张图</strong>，答案也给。</li>
+      <li><strong>讲评</strong>——把<strong>整份卷子</strong>发过来（拍照、PDF、.docx 都行，一次可以发好几张）。它先把卷子上有哪些题念一遍，你说哪几道值得讲、按什么顺序讲，挑定一道再展开成上面那条追问链。</li>
+    </ul>
 
     <h3>怎么用</h3>
     <ul>
-      <li>把做错的题贴进来——打字、拍照、直接粘截图都行，<strong>一次可以发好几张</strong>。</li>
-      <li>也可以直接把<strong>整张卷子</strong>发过来。PDF 和 Word（.docx）它能自己翻开看，
-          它会先把卷子上有哪些题念一遍，再问你哪些是不会的、哪些是做错的，你挑一道说就行。</li>
-      <li>再说说你当时是怎么想的。算到哪一步都行，说得乱也没关系。</li>
-      <li>想问什么就问，卡住了就点下面的三个按钮，那里有现成的话可以点。</li>
-      <li>右边是画板。题目里能画的东西，它会画出来——坐标系、数轴、三角形、圆，立体图形也有三维画板。</li>
-      <li>老师上课用，点顶上的<strong>教师演示模式</strong>，或者把网址后面加上 <code>#demo</code> 存成书签。</li>
+      <li>底下那三个按钮是<strong>学生大概会这么答</strong>的话——你点一句，就等于替学生开了口，数根顺势问下一句。想说什么直接打字也行。</li>
+      <li>备完一课点<strong>「新的一课」</strong>清空，接着备下一课。备好的追问链可以<strong>「复制这段」</strong>带走，贴进教案或学案。</li>
+      <li>顶栏<strong>「备课卡片」</strong>里是那 118 条追问条目，按册别分组、能搜，备课时随手查。
+
     </ul>
 
     <h3>为什么这么设计</h3>
-    <p>错题讲一遍，学生点头，第二天照样错——因为他听懂了，但没想通。数根故意不把答案给出来：一道题的卡点，只有在学生自己讲出"我当时是这么想的"之后才露出来。所以它只问、不答。</p>
+    <p>一道题讲不通，多半不是学生没听懂，而是<strong>他心里的那句话老师没听见</strong>。数根不替你把课备完：它把"学生大概会这么答"一句一句摆出来，逼你在进教室之前先把这条路走一遍——问到哪一步学生会卡、卡住了你递什么台阶。它只问、不答，因为答案你已经有了。</p>
+
+    <h3>不做什么</h3>
+    <p><strong>出卷排版</strong>和<strong>成绩分析</strong>这两件事，本地的 Word 管线和学校已有的平台做得比网页好，这里就不重复造了。数根在出卷这件事里只负责一件事——<strong>供图</strong>。</p>
 
     <h3>用的是哪个模型</h3>
     <p>默认走<strong>免费通道</strong>，不用注册、不用填任何东西，打开就能用（用的是 GLM 免费模型，够用，请省着点）。如果你用得多，或者想更稳，点顶栏右上的<strong>「我的 Key」</strong>，填一个自己的 DeepSeek Key——Key 只存在你这台电脑的浏览器里，不会发给任何人，也不会写进网页。填完可以点<strong>「测一下」</strong>当场验，不用等下一次提问才知道填错了。</p>
@@ -267,6 +350,28 @@
   </div>
 </div>
 
+<!-- 备课卡片（公开）——列那 118 条追问条目，按册别分组、能搜。
+     ★ 这是**给人看的备查表**，不是召回结果：没有分数、没有阈值、没有教材原文。
+       教材索引（js/textbook.js）一个字都不在这条路径上——见 js/cards.js 顶上那段。
+     ★ 条目正文是孔老师自己写的，所以公开站上也有这一份；顶上那个「知识库」是
+       另一回事（分数明细、阈值），只在本机出现，两个面板别合并。 -->
+<div class="overlay" id="cards">
+  <div class="box wide tick">
+    <h2>备课卡片<em>CARDS</em></h2>
+    <p>
+      每一张卡是一类题在课上真实会走到的一小段：<strong>认这类题</strong>（这题长什么样）、
+      <strong>还没开口</strong>、<strong>复述完了</strong>、<strong>卡住说不出</strong>、<strong>说对了</strong>
+      五档，正好是学生从"没思路"到"说出来"的五个位置。备课时挑一档直接念。
+    </p>
+    <input id="cardq" type="text" placeholder="搜知识点或别名，例如 绝对值、数轴、增长率" autocomplete="off">
+    <p id="cardmeta"></p>
+    <div id="cardrows"></div>
+    <div class="row">
+      <button type="button" class="tool primary" data-close="cards">关了</button>
+    </div>
+  </div>
+</div>
+
 <!-- 本地素材（后备资源）——只在本机出现。里面是"哪一节手上有哪些文件"，
      不显示、也不检索素材内容本身。 -->
 <div class="overlay" id="reslist">
@@ -286,19 +391,53 @@
   </div>
 </div>
 
+<!-- 我的模板 —— 出材料的地基。
+     老师说一句"我学校给的模板长这样"，把它传上来，后面出的所有材料都套它。
+     ★ **文件只在这台电脑的浏览器里解析**（IndexedDB），一个字节都不发出去。
+       这句话必须写在面板上：老师传的是自己学校的文件，"传哪去了"是他第一个会问的。 -->
+<div class="overlay" id="tpl">
+  <div class="box wide tick">
+    <h2>我的模板<em>TEMPLATES</em></h2>
+    <p>
+      把你学校给的模板传一份上来（周练卷模板、导学案模板、练习模板都行，`.docx`）。
+      数根会读它的<strong>版式</strong>——纸张、页边距、字体字号、页眉页脚、校徽——
+      出的材料原样套进这份版式里，<strong>打开就能直接印</strong>。
+    </p>
+    <p>
+      ★ <strong>文件只在你浏览器的本地库里解析，不会上传到任何服务器。</strong>
+      换一所学校，换一份上传的文件就行，这个站不为任何一所学校做特例。
+    </p>
+    <div class="row">
+      <button type="button" class="tool primary" id="tpladd">传一份模板</button>
+      <input type="file" id="tplfile" accept=".docx" style="display:none">
+    </div>
+    <p id="tplmsg"></p>
+    <!-- 解析结果那张卡（「我认出来的是」）。★ 不是装饰：
+         正文用哪个格式号是**投票投出来的**，模板里"填写提示行比正文还多"的时候会投歪
+         （实测：论文模板那份，"摘要："那 18 段比正文档还多，就投到了它头上）。
+         不给老师一眼、不给改，他会拿到一份错的材料还不知道为什么。 -->
+    <div id="tplrows"></div>
+    <div id="tplcard"></div>
+    <div class="row">
+      <button type="button" class="tool primary" data-close="tpl">关了</button>
+    </div>
+  </div>
+</div>
+
 <!-- 知识库（验货）——同样只在本机出现。用来查条目、验召回：
      打一句话进去，看它能从两份语料里翻出什么、分数是多少、有没有被阈值卡掉。
-     学生永远看不到这个面板，也看不到这两份语料本身。 -->
+     ★ 访客看不到这个面板，也看不到这两份语料本身。要给人看条目正文，走上面那个
+       「备课卡片」；这个面板的价值恰好在分数和阈值上，所以它只留在本机。 -->
 <div class="overlay" id="kblist">
   <div class="box wide tick">
     <h2>知识库<em>KNOWLEDGE</em></h2>
     <p>
       两份语料：<strong>教材索引</strong>和<strong>追问条目库</strong>。它们只喂给模型，
-      学生看不见，界面上也不会出现。平时是学生第一次提问时才静静装进来的，
-      这个面板是本机的验货入口。
+      访客看不见，界面上也不会出现。平时是第一次提问时才静静装进来的，
+      这个面板是本机的验货入口——<strong>它会显示分数和阈值，别公开</strong>。
     </p>
     <div id="kbstat"></div>
-    <input id="kbq" type="text" placeholder="打学生真会说的那种话，例如「这题我不会」「我算到 x=4 就卡了」" autocomplete="off">
+    <input id="kbq" type="text" placeholder="打老师真会说的那种话，例如「绝对值」「我算到 x=4 就卡了」" autocomplete="off">
     <div id="kbhits"></div>
     <div class="row">
       <button type="button" class="tool primary" data-close="kblist">关了</button>

@@ -34,10 +34,11 @@ SR.BACKENDS = {
     hint: '不用注册，打开就能用',
     url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
     // [主模型, 降级一, 降级二]。主模型 429 时依次往后试（智谱官方也是这个建议）
-    // ★ 这一条走**演示模式**——演示是老师在画图，屏幕上没有学生的解答。
-    //   glm-4v-flash 在演示那条链上是 6/6（围栏全中），演示的命根子就是围栏，所以它打头。
+    // ★ 这一条走**画图／出题**两个工位（chain:'board'）——老师要的就是把题画出来、把变式给全，
+    //   屏幕上没有谁的解答要守。glm-4v-flash 在这条链上是 6/6（围栏全中），
+    //   这两个工位的命根子就是围栏，所以它打头。
     models: ['glm-4v-flash', 'glm-4.1v-thinking-flash', 'glm-4.6v-flash'],
-    // ★ 学生**上传了图片**那一轮走这一条。跟上面那条不是一回事，**别合并**。
+    // ★ **备课／讲评工位带图的那一轮**走这一条（chain:'role'）。跟上面那条不是一回事，**别合并**。
     //   2026-10-01 实测（test/probe_image_prompt.cjs：一张"解方程 2x+1=7"的错解照片，
     //   学生问"我算出来 x=4，对不对"）：
     //     glm-4v-flash × 精简版：**把整道题解出来了 4/4**——"因此正确答案是 x=3，你算错了"。
@@ -77,12 +78,12 @@ SR.BACKENDS = {
     //   显式关掉之后：0/4 空，completion_tokens 只用 **9~14**（省 80 倍），回复也快了一个量级。
     //   万一哪颗不认这个参数，api.js 有现成的 400 兜底：认出错误里带 thinking 就去掉重发。
     sendThinking: true,
-    // ★ 学生提示词用精简版（prompt-lean.js，5303 字）**不是审美取舍，是实测逼出来的**：
+    // ★ 备课/讲评提示词用精简版（prompt-rehearse-lean.js，5545 字）**不是审美取舍，是实测逼出来的**：
     //   全量版 11711 字 = 7618 tokens 喂给 glm-4v-flash，```想说 围栏只中 2/4、0/4，
     //   正文还在照抄提示词里的例句（"（好）学生：…"）；换成精简版，同一颗模型、同一批用例，
     //   命中 4/4、4/4，抄例句清零，耗时从 13.8 秒降到 1.6 秒。
     //   全量版留给 DeepSeek——那份提示词就是在它上面逐版调到围栏 8/8 的，别动。
-    //   两份都由 test/build_prompt.py 生成。演示模式的提示词两个后端共用，不分档。
+    //   两份都由 test/build_prompt.py 生成。画图／出题两个工位不分档，两个后端共用一份。
     promptProfile: 'lean',
     budget: 7000,         // 留给对话历史的 token 预算（16K - 提示词 7541 - 图 244 - 输出 1024 - 余量）
     // ★ 带图那一轮单独放宽（2026-10-01 加）。上面那个 7000 是按**最小**那颗
@@ -103,7 +104,7 @@ SR.BACKENDS = {
     stripThink: false,
     keyInPage: false,
     sendThinking: true,   // DeepSeek 默认吐思维链，要显式关掉
-    promptProfile: 'full', // 全量 v18 提示词（同源生成，围栏 8/8 是它的数）
+    promptProfile: 'full', // 全量提示词（同源生成，围栏 8/8 是它的数）
     budget: 120000        // 1M 上下文，够用，不必裁
   }
 };
@@ -119,7 +120,9 @@ SR.THINKING_OFF = { type: 'disabled' };
 
 // ---- 本地存储 ----
 SR.LS_KEY = 'mathroot_key';         // 自带 Key 时用，只存在使用者自己的浏览器里
-SR.LS_MODE = 'mathroot_mode';       // 上次用的模式
+SR.LS_WORK = 'mathroot_work';       // 上次用的工位
+SR.LS_MODE = 'mathroot_mode';       // ★ 旧键，只读不写：老浏览器里可能存着 'student'
+                                    //   这类已经不存在的值，main.js 开机时按它清一次
 SR.LS_BACKEND = 'mathroot_backend'; // 上次用的后端
 
 // ---- 画板 ----
@@ -146,21 +149,88 @@ SR.WAIT_FIRST = 150000;             // 等第一个字
 SR.WAIT_IDLE = 30000;               // 出了字之后，多久没动静算断
 SR.HARD_CAP = 240000;               // 全程硬顶
 
-// ---- 两个模式 ----
-SR.MODES = {
-  student: {
-    id: 'student',
-    label: '学生模式',
-    badge: '只问不答 · 不给答案',
-    prompt: function () { return window.SR.PROMPT_STUDENT; }
+// ---- 四个工位 ----
+// ★ 2026-10-01 从"两个模式（学生／演示）"改成"四个工位"，学生侧整个砍掉。
+//   孔老师试用后的判断：「学生根本就摸不到手机，拿到手机也不会好好用 ai」
+//   ——这条线本来就走不通，改成接住老师日常办公里"要画、要问、要想学生怎么答"的那一段。
+//
+//   每一项五个开关，`buildSystem()` 和 `ask()` 全靠它们分流：
+//     prompt()     —— 这个工位的系统提示词（改提示词只动这一处）
+//     lean()       —— 免费通道用的压缩版；没写就等于本工位不分档
+//     retrieve     —— 这一轮挂不挂检索附注（教材索引 + 追问条目库）。
+//                     ★ 只有它提示词里**真有对应章节**的工位才许挂。实测过：
+//                       把学生那套索引塞进演示模式，出图率 8/8 → 6/8——
+//                       附注里那句"照上面「三、教材索引」那节的规矩"在演示提示词里
+//                       根本没有对应的一节，模型被一段没头没尾的话带跑了。
+//     tail         —— 追不追加 PROMPT_REHEARSE_TAIL（那条"只问不答"的围栏格式要求）。
+//                     画图／出题不追加：它俩本来就要给答案，收尾块会把输出拽回问句。
+//     listPaper    —— 这一轮像"一整份卷子"时，挂不挂"先列题号"那段附注。
+//     stripAssign  —— 正文里出现整行画板赋值（`A=(-2,0)`）时删不删。
+//                     备课／讲评删（掉围栏必是漏出来的）；画图／出题不删
+//                     （老师板书里"y=(x+1)(x-2)"是正常话）。见 render.js 规则三。
+//     chain        —— 模型链按什么优先：
+//                     'role'  = 角色优先（备课／讲评）。要它"会当老师"，
+//                               所以不带图走 modelsText、带图走 modelsImage。
+//                               ★ 这里有实测代价，别改成 board：视觉那颗 glm-4v-flash
+//                                 会**丢角色**（"学生说不会，它回『好的，老师，这道题我不会』"），
+//                                 备课工位一旦丢角色，数根变成学生，预演就没了。
+//                                 宁可正文对、围栏丢（围栏有 chips.js 本地兜底）。
+//                     'board' = 围栏优先（画图／出题）。要它出 ```ggb，
+//                               不带图／带图都走 models（glm-4v-flash 打头，实测出图 6/6）。
+SR.WORKS = {
+  // ★★ 第五轮（2026-10-01 夜）加的第一个工位，也是这一版的主线。
+  //   **模板是这个老师自己上传的**——换一所学校 = 换一份上传的文件，代码一行不动。
+  //   它跟另外四个的性质不同：另外四个是"一句话进去、一段回答出来"，
+  //   这个是一条**流程**（传模板 → 提要求 → 给资源 → 出 .docx），
+  //   对话只是流程里的一环。所以它不检索教材索引（跟 draw/vary 同理：
+  //   提示词里没有对应章节，硬塞附注会把模型带跑，实测出图率 8/8→6/8）。
+  material: {
+    id: 'material', label: '出材料', badge: '传你学校的模板 · 出来的卷子打开就能印',
+    prompt: function () { return window.SR.PROMPT_MATERIAL; },
+    // ★ extra：**每轮现拼**的一段 system（api.js 的 buildSystem 会接在提示词后面）。
+    //   出材料挂的是"老师这份模板认出来的格式号表"——它随模板变，写不进常量提示词。
+    //   换一所学校 = 换一份上传的文件 = 这张表自己变，代码一行不动。
+    extra: function () { return window.SR.material ? SR.material.slotBrief() : ''; },
+    retrieve: false, tail: false, listPaper: false, stripAssign: true, chain: 'role'
   },
-  demo: {
-    id: 'demo',
-    label: '教师演示模式',
-    badge: '可画可讲 · 公开课演示用',
-    prompt: function () { return window.SR.PROMPT_DEMO; }
+  draw: {
+    id: 'draw', label: '画图', badge: '可画可讲 · 存图贴课件',
+    prompt: function () { return window.SR.PROMPT_DRAW; },
+    retrieve: false, tail: false, listPaper: false, stripAssign: false, chain: 'board'
+  },
+  prep: {
+    id: 'prep', label: '备课', badge: '只问不答 · 预演追问链',
+    prompt: function () { return window.SR.PROMPT_REHEARSE; },
+    lean: function () { return window.SR.PROMPT_REHEARSE_LEAN; },
+    retrieve: true, tail: true, listPaper: false, stripAssign: true, chain: 'role', steps: true
+  },
+  vary: {
+    id: 'vary', label: '出题', badge: '变式 · 每个都给图',
+    prompt: function () { return window.SR.PROMPT_VARY; },
+    // ★ multiFig：这一轮会带**好几个** ```ggb（每个变式一张图），而画板只有一块。
+    //   不标这个的话，chat.js 会把它们排队连着画——每个围栏头一行都是 #清空，
+    //   于是前两张刚画出来就被下一张擦掉，老师**从头到尾只看得到最后一张**，
+    //   还白等 550ms × 十几条命令。标了它，chat.js 只自动画第一张，
+    //   其余的收进气泡下面那个「图 1 / 图 2 / 图 3」切换器里，点哪张画哪张。
+    multiFig: true,
+    retrieve: false, tail: false, listPaper: false, stripAssign: false, chain: 'board'
+  },
+  review: {
+    id: 'review', label: '讲评', badge: '整卷挑题 · 挑一道展开',
+    prompt: function () { return window.SR.PROMPT_REHEARSE; },
+    lean: function () { return window.SR.PROMPT_REHEARSE_LEAN; },
+    retrieve: true, tail: true, listPaper: true, stripAssign: true, chain: 'role', steps: true
   }
 };
+// 默认落在**出材料**——这一版的主线。
+SR.DEFAULT_WORK = 'material';
+// 左栏从上到下的顺序（index.html 里那五个按钮照这个排）。
+// ★ 2026-10-01 夜她定的：**五个全放，一个都不收**。计划文件里原写的是
+//   "备课／讲评主客体是反的、收起来"，她回的是：
+//     「全放啊，为啥要只问不答啊？早就变成老师工作台了啊，哪有这个代价」
+//   ——五个工位的**共同点**才是这一版的说法：**每个工位都给你一样能直接拿走的东西**
+//   （出材料给 .docx、画图给 PNG、备课给备好的追问链、讲评给讲评方案）。
+SR.WORK_ORDER = ['material', 'draw', 'prep', 'vary', 'review'];
 
 // ---- 署名（要改署名，只改这三行）----
 // ★ 这三行是**运行时的源头**：main.js 开机时会把页脚和画板水印的文案按它们刷一遍；

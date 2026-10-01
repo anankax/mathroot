@@ -210,6 +210,17 @@ SR.files = (function () {
   // Word 的正文 XML → 纯文本。段尾换行、制表符和换行标签保留，其余标签全去掉。
   function xmlToText(xml) {
     var s = String(xml)
+      // ★ 域代码要整段扔掉（含里面那点字），不能只去标签。
+      //   `instrText` 里装的是 Word 的"指令"，不是内容：自动编号的 `SEQ 图 \* ARABIC`、
+      //   页码的 `PAGE \* MERGEFORMAT`。只去标签的话，正文里会留下一串
+      //   `= 1 \* GB3 ①掌握……`——实测一份导学案的"学习目标"就是这模样，
+      //   模型读到的题面带着这层壳（同族：公式读成"12"，都是"看着有字、其实走样"）。
+      .replace(/<w:instrText\b[^>]*>[\s\S]*?<\/w:instrText>/g, '')
+      .replace(/<w:instrText\b[^>]*\/>/g, '')
+      // ★ 浮动图的定位数也要扔：它名字上是个标签，值却**写在标签里面**，
+      //   于是逃过"去标签"那一步，正文里凭空多出一串数——
+      //   实测卷子开头就是 `445600-472700宜兴市东氿中学…`（左边距 445600、上边距 -472700）。
+      .replace(/<wp:posOffset\b[^>]*>[\s\S]*?<\/wp:posOffset>/g, '')
       .replace(/<w:tab\b[^>]*\/?>/g, '\t')
       .replace(/<w:br\b[^>]*\/?>/g, '\n')
       .replace(/<\/w:p>/g, '\n')
@@ -226,10 +237,24 @@ SR.files = (function () {
   function docxPart(file, cb) {
     file.arrayBuffer()
       .then(function (buf) { return unzipEntry(buf, 'word/document.xml'); })
-      .then(function (xml) { return xmlToText(xml); })
-      .then(function (text) {
-        if (!text) return cb('这个 docx 里没读到字（可能是纯图片排的版），截个图发也行。');
-        cb(null, { kind: 'text', text: text.slice(0, MAX_TEXT), name: file.name });
+      .then(function (xml) {
+        // ★ 公式和图**必须在过 xmlToText 之前数**。过完那道，正文全成纯字了，
+        //   再想问"这儿原来是不是个公式"就问不出来——标签已经没了。
+        var nF = (xml.match(/<m:oMath[ >]/g) || []).length;
+        var nG = (xml.match(/<w:drawing[ >]/g) || []).length;
+        return { text: xmlToText(xml), nF: nF, nG: nG };
+      })
+      .then(function (r) {
+        if (!r.text) return cb('这个 docx 里没读到字（可能是纯图片排的版），截个图发也行。');
+        // ★ 为什么非要提醒一句：Word 的公式在 XML 里是分层的（分子/分母/上标各一层），
+        //   按纯文本读出来只剩一串挨着的字——$\frac{1}{2}$ 读成 "12"。
+        //   模型不会知道这是走样的，它会照着这份走样的题出材料，出来的卷子没人能用
+        //   （同族：B9 那次，组卷网的公式本来就是图片，读出来是空的）。
+        //   与其出一份看不出来的错卷子，不如当场请老师改发截图——截图走视觉那一档，看得见。
+        var note = '';
+        if (r.nF) note = file.name + ' 里有 ' + r.nF + ' 处公式，纯文字读出来会走样；公式多的卷子，截个图发我。';
+        else if (r.nG) note = file.name + ' 里有 ' + r.nG + ' 张图，我只读到了字，图没进来。';
+        cb(null, { kind: 'text', text: r.text.slice(0, MAX_TEXT), name: file.name }, note);
       })
       .catch(function (e) { cb('这个 docx 打不开（' + ((e && e.message) || e) + '）。另存为 PDF 再发也行。'); });
   }

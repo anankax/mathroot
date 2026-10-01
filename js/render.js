@@ -18,16 +18,24 @@ SR.render = (function () {
   //   ggb     —— 已经闭合的画板命令块（每块是若干行）
   //   say     —— 已经闭合的"猜他想说"块
   //   pending —— 后半截还没闭合的围栏原文，**不要显示**，等它闭合
-  // opts.student —— 学生模式。多删一档"整行就是一条画板赋值"的行（见规则三）。
+  // opts.stripAssign —— 多删一档"整行就是一条画板赋值"的行（见规则三）。
+  //   备课／讲评工位开、画图／出题工位关（SR.WORKS[x].stripAssign）。
   function parseFences(text, opts) {
-    var ggb = [], say = [];
-    var student = !!(opts && opts.student);
+    var ggb = [], say = [], mat = [];
+    var stripAssign = !!(opts && opts.stripAssign);
     var visible = String(text == null ? '' : text);
 
-    // 先摘掉闭合的两个专用围栏
-    visible = visible.replace(/```[ \t]*(ggb|想说)[ \t]*\r?\n([\s\S]*?)```/g,
+    // 先摘掉闭合的三个专用围栏
+    //   ggb  → 画板命令
+    //   想说  → 气泡下面那三个可点的选项
+    //   材料  → 一整份卷子（出材料工位专用，一行一段，见 js/prompt-material.js）
+    // ★ 三者都是"围栏里是给机器看的、围栏外是给人看的"。
+    //   材料这一档尤其要摘干净：一份卷子两百来行，留在正文里会把对话刷没。
+    visible = visible.replace(/```[ \t]*(ggb|想说|材料)[ \t]*\r?\n([\s\S]*?)```/g,
       function (all, tag, body) {
-        (tag === 'ggb' ? ggb : say).push(body);
+        if (tag === 'ggb') ggb.push(body);
+        else if (tag === '想说') say.push(body);
+        else mat.push(body);
         return '';
       });
 
@@ -102,9 +110,9 @@ SR.render = (function () {
     //   一行反引号没有任何信息量，删掉永远是安全的。
     var RE_TICK = /^`{1,}$/;
     // 规则三：整行就是一条画板赋值（`A=(-2,0)`、`t=Slider(-4,4,0.1)`、`c=正方体(A,B)`）。
-    //   ★ 只在**学生模式**下删。学生模式里模型绝没有理由在正文里写坐标赋值，出现必是掉围栏；
-    //     演示模式不一样——老师可能真在正文里写一行 "y=(x+1)(x-2)" 当板书，那一行不能动，
-    //     所以这一档必须按模式分流，不能一刀切。
+    //   ★ 只在 stripAssign 的工位上删（备课／讲评）。那两个工位里模型绝没有理由在正文里
+    //     写坐标赋值，出现必是掉围栏；画图／出题不一样——那两处的正文本来就该有式子，
+    //     一行 "y=(x+1)(x-2)" 是正常内容，不能动，所以这一档必须按工位分流，不能一刀切。
     //   ⚠ 形状卡死在"等号右边紧跟着括号"上：
     //     "y=2x+1"、"f(x)=2x+1"、"x=3" 都不符合（右边不是括号开头），正文里出现是正常的。
     var RE_ASSIGN = /^[A-Za-z][A-Za-z0-9_]*\s*=\s*[A-Za-z0-9_一-龥]*\s*\(.*\)$/;
@@ -112,11 +120,11 @@ SR.render = (function () {
       var s = ln.trim();
       if (RE_MARK0.test(s) || RE_MARK1.test(s)) return false;
       if (RE_TICK.test(s)) return false;
-      if (student && RE_ASSIGN.test(s)) return false;
+      if (stripAssign && RE_ASSIGN.test(s)) return false;
       return true;
     }).join('\n');
 
-    return { visible: visible.trim(), ggb: ggb, say: say, pending: pending };
+    return { visible: visible.trim(), ggb: ggb, say: say, mat: mat, pending: pending };
   }
 
   // ---- markdown → 干净 HTML ----

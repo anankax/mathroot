@@ -3,29 +3,53 @@ var SR = (window.SR = window.SR || {});
 
 SR.main = (function () {
 
-  var mode = 'student';
+  var work = SR.DEFAULT_WORK || 'prep';
 
   function $(id) { return document.getElementById(id); }
 
-  function readSavedMode() {
-    // 网址后面挂 #demo 可以直接进演示模式（上课前把这个链接存书签）
-    if (/demo/.test(location.hash)) return 'demo';
-    if (/student/.test(location.hash)) return 'student';
-    try { return localStorage.getItem(SR.LS_MODE) || 'student'; } catch (e) { return 'student'; }
+  // 上次用的工位。★ **必须判合法性**，别照读照用：
+  //   老浏览器里存的是上一版的键和上一版的值（`mathroot_mode = 'student'`），
+  //   新代码要是直接拿去查 `SR.WORKS['student']`，拿到的是 undefined——整页白屏。
+  //   这条是**真会发生的**，不是理论风险：前一版就是我们在用的那一版。
+  //   顺手把旧键清掉，只清这一次。
+  function readSavedWork() {
+    var h = String(location.hash || '').replace(/^#/, '');
+    if (SR.WORKS[h]) return h;
+    // 老书签：#demo（教师演示）→ 画图，#student（学生模式）→ 备课
+    if (h === 'demo') return 'draw';
+    if (h === 'student') return 'prep';
+    try { localStorage.removeItem(SR.LS_MODE); } catch (e) {}
+    var w = '';
+    try { w = localStorage.getItem(SR.LS_WORK) || ''; } catch (e) {}
+    return SR.WORKS[w] ? w : (SR.DEFAULT_WORK || 'prep');
   }
 
-  function applyMode(m) {
-    mode = m;
-    SR.chat.setMode(m);
-    try { localStorage.setItem(SR.LS_MODE, m); } catch (e) {}
-    document.body.setAttribute('data-mode', m);
-    var btns = document.querySelectorAll('.modebtn');
+  // 切工位。force = true 时不管规则一律重开一段（开机走这条）。
+  //
+  // ★ 切工位的清空规则：**画图／出题 与 备课／讲评 互相切时清空，备课↔讲评不清。**
+  //   前两组不是一套提示词：画图／出题那两份里根本没有"台阶"这回事，
+  //   把备课时的那段对话带过去，模型会拿着一堆问句的历史去画图，串味。
+  //   而备课和讲评**用的是同一份提示词**（讲评 = 备课 + 整卷附注），
+  //   是"先列题号、挑一道、再展开"的两个阶段——切一下就清，那道卷子就没了。
+  function applyWork(w, force) {
+    if (!SR.WORKS[w]) w = SR.DEFAULT_WORK || 'prep';
+    var last = work;
+    work = w;
+    SR.chat.setWork(w);
+    try { localStorage.setItem(SR.LS_WORK, w); } catch (e) {}
+    document.body.setAttribute('data-work', w);
+    var btns = document.querySelectorAll('.workbtn');
     for (var i = 0; i < btns.length; i++) {
-      btns[i].classList.toggle('on', btns[i].getAttribute('data-mode') === m);
+      btns[i].classList.toggle('on', btns[i].getAttribute('data-work') === w);
     }
-    $('badge').textContent = SR.MODES[m].badge;
-    $('demoflag').style.display = (m === 'demo') ? '' : 'none';
-    SR.chat.reset(m);
+    var el = $('badge');
+    if (el) el.textContent = (SR.WORKS[w] && SR.WORKS[w].badge) || '';
+
+    var stepsOf = function (id) { return !!(SR.WORKS[id] && SR.WORKS[id].steps); };
+    // 同体系（备课↔讲评）：对话留着，档位按历史重推——**不能打回零**，
+    // 那条链还接着呢，打回零等于告诉老师"刚才走的都不算"。
+    if (!force && stepsOf(last) && stepsOf(w)) SR.chat.repaintSteps();
+    else SR.chat.reset(w);                                              // 换了体系：重开
   }
 
   // ============================================================
@@ -360,8 +384,31 @@ SR.main = (function () {
       if (e.key === 'Enter' && $('keyset').classList.contains('open')) saveKey();
     });
 
-    // ---- 顶栏按钮 ----
+    // ---- 左栏「我的」区 ----
     $('aboutbtn').addEventListener('click', function () { openOverlay('about'); });
+
+    // ---- 我的模板 ----
+    // ★ 出材料的地基。**模板是每个老师传自己的**，站里不预置任何一所学校的模板。
+    //   列表、上传、解析、「我认出来的是」那张卡，都在 js/material.js 里。
+    var tb = $('tplbtn');
+    if (tb && SR.material) {
+      tb.addEventListener('click', function () { openOverlay('tpl'); SR.material.open(); });
+      // ★ 开机把上次用的那份模板接回来。
+      //   不接的话，刷一次页面 `cur` 就空了——老师传完模板、刷新一下，
+      //   再说"出第五周的周练卷"，模型手上没有格式号表，就会跟他正常聊天、什么都不出。
+      //   他看到的只是"它坏了"。验收线是「打开就能直接印」，所以这一步不能省。
+      SR.material.restore();
+    }
+
+    // ---- 备课卡片（公开）----
+    // ★ 跟下面那个「知识库」面板**是两件事**，别往一处合：
+    //   这个公开，给老师备课时查（只列条目正文，没有分数）；
+    //   那个只在本机出现，给编目的人验召回（分数、阈值）。
+    //   渲染与装载都在 js/cards.js 里，那边只读 SR.ZHUAWEN，碰都不碰教材索引。
+    var cb = $('cardbtn');
+    if (cb && SR.cards) {
+      cb.addEventListener('click', function () { openOverlay('cards'); SR.cards.open(); });
+    }
 
     // ---- 本地素材（后备资源）----
     // ★ 按钮平时是藏着的。只有本机那份索引真在、真读进来了，才让它露面——
@@ -464,17 +511,29 @@ SR.main = (function () {
       });
     });
 
-    // ---- 模式切换 ----
-    document.querySelectorAll('.modebtn').forEach(function (b) {
-      b.addEventListener('click', function () { applyMode(b.getAttribute('data-mode')); });
+    // ---- 工位切换 ----
+    document.querySelectorAll('.workbtn').forEach(function (b) {
+      b.addEventListener('click', function () { applyWork(b.getAttribute('data-work')); });
     });
+
+    // ---- 新的一课 ----
+    // ★ 补这个按钮的理由：chat.js 里有 MAX_TURNS = 24 那道闸，可见前**没有任何清空入口**。
+    //   备课是"一课一清"的活儿：上一节课的追问链留在屏幕上，下一课接着问会串味。
+    //   原来只能靠切工位间接清（还得切两次），现在给它一个正当的门。
+    var nb = $('newbtn');
+    if (nb) nb.addEventListener('click', function () { SR.chat.reset(work); });
 
     // ---- 平面 / 三维 ----
     document.querySelectorAll('.viewbtn').forEach(function (b) {
       b.addEventListener('click', function () { SR.board.setView(b.getAttribute('data-view')); });
     });
 
-    applyMode(readSavedMode());
+    // ---- 备课卡片：挂搜索框和"点一行抄走" ----
+    // ★ 只挂监听，不预装语料。语料是点开面板那一刻才去拿的（js/cards.js 的 open）——
+    //   跟下面知识库那条是同一条纪律：首屏不许为了一个还没打开的抽屉付流量。
+    if (SR.cards) SR.cards.bind();
+
+    applyWork(readSavedWork(), true);
 
     // ★ 首屏不弹 Key 层了。默认后端是免费通道，本来就什么都不用填——
     //   一进来就糊一个"请填 Key"的框，是把人往外推。
@@ -482,7 +541,7 @@ SR.main = (function () {
     $('input').focus();
   }
 
-  return { boot: boot, needKey: needKey, applyMode: applyMode, applyBackend: applyBackend, useOwnKey: useOwnKey };
+  return { boot: boot, needKey: needKey, applyWork: applyWork, applyBackend: applyBackend, useOwnKey: useOwnKey };
 })();
 
 document.addEventListener('DOMContentLoaded', function () { SR.main.boot(); });

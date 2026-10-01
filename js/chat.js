@@ -6,24 +6,40 @@ SR.chat = (function () {
   var els = {};
   var history = [];          // [{role, content}] —— 发给模型的上下文
   var busy = false;
-  var mode = 'student';
+  var work = SR.DEFAULT_WORK || 'prep';
   // 上下文条数的粗兜底。**真正管用的那道闸在 api.js 里**——免费通道只有 16K，
-  // 得按 token 裁（trimHistory），按条数裁是挡不住"学生贴一道长题干"的。
+  // 得按 token 裁（trimHistory），按条数裁是挡不住"贴一道长题干"的。
   var MAX_TURNS = 24;
   var lastFail = null;       // 上一轮失败的提问，切完 Key 可以一键重发
 
-  // 开场白。★ 一句话，就这么长。
+  // 开场白。★ 每个工位**一句话**，就这么长。
   //   2026-10-01 孔老师定了两回，第二回是骂醒的：她要的就是「告诉我你的问题」这一句。
   //   ★ 别再加第二句。加什么都算跑偏，试过两版都是这个下场：
   //     · 自述式（"我不判对错、不给答案、只顺着你的思路往下问…"）＝把工作方式念给学生听，像说明书
   //     · 补充式（"做错的、不会的都能发，整张卷子也行。先说说你想到哪一步了。"）
   //       ＝像是怕他不用而急着推销自己，**"有点刻意了"说的就是这种**
   //   ★ 那两层意思都没丢，只是不在这儿说：「为什么这么设计」在「关于」面板里；
-  //     发整张卷子、发文件这些，属于**学生问得出来就答得出来**的事，
+  //     发整张卷子、发文件这些，属于**问得出来就答得出来**的事，
   //     不用开场白替他把用法讲一遍（真发上来了，"整卷附注"那一档会接住，见 api.js）。
   var OPENING = {
-    student: '告诉我你的问题。',
-    demo: '告诉我你想画什么。'
+    // ★ 出材料这一句要把**头两步**说全：模板 + 要求。只写"传一份模板"的话，
+    //   老师传完就停在那儿等，不知道下一步该说话；写了但不说传模板，
+    //   出来的东西就没有版式可套——那正是这个工位唯一的产品前提。
+    material: '传一份你学校的模板，再说要出什么。',
+    draw: '告诉我你想画什么。',
+    prep: '告诉我你要上的哪一课。',
+    vary: '把题目发过来，我给你出几个变式。',
+    review: '把卷子发过来，先看看哪些题值得讲。'
+  };
+
+  // 输入框的提示语，跟开场白一样**按工位给**。
+  // 一句话，说的是"这一格你该往里打什么"——举的那个例子要真是这个工位接得住的。
+  var TIP = {
+    material: '说说要出什么，例如 第五周 一元一次方程 周练卷',
+    draw: '说说要画什么，例如 数轴上表示 -2 和 3',
+    prep: '贴一道题，或者写一个课题，例如 3.1 代数式的值',
+    vary: '贴一道题，我给你出几个变式',
+    review: '把卷子发过来，也可以先说说这次考得怎么样'
   };
 
   function $(id) { return document.getElementById(id); }
@@ -36,6 +52,7 @@ SR.chat = (function () {
     els.attach = $('attach');
     els.file = $('file');
     els.status = $('status');
+    els.steps = $('steps');
 
     // 页面骨架要是缺了哪个 id，给一句人话，别整页白屏
     var missing = [];
@@ -119,15 +136,93 @@ SR.chat = (function () {
   }
 
   // ---- 开场白重置 ----
-  function reset(newMode) {
-    mode = newMode || mode;
+  function reset(newWork) {
+    work = newWork || work;
     history = [];
     els.msgs.innerHTML = '';
     clearChips();
     SR.board.clear();
-    addAssistantText(OPENING[mode] || OPENING.student);
+    addAssistantText(OPENING[work] || OPENING.prep);
+    // 输入框里的提示也跟着工位走。
+    // ★ 原来那句"贴一道题，或者写一个课题，例如 3.1 代数式的值"是**写死在 index.html** 里的，
+    //   于是切到「出材料」时它还挂在那儿——**提示的是一个这个工位不接的用法**。
+    //   提示语是老师唯一一定会读到的一句话，写错了比没有更坏。
+    if (els.input) els.input.placeholder = TIP[work] || TIP.prep;
+    // 备课工位一上来就把①复述点亮：这就是"一档一档走"的起点，摆在那儿他自己会看。
+    // ★ 讲评工位**整根藏起来**，不留空槽，也不点着任何一档：
+    //   它开头那一段是"先念题号、再说讲哪几道"，五档还没开始。
+    //   一打开讲评就摆出"复述／定位／追问"六格，老师会以为现在就该按这个走。
+    //   等卷子发上来、挑定一道，第一轮回复之后它自己会冒出来。
+    if (work === 'prep') paintStepBar(1); else hideStepBar();
     setStatus('');
     els.input.focus();
+  }
+
+  // ---- 档位进度条 ----
+  // ★ 「一档一档走」是这个产品的核心交互，所以它得**看得见**。
+  //   档位由 SR.inferStep 推断（纯前端，不靠模型在围栏里写档号——理由见 chips.js 那一段），
+  //   这里只负责画。进度条和下面的兜底按钮**共用同一份推断**，别各判一套。
+  // ★ 点某一段 = 替学生发一句那个档位的话（SR.STEP_JUMP），不是发魔法符号：
+  //   小模型吃自然语言比吃 `JUMP=4` 稳，而且这句话留在 history 里下一轮还看得见。
+  var stepNow = 0;
+  // 藏起来。★ 走这个而不是 paintStepBar(0)：那个只是"不点亮任何一档"，
+  //   六格还是摆在那儿。讲评工位一进来不该摆出来（见 reset 里那段）。
+  //   下一次 paintStepBar 会把 display 还原成 ''，所以藏过之后不用特意恢复。
+  function hideStepBar() {
+    var box = $('steps');
+    if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+    stepNow = 0;
+  }
+  function paintStepBar(step) {
+    var box = $('steps');
+    if (!box || !SR.STEP_ORDER) return;
+    var w = (SR.WORKS && SR.WORKS[work]) || {};
+    if (!w.steps) { box.style.display = 'none'; box.innerHTML = ''; stepNow = 0; return; }
+    box.style.display = '';
+    if (!box.childNodes.length) {
+      for (var i = 0; i < SR.STEP_ORDER.length; i++) {
+        (function (sd) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'stepbtn';
+          b.setAttribute('data-step', sd);
+          b.textContent = SR.STEP_NAMES[sd] || sd;
+          b.title = '从这一档接着走';
+          b.addEventListener('click', function () {
+            if (busy) return;
+            if (!SR.STEP_JUMP || !SR.STEP_JUMP[sd]) return;
+            clearChips();
+            submit(SR.STEP_JUMP[sd]);
+          });
+          box.appendChild(b);
+        })(SR.STEP_ORDER[i]);
+      }
+    }
+    if (step === undefined || step === null || step === 0) step = stepNow;
+    stepNow = step;
+    var at = SR.STEP_ORDER.indexOf(step);
+    var btns = box.querySelectorAll('.stepbtn');
+    for (var j = 0; j < btns.length; j++) {
+      // .now = 正在这一档（主色 + 下划线）；.done = 已经走过（实心）。
+      // ★ 这两个类名跟 css/main.css 的 #steps 那一节是一对，改一处忘一处就对不上。
+      btns[j].classList.toggle('now', SR.STEP_ORDER[j] === step);
+      btns[j].classList.toggle('done', at > 0 && j < at);
+    }
+  }
+
+  // 换了工位之后把这一条重画一遍。★ 导出给 main.js 用：
+  //   它管"切工位要不要清对话"这条规则，但**档位条不能只清不清**——
+  //   备课↔讲评是同一条链的两个阶段，历史和档位都得留着，重新推一次就行
+  //   （推的依据还是那条：模型上一轮问出口的那句话）。
+  function repaintSteps() {
+    var w = (SR.WORKS && SR.WORKS[work]) || {};
+    if (!w.steps) { paintStepBar(0); return; }
+    if (!history.length) { if (work === 'prep') paintStepBar(1); else hideStepBar(); return; }
+    var prev = '', first = true;
+    for (var i = history.length - 1; i >= 0; i--) {
+      if (history[i].role === 'assistant') { prev = String(history[i].content || ''); first = false; break; }
+    }
+    paintStepBar(SR.inferStep({ prevAssistant: prev, first: first }));
   }
 
   function addAssistantText(text) {
@@ -179,6 +274,40 @@ SR.chat = (function () {
   }
 
   function scroll() { els.msgs.scrollTop = els.msgs.scrollHeight; }
+
+  // ---- 出题工位的「图 1 / 图 2 / 图 3」切换器 ----
+  // ★ 为什么要它：画板物理上只有一块，而这一轮会带三张图（每个变式一张）。
+  //   paint() 那边已经改成只自动画第一张（见那里的注释），剩下的得有个门能叫回来，
+  //   否则那两张图就永远看不见了——"每个变式都配图"这句话就成了空话。
+  //
+  // ★ 挂在**气泡里面**，不挂画板上：切换的是"这一条回复里的第几张"，
+  //   它属于那条回复，不属于画板。画板上的「重画」按钮重画的也永远是当前这张。
+  function attachFigSwitch(bubble, blocks) {
+    if (!blocks || blocks.length < 2) return;
+    var bar = document.createElement('div');
+    bar.className = 'figsw';
+    var btns = [];
+    function pick(i) {
+      for (var k = 0; k < btns.length; k++) btns[k].className = (k === i ? 'figbtn on' : 'figbtn');
+      SR.board.run(String(blocks[i]).split('\n'));
+    }
+    for (var i = 0; i < blocks.length; i++) {
+      (function (i) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'figbtn';
+        b.textContent = '图 ' + (i + 1);
+        b.title = '把这一张画到画板上';
+        b.addEventListener('click', function () { pick(i); });
+        btns.push(b);
+        bar.appendChild(b);
+      })(i);
+    }
+    bubble.appendChild(bar);
+    // 第一张已经在 paint() 里自动画过了，这里只把高亮摆对，不重画——
+    // 重画一遍会白等 550ms × 十几条命令，而且画面会先闪一下。
+    btns[0].className = 'figbtn on';
+  }
 
   // 出错时的那一行。needOwnKey 时多给一个"切到自己的 Key"的按钮——
   // 用 DOM 拼，不走 innerHTML，按钮的点击才不会被后来的重绘冲掉。
@@ -260,15 +389,57 @@ SR.chat = (function () {
     }
   }
 
+  // ---- 下载下来的文件叫什么 ----
+  // ★ 为什么不直接用模板名：一个老师手上就那几份模板（周练卷模板、导学案模板），
+  //   一周出一份，全叫「周练卷模板.docx」的话，下载三次就分不清哪个是哪周的。
+  //   拿老师这句要求当名（"第五周 一元一次方程 周练卷"→「第五周 一元一次方程 周练卷.docx」），
+  //   他一看文件名就知道是哪一份。
+  // ⚠ 文件名的非法字符要清掉（Windows 里 `\ / : * ? " < > |` 一个都不许有），
+  //   长度也要收——有些老师会把整段要求贴进来，那能有两百字。
+  function fileTitle(ask, tpl) {
+    var s = String(ask || '').replace(/[\r\n]+/g, ' ').trim();
+    s = s.replace(/[\\\/:*?"<>|]/g, '').replace(/[，。；：、！？,.;:!]+$/g, '').trim();
+    if (s.length > 24) s = s.slice(0, 24);
+    if (!s) s = (tpl && tpl.name) || '材料';
+    return s;
+  }
+
   // ---- 收流：正文、围栏、chips 一起更新 ----
   function paint(msg) {
-    // ★ 学生模式多删一档"整行就是一条画板赋值"的行（掉围栏时漏出来的 A=(-2,0)）。
-    //   演示模式不删——老师板书里出现一行 y=(x+1)(x-2) 是正常的。见 render.js 三条规则。
-    var p = SR.render.parseFences(msg.raw, { student: mode === 'student' });
+    // ★ 备课／讲评多删一档"整行就是一条画板赋值"的行（掉围栏时漏出来的 A=(-2,0)）。
+    //   画图／出题不删——那两处的正文里出现一行 y=(x+1)(x-2) 是正常的。见 render.js 三条规则。
+    var w = (SR.WORKS && SR.WORKS[work]) || {};
+    var p = SR.render.parseFences(msg.raw, { stripAssign: !!w.stripAssign });
 
     // 正文
     var v = p.visible;
+
+    // ---- 出材料：围栏掉了就本地捡回来 ----
+    // ★ 为什么在正文这里动手（而不是等收完流再补）：编号行**绝对不能印在气泡上**。
+    //   免费通道那颗 GLM 实测就是把三十几行 `#0 … #2 …` 直接倒进正文的，
+    //   晚一步处理，老师就已经看见那串鬼东西了。
+    // ★ 只捡不猜：`#数字` 顶格开头，在中文正文里不可能是别的东西。
+    //   捡回来的照样走 produce 那条路（同一个中间结构 → 右栏预览 + 下载），
+    //   所以"围栏写的"和"捡回来的"出的是同一种文件。
+    if (work === 'material' && SR.produce && SR.material && !p.mat.length) {
+      var lf = SR.produce.lift(v);
+      v = lf.rest;                       // ← 无论如何，编号行都不许留在气泡里
+      if (lf.n >= SR.produce.LIFT_MIN) {
+        msg.matFed = SR.material.feed(lf.body, fileTitle(msg.ask, SR.material.current()));
+        msg.matLifted = lf.n;
+      }
+    }
+
     if (!v && msg.streaming) v = '…';
+    // 一串编号全被收进右栏、正文一个字没剩 → 气泡不能空着。
+    // ★ 这一句是**本机说的，不是模型说的**。为什么照样要说：
+    //   空气泡给人的印象是"它什么都没干"，而右边明明摆着一份卷子。
+    //   这种时候沉默比一句大白话糟得多——**说清东西去哪儿了**就够。
+    //   （跟 board.js 的 giveBlank、chips.js 的本地兜底是同一条规矩：
+    //     凡是在免费通道上守不住的，都得有本地兜底兜着。）
+    if (!v && !msg.streaming && msg.matFed && msg.matFed.ok) {
+      v = '这份材料按你传的模板排好了，在右边——预览和下载都在那儿。';
+    }
     if (v !== msg.lastVisible) {
       SR.render.renderInto(msg.bubble, v || '');
       msg.lastVisible = v;
@@ -276,9 +447,13 @@ SR.chat = (function () {
     }
 
     // 画板：只派新闭合的那些块，别重复执行
+    // ★ multiFig 的工位（出题）只自动画**第一张**。理由见 config.js 的 SR.WORKS.vary：
+    //   画板只有一块，每个变式的围栏头一行都是 #清空，连着画等于前两张刚出来就被擦掉，
+    //   老师从头到尾只看得到最后一张。其余的收进下面的切换器，点哪张画哪张。
+    var multi = !!w.multiFig;
     while (msg.ggbDone < p.ggb.length) {
       var lines = p.ggb[msg.ggbDone].split('\n');
-      SR.board.run(lines);
+      if (!multi || msg.ggbDone === 0) SR.board.run(lines);
       // ★ 另外数一份"真画了东西的条数"：只有 #清空 的围栏不算画了图。
       //   实测带图那轮模型就爱发一个光秃秃的 ```ggb ⏎ #清空 ⏎ ```（它没东西可画）。
       //   要是拿 ggbDone 去判"它画没画"，就会以为它画了，本地补空数轴那条路会被顶掉。
@@ -287,6 +462,20 @@ SR.chat = (function () {
         if (s && s.charAt(0) !== '#' && !/^(清空|隐藏|显示)/.test(s)) msg.ggbReal++;
       }
       msg.ggbDone++;
+    }
+
+    // 出材料：围栏里的东西直接摆进右栏产物。
+    // ★ 为什么要**在流式当中反复摆**（而不是等收完）：一份周练卷两百来行，
+    //   等收完再一次性出现，老师盯着空右栏要盯十几秒，中间还会以为它没在干活。
+    //   一行行长出来，本身就是"它在做"的反馈——而且 `feed` 是纯的，重画不花钱。
+    // ★ 只有**最后闭合的那个围栏**算数（`p.mat.length - 1`）：模型偶尔会先写一稿再重写，
+    //   取最后一个才跟对话里最后那段话对得上。
+    if (p.mat.length && SR.material && work === 'material') {
+      var body = p.mat[p.mat.length - 1];
+      // 拿最后一条老师说的话当文件名的主体，别用模板名——一周一份，
+      // 全叫「周练卷模板.docx」的话，下载三次就分不清哪个是哪个了。
+      var title = fileTitle(msg.ask, SR.material.current());
+      msg.matFed = SR.material.feed(body, title);
     }
 
     // chips 等收完再出，免得半截就被点了
@@ -331,11 +520,11 @@ SR.chat = (function () {
     els.msgs.appendChild(el);
     scroll();
 
-    var msg = { raw: '', bubble: b, streaming: true, ggbDone: 0, ggbReal: 0, lastVisible: null, lastSay: [] };
+    var msg = { raw: '', bubble: b, streaming: true, ggbDone: 0, ggbReal: 0, lastVisible: null, lastSay: [], ask: text };
     setStatus('');
 
     SR.api.ask({
-      mode: mode,
+      work: work,
       history: history.slice(0, -1),      // 最后一条（刚推入的）由 api 自己拼
       text: text,
       parts: parts,
@@ -343,11 +532,11 @@ SR.chat = (function () {
     }).then(function (res) {
       msg.streaming = false;
       // 这一轮到底是哪颗模型答的、有没有中途换过模型——探针要看这个。
-      // ★ 2026-10-01 加：学生传图那轮走的是 modelsImage（只有一颗 glm-4.6v-flash），
+      // ★ 2026-10-01 加：备课／讲评带图那轮走的是 modelsImage（只有一颗 glm-4.6v-flash），
       //   排查"是不是悄悄降级到会解题的那颗了"必须能看出来，光看回复内容看不出来。
       var hadImg = false;
       for (var qi = 0; qi < parts.length; qi++) if (parts[qi].kind === 'image') { hadImg = true; break; }
-      SR.chat.lastMeta = { model: res.model || '', image: hadImg, mode: mode, error: res.error || '' };
+      SR.chat.lastMeta = { model: res.model || '', image: hadImg, work: work, error: res.error || '' };
       if (res.error) {
         paint(msg);
         // 免费通道排队排空了，别只说一句"再等等"——直接给一条出路：
@@ -361,39 +550,30 @@ SR.chat = (function () {
         history.push({ role: 'assistant', content: res.text });
         if (history.length > MAX_TURNS) history = history.slice(-MAX_TURNS);
         paint(msg);
-        // ★ 气泡里一个字都没有的时候，得补一句**程序自己**的话。两种来路：
-        //   ① 模型既没画也没说（学生说"画不出来"那种）→ 本地补一张空图，再告诉学生图放好了；
-        //      学生模式才补空图（演示模式是老师自己画图，模型不出图就是它偷懒，别替它圆场）。
-        //      判定写在 board.giveBlank 里，见那段注释。
-        //   ② 模型**画了图、正文却一句没有**——围栏外的字被 render.js 的删行规则删光了
-        //      （免费通道掉围栏时最常见的形状）。图是在板上了，可没人招呼一声，
-        //      学生盯着一个空气泡，只会以为页面坏了。
-        //      2026-10-01 才补的这一支：原来只处理①，`probe_blank` 抓到②时气泡是空的。
-        //   两句话都只交代"画板那边好了、你接着说"，不冒充老师提问，也不给答案。
-        //   只在气泡真空的时候补——模型但凡说了句正经话，就别去盖它。
-        //   顺手也把这句话写进 history：学生看到的就是它，下一轮模型也该知道画板上有什么了
-        //   （不然它会当画板还是空的，又说一遍"你先画"）。
-        if (!msg.lastVisible && mode === 'student') {
-          var blankKind = msg.ggbReal ? '' : SR.board.giveBlank(text);
-          var line = '';
-          if (blankKind === '坐标系') line = '画板上给你放了一个空坐标系，你把题目里的点标上去，标好了说给我听。';
-          else if (blankKind) line = '画板上给你放了一条空数轴，你把题目里那几个数标上去，标好了说给我听。';
-          else if (msg.ggbReal) line = '画板上给你画好了，你先看一眼，再说说这道题你当时是怎么想的。';
-          if (line) {
-            SR.render.renderInto(b, line);
-            msg.lastVisible = line;
-            history[history.length - 1].content = String(res.text || '') + '\n\n' + line;
-          }
-        }
+        // ★ 2026-10-01 砍掉了原来那段**空气泡兜底**（学生说"画不出来"时本地补一张空数轴、
+        //   再代它招呼一句）。它是纯学生侧的东西，四个工位里一个都不需要：
+        //   · 画图／出题：老师自己画图、自己出题，模型不出图就是它偷懒，替它圆场是错的；
+        //   · 备课／讲评：老师卡住的时候不会说"画不出来"，他要的是下一句问话。
+        //   留着它只会让"模型这一轮什么都没说"这件事变得看不出来。
         // 模型写了 ```想说 就用它的（更贴这道题）；没写就用本地兜底。
         // ★ 免费通道那两颗小模型守不住这个围栏（实测 0/4 ~ 6/6 看运气），
-        //   而"这一轮没有可点的话"正是这个功能要防的事——不给学生留空白输入框。
+        //   而"这一轮没有可点的话"正是这个功能要防的事——不留一个空白的输入框。
         //   兜底词库和挑选规则见 js/chips.js 顶上的注释。
         var modelChips = (msg.lastSay && msg.lastSay[0]) ? msg.lastSay[0].split('\n') : [];
         modelChips = SR.filterCopiedChips(modelChips);   // 把提示词里那段示范原样抄回来的挡掉
         showChips(modelChips.length ? modelChips : SR.fallbackChips({
-          demo: mode === 'demo', first: isFirstTurn, lastUser: text, prevAssistant: prevAssistant
+          work: work, first: isFirstTurn, lastUser: text, prevAssistant: prevAssistant
         }));
+        // 档位进度条：判的是**这一轮它问出口的那句话**——模型跳到哪一档是它自己按学生
+        // 答话定的，只有它问出来的那句话能证明它到了哪儿（见 chips.js 的 SR.inferStep）。
+        paintStepBar(SR.inferStep({ prevAssistant: String(res.text || ''), first: isFirstTurn, lastUser: text }));
+        // 出题工位：这一轮带了几张图，就在气泡下面挂几个切换钮（见 attachFigSwitch）。
+        // ★ 收完流再挂，不在 paint() 里挂——流式当中围栏是一块一块闭合的，
+        //   在那儿挂会看着按钮一个个往外蹦。
+        if (SR.WORKS[work] && SR.WORKS[work].multiFig) {
+          var wp = SR.render.parseFences(String(res.text || ''), { stripAssign: !!(SR.WORKS[work].stripAssign) });
+          attachFigSwitch(b, wp.ggb);
+        }
         setStatus(SR.api.usageText());
       }
     }).catch(function (e) {
@@ -493,8 +673,13 @@ SR.chat = (function () {
     retryLast: retryLast,              // 切完 Key 重发上一轮（main.js 用它）
     onPlayState: onPlayState,          // 交给 board.init 当回调
     setStatus: setStatus,
-    setMode: function (m) { mode = m; },
-    getMode: function () { return mode; },
+    setWork: function (w) { work = w; },
+    getWork: function () { return work; },
+    // main.js 用它切工位后把进度条重画一遍（工位一换，档位条要么换内容要么藏起来）
+    paintStepBar: paintStepBar,
+    // ★ 切工位走这个，别直接调 paintStepBar(0)：备课↔讲评是**同一条链的两个阶段**，
+    //   切过去不清历史，档位就该按历史重新推出来，而不是被打回零。
+    repaintSteps: repaintSteps,
     // main.js 用这个判"输入框那边有没有东西等着发"（空了就别送空请求）
     hasPendingImage: function () { return pendingParts.length > 0; },
 

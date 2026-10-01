@@ -94,10 +94,14 @@
   --code-bg: #dde9e2;
 
   --warn: #9e3218;
-  --demo: #5f6b12;         /* 演示模式：苔绿——要和主色一眼分得开，又不能跳出绿色系 */
-  --demo-dark: #4a540c;
-  --demo-soft: #eff4d9;
-  --demo-line: #c8d492;
+  /* 第二套配色：苔绿。原来只给"教师演示模式"用，现在是**出图那两个工位**
+     （画图／出题）的底色——它们跟备课／讲评不是一路：那两个工位只问不答、
+     要的是安静，这两个工位是"出东西"的，本来就该跳一点。
+     要和主色一眼分得开，又不能跳出绿色系，所以选苔绿。 */
+  --alt: #5f6b12;
+  --alt-dark: #4a540c;
+  --alt-soft: #eff4d9;
+  --alt-line: #c8d492;
 
   /* ★ 几乎没有圆角。那篇说的是"扁平化不是为了平"，但圆角是"聊天软件"的形状，
      不是"仪表"的形状。全部归零，层级改由角标和线来做。 */
@@ -161,8 +165,10 @@ body {
 .tick::after  { bottom: 0; right: 0; border-bottom-width: 3px; border-right-width: 3px; }
 
 /* 当前模式是演示时，角标跟着换成苔绿——同一套语言，配色分档 */
-body[data-mode="demo"] .tick::before,
-body[data-mode="demo"] .tick::after { border-color: rgba(95, 107, 18, .5); }
+body[data-work="draw"] .tick::before,
+body[data-work="vary"] .tick::before,
+body[data-work="draw"] .tick::after,
+body[data-work="vary"] .tick::after { border-color: rgba(95, 107, 18, .5); }
 
 /* 铭牌：编号 + 中文 + 拉丁小字。两块面板和两个弹层标题共用这一套。
    ★ 编号走等距字体，是对那篇里 Bender（工业风伪等距体）的对应——
@@ -273,31 +279,34 @@ header {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .3px;
 }
 
-/* 分段切换器（模式 / 通道 / 视角，三处共用一套语言）。
+/* 分段切换器（工位 / 通道 / 视角，三处共用一套语言）。
    ★ "当前项＝满色的一格"，不是"淡底 + 底下一条线"：那篇讲层级靠对比，
      满色对淡底就是最强的对比，投影仪上也看得清是哪个。
    ★ 但满色用的是**近黑**，不是绿。上一版三处切换器全填绿，加上牌子、
      发送键，一屏里五块绿，那篇文章说的"强调色只给当前状态"被我执行成了
      "到处都填绿"，反而没有重点了。现在"填满的绿"只剩发送键一处；
-     牌子改成了白底绿字（见 .brand .plate），编号、角标、连接点用的是绿但面积极小。 */
-.modes, .backs, .viewsw {
+     牌子改成了白底绿字（见 .brand .plate），编号、角标、连接点用的是绿但面积极小。
+   ★ 出图那两个工位（画图／出题）例外：那一格填的是苔绿（--alt），
+     整页也跟着换一档色。四个工位里就这两个"出东西"，配色把这条界线画出来。 */
+.works, .backs, .viewsw {
   display: flex; flex: 0 0 auto; gap: 0;
   background: var(--sunken); border: 1px solid var(--line);
 }
-.modebtn, .backbtn, .viewbtn {
+.workbtn, .backbtn, .viewbtn {
   border: 0; background: transparent; font: inherit; cursor: pointer;
   color: var(--ink-2); white-space: nowrap;
 }
-.modebtn { font-size: 14px; padding: 8px 17px; }
+.workbtn { font-size: 14px; padding: 8px 17px; }
 .backbtn { font-size: 13px; padding: 7px 13px; }
 .viewbtn { font-size: 13px; padding: 5px 13px; }
 /* 格与格之间一道竖线，不是靠间距分开——间距会被窗口宽度拉变形，线不会 */
-.modebtn + .modebtn, .backbtn + .backbtn, .viewbtn + .viewbtn { border-left: 1px solid var(--line); }
+.workbtn + .workbtn, .backbtn + .backbtn, .viewbtn + .viewbtn { border-left: 1px solid var(--line); }
 
-.modebtn.on, .backbtn.on, .viewbtn.on {
+.workbtn.on, .backbtn.on, .viewbtn.on {
   background: var(--ink); color: #fff; font-weight: 700;
 }
-body[data-mode="demo"] .modebtn.on { background: var(--demo); }
+body[data-work="draw"] .workbtn.on,
+body[data-work="vary"] .workbtn.on { background: var(--alt); }
 
 /* 通道那两格带状态点：白＝在用，砖红＝这条走不通 */
 .backbtn .dot {
@@ -336,11 +345,16 @@ body[data-mode="demo"] .modebtn.on { background: var(--demo); }
 .tool:disabled { opacity: .45; cursor: default; }
 .tool:disabled::after { content: none; }
 
-/* ---------- 主体 ---------- */
+/* ---------- 主体：三栏（左工位 / 中对话 / 右产物＋画板） ---------- */
+/* ★ 2026-10-01 从两栏改成三栏。左栏是"工位 + 我的"，右栏是"上产物下画板"。
+   三栏是照腾讯 WorkBuddy／扣子那类成熟产品排的形——原来顶栏一横排十来个按钮，
+   是"看着不像成熟产品"最直接的原因（孔老师两次说"要和人家一样，有模有样"）。 */
 main {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: minmax(360px, 44%) 1fr;
+  /* ★ 右栏宽度 44% → 42%：1440 下原来产物栏 621 比对话栏 563 还宽，
+     一个"看结果"的栏目比"干活"的栏目宽，主次反了。收一档之后 610 / 514。 */
+  grid-template-columns: 200px minmax(320px, 1fr) minmax(348px, 42%);
   gap: 14px;
   padding: 14px;
   min-height: 0;
@@ -350,6 +364,92 @@ main {
   background: var(--panel); border: 1px solid var(--line);
   min-height: 0; display: flex; flex-direction: column; overflow: hidden;
 }
+
+/* ---------- 左栏：工位导航 ---------- */
+/* ★ 它跟 .col 是同一套面板语言（白底、1px 边、四角角标），只是窄、内容按组分。
+   没有复用 .col 的类名：.col 是"一栏一块面板"，左栏是"一列按钮"，
+   两者的 flex 行为不一样（左栏要能整列滚）。 */
+.rail {
+  background: var(--panel); border: 1px solid var(--line);
+  min-height: 0; display: flex; flex-direction: column;
+  overflow-y: auto; overflow-x: hidden;
+}
+
+/* 分组小标题。
+   ★ 2026-10-01 孔老师否掉了原先那版：**"01 工位 WORK"这种编号 + 拉丁小字她不要**
+     （原话"那个 02 03 的标签搞了干啥……搞什么英文在那干啥"）。
+     编号是我从面板铭牌那套抄过来的，可**左栏不是铭牌，是一列按钮**——
+     把导航项前面挂上"01/02"，等于给菜单编了号，读者要多认一层。
+     现在只剩一个安静的分组名：小、拉开字距、不上色、不加框。
+     下面那条线留着——它是"这一组到此为止"的分界，比字有用。 */
+.railhead {
+  flex: 0 0 auto; display: flex; align-items: baseline;
+  padding: 11px 14px 8px;
+}
+.railhead span {
+  font-size: 11.5px; font-weight: 700; color: var(--ink-3); letter-spacing: 2.6px;
+}
+
+/* 工位：**竖排**。顶栏那版是横排的，搬下来自然要改成竖列——
+   竖列还有个好处：每一格占满整宽，点哪儿都是这一格。 */
+.rail .works {
+  flex: 0 0 auto; flex-direction: column;
+  background: transparent; border: 0; border-bottom: 1px solid var(--line);
+}
+/* ★ 行高和字号都往下收（2026-10-01 第二版）：原来 14.5px + 上下 11px 一格 47px，
+   五格 235px——半栏都是按钮，读起来像张表格。导航是"用来点的一列"，不是内容本身，
+   收到 13.5px / 38px 一格，整栏立刻松下来。 */
+.rail .workbtn { text-align: left; font-size: 13.5px; padding: 10px 14px; }
+/* ★ 覆盖掉横向那版的分隔线：横排靠竖线分格，竖排要靠横线。
+   不覆盖的话每一格左边会多出一道竖线，看着像每格都缺了一块。 */
+.rail .workbtn + .workbtn { border-left: 0; border-top: 1px solid var(--line); }
+/* 悬停：跟「我的」那组同一档反馈。导航如果点上去毫无动静，会让人怀疑没点上。 */
+.rail .workbtn:hover { background-color: var(--brand-soft); }
+/* 当前这一格：底色已经是近黑的一大块，再补一道墨绿左边线——
+   一道 3px 的竖条比再加粗字更省，也让人一眼看出"我现在在这一格"。 */
+.rail .workbtn.on { box-shadow: inset 3px 0 0 var(--brand); }
+
+/* 高亮那一格底下那句话。★ 顶栏那版是"跟在按钮右边的一道小字"（左边一条粗竖线），
+   在左栏里它该是"这一组底下的注脚"——所以竖线换成横线、跟着整组走。 */
+.rail #badge {
+  flex: 0 0 auto; border-left: 0; border-bottom: 1px solid var(--line);
+  /* ★ 这一句是**注脚**，不是正文。原来 11.5px + 字距 .8px 在 200px 宽的栏里
+     要折两行、看着跟按钮一样重，喧宾夺主——它是解释上面那几格干什么的。
+     收到 10.5px、字距归零、颜色压到最浅的一档，读得到就行。 */
+  padding: 8px 14px 10px; font-size: 10.5px; letter-spacing: 0;
+  line-height: 1.7; color: var(--ink-3);
+}
+
+/* 「我的」那一组。★ 跟工位区分开：工位是"换一件要干的事"，这里是"我手上
+   有哪些东西"。**所以这组要明显小一号、淡一档**——两组一样重的话，
+   整栏读过去是九件平级的事，看不出哪几个是"换台"、哪几个是"开抽屉"。 */
+.railtools { flex: 0 0 auto; display: flex; flex-direction: column; }
+.railbtn {
+  font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
+  border: 0; border-bottom: 1px solid var(--line); background: transparent;
+  color: var(--ink-3); padding: 8px 14px 8px 16px; white-space: nowrap;
+}
+.railbtn:last-child { border-bottom: 0; }   /* 最后一条后面是栏底，那条线是多余的 */
+.railbtn:hover { background-color: var(--brand-soft); color: var(--brand); }
+
+/* ---------- 右栏：上产物、下画板 ---------- */
+/* ★ 为什么合成一栏而不是再开第三栏：出材料的时候这两样是**同屏要用**的——
+   一边看生成的卷子、一边调题目要的图。1280 的屏再切一刀，对话栏就没法读了。 */
+.side { overflow: hidden; }
+
+.outbox {
+  flex: 0 0 auto; display: flex; flex-direction: column;
+  max-height: 46%; min-height: 0; border-bottom: 2px solid var(--rule);
+}
+#out { flex: 1 1 auto; overflow-y: auto; padding: 13px 15px; min-height: 58px; }
+.outempty { margin: 0; font-size: 13px; line-height: 1.8; color: var(--ink-3); }
+.outempty strong { color: var(--brand); }
+
+/* ★ 不在出材料工位时，产物栏整块收起，画板自动占满整栏。
+   一个工位不产东西，"产物"那栏就该消失——留着一个空框比没有更难看。 */
+body:not([data-work="material"]) .outbox { display: none; }
+
+.boardbox { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
 
 /* 空对话区里的鬼影大字。★ 见 index.html 里那段说明。
    三件事必须一起写，少一件就出事：
@@ -400,7 +500,8 @@ main {
 }
 .msg.assistant .bubble { border-left-color: var(--brand-line); }
 .msg.user .bubble { background: var(--sunken); border-left-color: var(--brand); }
-body[data-mode="demo"] .msg.user .bubble { background: var(--demo-soft); border-left-color: var(--demo); }
+body[data-work="draw"] .msg.user .bubble,
+body[data-work="vary"] .msg.user .bubble { background: var(--alt-soft); border-left-color: var(--alt); }
 
 .bubble > .who, .msg.assistant .bubble::before {
   display: block; font-family: var(--mono); font-size: 10px; letter-spacing: 1.6px;
@@ -418,7 +519,8 @@ body[data-mode="demo"] .msg.user .bubble { background: var(--demo-soft); border-
 .bubble ul, .bubble ol { margin: .45em 0; padding-left: 1.4em; }
 .bubble li { margin: .2em 0; }
 .bubble strong { color: var(--brand); }
-body[data-mode="demo"] .bubble strong { color: var(--demo); }
+body[data-work="draw"] .bubble strong,
+body[data-work="vary"] .bubble strong { color: var(--alt); }
 .bubble code {
   background: var(--code-bg); padding: 1px 5px;
   font-family: var(--mono); font-size: .93em;
@@ -476,8 +578,10 @@ body[data-mode="demo"] .bubble strong { color: var(--demo); }
   content: ''; position: absolute; right: -1px; bottom: -1px; width: 7px; height: 7px;
   border-right: 3px solid var(--brand); border-bottom: 3px solid var(--brand);
 }
-body[data-mode="demo"] .chip { border-color: var(--demo-line); color: var(--demo-dark); }
-body[data-mode="demo"] .chip:hover { background: var(--demo-soft); border-color: var(--demo); }
+body[data-work="draw"] .chip,
+body[data-work="vary"] .chip { border-color: var(--alt-line); color: var(--alt-dark); }
+body[data-work="draw"] .chip:hover,
+body[data-work="vary"] .chip:hover { background: var(--alt-soft); border-color: var(--alt); }
 
 /* ---------- 输入区 ---------- */
 .composer {
@@ -505,8 +609,10 @@ body[data-mode="demo"] .chip:hover { background: var(--demo-soft); border-color:
 }
 #send:hover { background: var(--brand-deep); }
 #send:disabled { background: #9fb4a7; cursor: default; }
-body[data-mode="demo"] #send { background: var(--demo); }
-body[data-mode="demo"] #send:hover { background: var(--demo-dark); }
+body[data-work="draw"] #send,
+body[data-work="vary"] #send { background: var(--alt); }
+body[data-work="draw"] #send:hover,
+body[data-work="vary"] #send:hover { background: var(--alt-dark); }
 
 #attach {
   font-size: 20px; line-height: 1; padding: 10px 13px;
@@ -564,9 +670,20 @@ body[data-mode="demo"] #send:hover { background: var(--demo-dark); }
    `#ggb` 又是 overflow:hidden，底下一条被切掉。
    父级 `.boardwrap` 早就有 min-height:0，**子级漏了**。宽度同理，一起写。 */
 #ggb {
-  flex: 1 1 auto; min-height: 0; min-width: 0;
+  flex: 1 1 auto; min-height: 0; min-width: 0; position: relative;
   display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 8px;
 }
+/* 画板加载中 / 没加载出来。由 board.js 的 note() 往 #ggbstate 写一句话。
+   ★ 为什么要这一档（2026-10-01 实测）：GeoGebra 那一整包要从 geogebra.org 拉，
+     冷缓存实测 **约 3 秒**才可用（另一次量到 15 秒），这期间 `#ggb` 是
+     **一块纯白方块**——第一次打开的人会以为画板坏了。
+     加载慢改不了，但"白了几秒却一声不吭"是能改的。
+   ⚠ 一开始写的是 `#ggb::after`：getComputedStyle 说 content 有、display:flex、
+     position:absolute、盒子也在，**截图上一个字看不见**——GeoGebra 自己 inject 进来的
+     .applet_scaler 带 transform，把它压在底下了。所以挪到 boardbar 上做一个真节点。
+   ⚠ 也别用 `#ggb:empty` 判——实测 **600ms 时就已经注进一个空壳了**，永远不 empty。 */
+.ggbstate { font-size: 11.5px; letter-spacing: 0.5px; color: var(--ink-3); }
+.ggbstate:empty { display: none; }
 #ggb .applet_scaler { margin: 0 auto; }
 
 /* 画板水印。★ 这一档是真正防"截图当自己的作品"的：
@@ -602,19 +719,53 @@ footer .r {
   color: var(--brand); opacity: .55;
 }
 
-/* 教师演示模式的角标。
-   ★ 底纹用的是斜条纹——那篇第五节专门讲了方舟的底图手法，粗条纹"类似警戒线的
-     风格，展现设计的工业感"。警戒线正好对上"现在不是普通模式"这件事。
-     条纹用同色系的深浅两档，不用对比色：底纹是背景，字还得看得清。 */
-#demoflag {
-  position: fixed; right: 18px; bottom: 34px; z-index: 40;
-  font-family: var(--mono);
-  background: repeating-linear-gradient(45deg, var(--demo) 0 9px, var(--demo-dark) 9px 18px);
-  color: #fff; font-size: 12.5px; font-weight: 700; letter-spacing: 1.4px;
-  padding: 9px 17px;
-  box-shadow: 0 3px 12px rgba(20, 40, 28, .22);
-  pointer-events: none;
+/* ---------- 出题工位气泡下的「图 1 / 图 2 / 图 3」（见 js/chat.js） ----------
+   画板只有一块，一轮出三张图就得有个门把它们叫回来。
+   形状故意做得跟按钮不一样：这是**选看哪一张**，不是"发一句话"，
+   所以它比 .chip 小一档、没有主色边，免得跟底下那排"点一句学生的话"混在一起。 */
+.figsw { display: flex; gap: 6px; margin-top: 9px; }
+.figbtn {
+  border: 1px solid var(--line); background: var(--sunken); font: inherit;
+  font-family: var(--mono); font-size: 11.5px; padding: 3px 10px; cursor: pointer;
+  color: var(--ink-2);
 }
+.figbtn.on { background: var(--ink); color: #fff; border-color: var(--ink); font-weight: 700; }
+.figbtn:hover { border-color: var(--brand); color: var(--brand); }
+.figbtn.on:hover { color: #fff; }
+
+/* ---------- 档位条（#steps）：备课／讲评那两个工位的"走到第几档" ----------
+   这一条是这一版的核心可发现性：备课本来的样子是一条没有终点的对话，
+   老师不知道要走几步、现在走到哪。挂上这五个格子，"一档一档走"就看得见了。
+
+   ★ 它不是导航，是**进度**，所以它的形状照着仪表来，不照按钮来：
+     走过的那几格填深色实心（已经走完了），当前那格是主色 + 一道下划线（正在这），
+     还没到的留空。点任意一格 = 从那一档接着走（见 js/main.js 的绑定）。
+
+   ★ 用 #steps:empty 来收自己：画图／出题两个工位没有台阶，
+     paintStepBar 往里面什么都不放，那两格里这一条整根消失——
+     **不能让它在画图工位上留一条空槽**，那是"没做完"的形状。 */
+#steps {
+  display: flex; flex-wrap: wrap; gap: 0;
+  margin: 0 0 10px; padding: 0;
+  border: 1px solid var(--line); background: var(--sunken);
+}
+#steps:empty { display: none; }
+#steps .stepbtn {
+  border: 0; background: transparent; font: inherit; cursor: pointer;
+  font-size: 12.5px; padding: 6px 12px; color: var(--ink-3); white-space: nowrap;
+  border-left: 1px solid var(--line);
+}
+#steps .stepbtn:first-child { border-left: 0; }
+/* 走完的：实心深色，一眼看出"这几步已经过了" */
+#steps .stepbtn.done { background: var(--ink); color: #fff; font-weight: 700; }
+/* 当前这格：主色 + 一道下划线。用下划线而不是填色，
+   是为了跟"已走完"分得开——填色的话它就混进上面那一列了 */
+#steps .stepbtn.now {
+  color: var(--brand); font-weight: 700;
+  box-shadow: inset 0 -3px 0 var(--brand);
+}
+#steps .stepbtn:hover { background: var(--brand-soft); }
+#steps .stepbtn.now:hover { background: var(--brand-soft); }
 
 /* ---------- 弹层（Key 设置 / 关于 / 本地素材，共用一套） ---------- */
 /* 遮罩用毛玻璃。那篇第六节讲"降低玩家对忽然跳出的新页面的抗拒感"：
@@ -708,11 +859,11 @@ footer .r {
 /* ---------- 知识库面板（只在本机出现，见 js/kb.js） ---------- */
 /* 输入框样式跟 #resq 是同一套，所以两条写在一条规则里——不然改一处忘一处，
    两个长得一样的面板会用上两种边框。 */
-#resq, #kbq {
+#resq, #kbq, #cardq {
   width: 100%; font: inherit; font-size: 14px; padding: 9px 12px;
   border: 1px solid var(--line); background: var(--sunken); color: var(--ink);
 }
-#resq:focus, #kbq:focus { outline: none; border-color: var(--brand); border-left-width: 5px; padding-left: 8px; background: var(--panel); }
+#resq:focus, #kbq:focus, #cardq:focus { outline: none; border-color: var(--brand); border-left-width: 5px; padding-left: 8px; background: var(--panel); }
 #kbstat { margin: 10px 0 12px; border-top: 1px solid var(--line); }
 .kbrow {
   font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); padding: 7px 2px;
@@ -740,6 +891,39 @@ footer .r {
 .kbhit.cut { opacity: .45; }
 .kbhit.cut .kbscore { color: var(--ink-3); background: var(--code-bg); }
 .kbtitle { color: var(--ink); }
+
+/* ---------- 备课卡片面板（公开，见 js/cards.js） ----------
+   ★ 跟上面那个知识库面板**长得要像、但一件事都不许共用**：
+     那个面板的主角是分数（"差多少分够上"），这个面板一个分数都没有。
+     会长得像，是因为它们本来就是同一批条目的两种看法。
+   ★ 版式照着"卡片"来：一条条目一张卡，卡头是知识点名 + 别名（老师按自己的叫法搜），
+     卡身是那五档。五档的档名做成左边一列小字，念的时候眼睛不用来回找。 */
+#cardmeta { font-family: var(--mono); font-size: 12px; color: var(--ink-3); margin: 10px 0 8px; }
+#cardrows { max-height: 48vh; overflow-y: auto; border-top: 1px solid var(--line); }
+.cardgrp {
+  font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--ink-3);
+  letter-spacing: 1.2px; margin: 16px 0 8px; padding-left: 8px; border-left: 3px solid var(--brand);
+}
+.cardgrp:first-child { margin-top: 12px; }
+/* 一张卡。★ 左边一道细线：那篇讲的"靠线分区，不靠间距"——间距会被窗口拉变形。 */
+.card { border-left: 2px solid var(--brand-line); padding: 8px 0 9px 11px; margin-bottom: 10px; background: var(--panel); }
+.card .cardname { font-size: 14px; color: var(--ink); font-weight: 700; }
+.card .cardaka {
+  display: block; margin-top: 3px; font-size: 12px; color: var(--ink-3);
+}
+.card .line { display: flex; gap: 9px; align-items: baseline; margin-top: 5px; }
+/* 档名：定宽，五档就能对齐成一列。宽了挤掉正文，窄了"卡住说不出"会折行 */
+.card .tag {
+  flex: 0 0 76px; font-size: 11.5px; color: var(--brand); background: var(--brand-soft);
+  padding: 1px 6px; text-align: center; letter-spacing: .3px;
+}
+.card .txt { flex: 1 1 auto; font-size: 13.5px; color: var(--ink-2); line-height: 1.6; }
+/* 整行可点、点了抄走（见 js/cards.js 的 copyLine）——手边多半正开着教案 */
+.card .line { cursor: pointer; }
+.card .line:hover .txt { color: var(--ink); }
+.card .line.copied .txt { background: var(--brand-soft); color: var(--brand); }
+.card .txt .mk { color: var(--brand); font-weight: 700; }   /* 空白处那个 ____ */
+.cardempty { font-size: 13.5px; color: var(--ink-3); padding: 14px 2px; }
 
 /* 「测一下」就摆在输入框右边——它验的是框里这一串，摆一起才不会点错对象 */
 .keyrow { display: flex; gap: 9px; align-items: stretch; }
@@ -878,12 +1062,11 @@ footer .r {
 
 /* 满色块的高光。一层就够，别叠太多。 */
 #send { background-image: var(--hilt-solid); transition: background-color var(--mo-fast) var(--ease-out), transform var(--mo-fast) var(--ease-out); }
-body[data-mode="demo"] #demoflag { background-image: var(--hilt-solid); }
-
 /* ---------- 交互时的强调方式：按下去要有回手 ---------- */
 /* 那篇第二节 Fluent 配方的最后半句。只有 hover 变色的按钮是"网页"，
    按下去会沉一下的按钮才是"产品"。★ 1px 就够，2px 在投影仪上看像在抖。 */
-.tool:active, .chip:active, .modebtn:active, .backbtn:active, .viewbtn:active,
+.tool:active, .chip:active, .workbtn:active, .backbtn:active, .viewbtn:active,
+#steps .stepbtn:active,
 #attach:active, .err .inlinebtn:active { transform: translateY(1px); }
 #send:active { transform: translateY(2px); }
 /* 主色块按下时压暗一档——它在纸上，不是浮着的东西，不该发光 */
@@ -936,15 +1119,95 @@ body[data-mode="demo"] #demoflag { background-image: var(--hilt-solid); }
 @keyframes breath { 0%, 100% { opacity: .045; } 50% { opacity: .078; } }
 .ghost { animation: breath 15s ease-in-out infinite; }
 
-/* ---------- 窄屏 ---------- */
-@media (max-width: 1240px) {
-  #badge { display: none; }
+/* ---------- 出材料：模板库 + 产物栏 ---------- */
+/* 模板列表的一行。★ 排版跟 .kbrow / .resrow 一族保持同一套：直角、细分隔线、
+   名字一行小字一行。同一个站里"一行可点的东西"不该有两种形状。 */
+.tplrow {
+  display: grid; grid-template-columns: 1fr auto; gap: 3px 14px;
+  padding: 10px 2px 11px; border-bottom: 1px solid var(--line);
 }
+.tplrow.on { background: var(--brand-soft); }
+.tplrow .nm { font-size: 14.5px; color: var(--ink); }
+.tplrow .sm { grid-column: 1; font-size: 12px; color: var(--ink-3); line-height: 1.6; }
+.tplrow .act { grid-row: 1 / span 2; align-self: center; display: flex; gap: 7px; }
+/* 列表里的小按钮：跟 .tool 同一套，只是小一档（列表里塞不下 13.5px 的按钮） */
+.usesm { font-size: 12.5px; padding: 5px 10px; }
+
+/* 「我认出来的是」那张卡。★ 它是**给老师核对用的**，不是展示成绩的——
+   所以做成"名词 + 值"的一张表，最后一项是能改的下拉。 */
+.tplcard {
+  margin-top: 14px; padding: 13px 15px 15px;
+  border: 1px solid var(--line); border-left: 3px solid var(--brand);
+  background: var(--sunken);
+}
+.tplcard h4 { margin: 0 0 10px; font-size: 14.5px; font-weight: 700; color: var(--ink); letter-spacing: .5px; }
+.tplcard dl { display: grid; grid-template-columns: 64px 1fr; gap: 5px 10px; margin: 0 0 12px; }
+.tplcard dt { font-size: 12.5px; color: var(--ink-3); }
+.tplcard dd { margin: 0; font-size: 13px; color: var(--ink-2); line-height: 1.6; word-break: break-all; }
+.tplpick { display: block; font-size: 13px; color: var(--ink-2); line-height: 1.7; }
+.tplpick select {
+  font: inherit; font-size: 13px; width: 100%; margin-top: 5px;
+  padding: 7px 9px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+}
+.tplhint { font-size: 12.5px; color: var(--ink-3); line-height: 1.7; margin: 10px 0 0; }
+
+#tplmsg { min-height: 1.4em; margin: 9px 0 0; font-size: 13px; color: var(--ink-3); }
+#tplmsg.ok { color: var(--brand); }
+#tplmsg.err { color: var(--warn); }
+.empty { font-size: 13px; color: var(--ink-3); margin: 4px 0 0; }
+
+/* 右栏产物：一份材料的抬头 + 预览 */
+.outhead { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 11px; }
+.outhead .nm { flex: 1 1 auto; font-size: 14px; color: var(--ink); word-break: break-all; line-height: 1.5; }
+.outhead .act { flex: 0 0 auto; display: flex; gap: 7px; }
+.outhead .tool { font-size: 12.5px; padding: 5px 10px; }
+
+/* 预览。★ 拿**生成时的中间结构**渲染，不是反解 docx（反解是另一个大工程，
+   而且没必要）。所以预览和产物出自同一份 blocks，两边不会对不上。
+   ★ 它只求"看着像那张卷子"：字号、加粗、对齐照格式号来，纸的样子不模拟。 */
+.pvwrap {
+  border: 1px solid var(--line); background: #fff; padding: 18px 20px;
+  font-size: 12pt; line-height: 1.9; color: #111;
+}
+.pv-p { margin: 0; }
+.pv-blank { height: 1.1em; }
+.pvwrap .mth { font-family: 'Cambria Math', 'Times New Roman', serif; font-style: italic; }
+.pvwrap .mth sup, .pvwrap .mth sub { font-size: .72em; }
+/* 分数：预览里用上下叠的两行 + 一条横线，跟 Word 里那个形状对得上。
+   ★ 纯 CSS 画的，不是图片——所以放大多少倍都清楚。 */
+.pvwrap .fr { display: inline-flex; flex-direction: column; vertical-align: -.55em;
+              text-align: center; margin: 0 .12em; line-height: 1.05; font-size: .92em; }
+.pvwrap .fr .n { border-bottom: 1px solid currentColor; padding: 0 .18em; }
+.pvwrap .fr .d { padding: 0 .18em; }
+.pvwrap .sq i { font-style: normal; }
+.pvwrap .rad { border-top: 1px solid currentColor; padding: 0 .1em; }
+.pvwrap .ov { border-top: 1px solid currentColor; }
+
+/* ---------- 窄屏 ---------- */
+/* ★ 原来这里有一条 `#badge { display: none }`。**2026-10-01 删掉了**：
+   那条是给顶栏写的（横排时它挤掉了通道切换），现在 #badge 搬进左栏、
+   是竖着排的，"这一格到底干什么"这句话在竖排里恰恰最不该收——
+   五个工位的名字光看名字分不出差别。左栏有位置，就让它一直显示。 */
 @media (max-width: 1060px) {
   .brand .sub { display: none; }
 }
 @media (max-width: 900px) {
-  main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+  /* ★ 三栏在手机上变**三行**：左栏先横过来占满一整行，对话和右栏各占一行。
+     不这么做的话左栏只有 200px 宽却要占一整行高度，中间那栏会窄到没法读。 */
+  main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr); }
+  .rail { flex-direction: row; flex-wrap: wrap; align-items: center; overflow: visible; padding: 6px 0; }
+  .railhead { border-bottom: 0; padding: 4px 10px; }
+  .railhead em { display: none; }            /* 拉丁小字这档留给面板，栏头不占位 */
+  .rail .works {
+    flex-direction: row; flex-wrap: wrap;
+    background: var(--sunken); border: 1px solid var(--line);
+  }
+  .rail .workbtn { padding: 7px 12px; font-size: 13px; }
+  /* 横回去：竖排那版靠横线分格，横排要靠竖线，跟顶栏那版一致 */
+  .rail .workbtn + .workbtn { border-top: 0; border-left: 1px solid var(--line); }
+  .rail #badge { display: none; }             /* 手机上一行高都很贵，这句留到横屏 */
+  .railtools { flex-direction: row; flex-wrap: wrap; }
+  .railbtn { border-bottom: 0; border-right: 1px solid var(--line); padding: 7px 12px; font-size: 13px; }
   /* ★ 手机上顶栏原来排成了**三行**（2026-10-01 402px 实测截图）：
      第一行 logo+站名+BY KAX，第二行 模式+通道+素材，第三行只剩一个「关于」。
      最后那行孤零零一个按钮，看着像没做完，还白吃掉一整行的高度。
@@ -963,12 +1226,18 @@ body[data-mode="demo"] #demoflag { background-image: var(--hilt-solid); }
   .brand .logo { width: 28px; height: 28px; }
   .brand .by { font-size: 10px; padding: 1px 5px; letter-spacing: .8px; }
   .brand { margin-right: 0; }
-  .modebtn { font-size: 13px; padding: 6px 10px; }
+  .workbtn { font-size: 13px; padding: 6px 10px; }
+  /* 档位条：手机上五格加"收尾"是六格，12.5px 的字会折成两行。
+     收到 11.5px、左右各留 8px，六格正好一行。
+     ★ 再小就不能收了——那是手机上唯一一处"现在走到哪"，
+       收了字就等于这一条白做。宁可让它横着滑。 */
+  #steps { overflow-x: auto; flex-wrap: nowrap; }
+  #steps .stepbtn { font-size: 11.5px; padding: 6px 8px; }
   .backbtn { font-size: 12.5px; padding: 6px 9px; }
   .backbtn .dot { width: 7px; height: 7px; margin-right: 5px; }
   header .tool { font-size: 13px; padding: 6px 10px; }
   header .vrule { display: none; }   /* 手机上换行位置本来就变了，竖线会对不齐 */
-  .modes { margin-right: auto; }     /* 后面那些按钮往右推，跟桌面一个观感 */
+  .works { margin-right: auto; }     /* 后面那些按钮往右推，跟桌面一个观感 */
   /* ★ 手机上通道切换**不能藏**（2026-10-01 改）。
      原来这里写的是 `.backs { display: none }`，理由写的是"设置面板里照样能切"——
      可那时候手机上一个通往设置面板的入口都没有，等于学生在手机上
