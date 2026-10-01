@@ -74,6 +74,18 @@ SR.api = (function () {
   }
   function estTokens(m) { return Math.ceil(charCost(m) * 0.65) + 4; }
 
+  // 这份历史里还有没有"带图的消息"（内容是数组、里面有 image_url 那种）
+  // ★ 分流用（见 ask 里那段）。判的是**内容形状**，不是模型白名单——
+  //   哪颗模型认数组这件事会变，形状不会。
+  function histHasImage(h) {
+    for (var i = 0; h && i < h.length; i++) {
+      var c = h[i] && h[i].content;
+      if (Object.prototype.toString.call(c) !== '[object Array]') continue;
+      for (var j = 0; j < c.length; j++) if (c[j] && c[j].type === 'image_url') return true;
+    }
+    return false;
+  }
+
   // 从**最老的**开始丢，永远保住最近的那几轮
   function trimHistory(history, budget) {
     if (!history || !history.length) return [];
@@ -332,14 +344,30 @@ SR.api = (function () {
     if (!navigator.onLine) return { error: '断网了' };
 
     var parts = opts.parts || (opts.imageDataUrl ? [{ kind: 'image', dataUrl: opts.imageDataUrl }] : []);
-    var hasImg = false;
-    for (var pi = 0; pi < parts.length; pi++) if (parts[pi] && parts[pi].kind === 'image') { hasImg = true; break; }
+    var roundImg = false;
+    for (var pi = 0; pi < parts.length; pi++) if (parts[pi] && parts[pi].kind === 'image') { roundImg = true; break; }
+
+    // ★★ 分流不能只看"这一轮带没带图"，还得看**历史里留不留着图**（2026-10-01 修的事故）。
+    //   孔老师实测：第一轮发了一张卷子照片，第二轮打字问"不是发给你图了吗"——这一轮
+    //   没带图，于是分流到 modelsText[0] = glm-4-flash-250414（**文字**模型），可历史里
+    //   第一轮那条消息是**数组格式**（[{text},{image_url}]），trimHistory 原样放行，
+    //   文字模型当场 400：1210「messages.content.type 参数非法，取值范围 ['text']」。
+    //   直接打 API 验过同一段历史：glm-4-flash-250414 报 1210，glm-4.6v-flash 与
+    //   glm-4v-flash 都是 200。所以**带图的历史必须走带图那条链**——这段对话讲的就是
+    //   那张图，模型得看得见它；把历史里的图压成文字等于蒙上它的眼睛，它会反问"题目是什么"。
+    // ★ 预算按**没裁过的那份**判：裁之前有图就得按带图给预算，不然预算先砍小、图再被
+    //   裁掉，就成了自己把自己判成"没图"。
+    var anyImg = roundImg || histHasImage(opts.history);
 
     // ★ 带图那一轮单独给历史预算（b.budgetImage）。b.budget 是按免费通道
     //   最小那颗模型的 16K 上下文量的；带图走的是 128K 的 glm-4.6v-flash，
     //   而一整张卷子的五六页图本来就占掉两千多字符当量，再用 7000 去裁，
     //   历史会被裁到只剩最后一轮——学生上一句说"我算到 x=4"就白说了。
-    var budget = (hasImg && b.budgetImage) ? b.budgetImage : b.budget;
+    var budget = (anyImg && b.budgetImage) ? b.budgetImage : b.budget;
+    var hist = trimHistory(opts.history || [], budget);
+    // 真发出去的那一份里还有没有图——**裁完再判一次**。真被裁掉了就退回文字链，
+    // 否则等于让文字模型去啃一个根本没发给它的东西。
+    var hasImg = roundImg || histHasImage(hist);
 
     // ★ 知识库(教材索引 + 追问条目库，共 117KB)从首屏挪到这儿按需拿。
     //   要 await：buildSystem 里那两段附注得等语料真到了才检索得到。
@@ -354,7 +382,7 @@ SR.api = (function () {
     var recall = SR.kb ? SR.kb.queryFor(opts.text, opts.history) : (opts.text || '');
 
     var msgs = [{ role: 'system', content: buildSystem(opts.mode, recall, b.id, parts) }]
-      .concat(trimHistory(opts.history || [], budget))
+      .concat(hist)
       .concat([{ role: 'user', content: userContent(opts.text, parts) }]);
 
     var ctl = new AbortController();
@@ -389,7 +417,9 @@ SR.api = (function () {
     try {
       // ---- 逐个模型试：主模型 → 降级 → 再降级 ----
       //   ★ 只在 429 上往后走。401/402 是 Key 和余额的事，换模型救不了，早报早好。
-      //   ★ 走哪一条链，看两件事：**是不是演示模式**、**这一轮带不带图**。
+      //   ★ 走哪一条链，看两件事：**是不是演示模式**、**这会儿手里有没有图**——
+      //     注意 hasImg 是"这一轮带图 **或** 历史里还留着图"，别退回只看这一轮
+      //     （2026-10-01 的 1210 就是这么来的，见 ask 里那段）。
       //     演示模式走 models——实测 glm-4v-flash 在演示那条上是 6/6（围栏全中），
       //     而文字模型不认 ``` 围栏，会把画板命令当普通文字打出来：
       //       〔正文〕ggb ⏎ #清空 ⏎ 数轴 ⏎ t=Slider(-4,4,0.1) ⏎ …
