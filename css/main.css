@@ -1,27 +1,57 @@
 /* 「数根」——两栏：左边说话，右边画板。
    投影仪上要用，所以字大、对比度高、可点的东西都够大。
 
-   配色是绿色清新护眼那一套：页面底是淡绿，面板是带一点绿的白，
-   强调色是中等深度的翠绿。★ 正文和小字号文字一律 ≥ 4.5:1，
-   这不是好看不好看的问题——投影仪偏色，对比度不够后排就看不见了。
-   改这里的任何一个色值，都要重新核对对比度。 */
+   ── 视觉语言（2026-10-01 重做）────────────────────────────────
+   参考的是《明日方舟》UI/UX 分析（腾讯游戏学堂 AJ 那篇）里总结的**手法**，
+   不是它的配色、更不是它那套深色军武调。偷的是这三条：
+
+   ① 层级靠线、角标和字重，不靠阴影
+      那篇说扁平化的出发点是"减少与交互无关的细节、提升效率、加强视觉统一"，
+      **不是"平"**；"单纯理解为平，就会导致学习成本增高和画面失焦"。
+      所以我们不用大圆角大阴影，改成一圈细线 + 四角的 L 形角标 + 字重差。
+      阴影只留给真正浮起来的东西（弹层、演示角标）——那才是"越要抓住用户
+      的元素，在图层上摆得越高"。
+
+   ② 明度拉开三层，强调色只给"当前状态"
+      纸底（最暗、带格纹）→ 面板（亮，浮起）→ 凹槽（比面板暗，是陷进去的）。
+      原来三层全是淡绿、明度几乎一样，糊成一片，这是它"丑"的主因。
+      绿色只出现在：当前选中的那格、能点的动作、正在输入的地方。不做装饰。
+
+   ③ 底材是方格纸，不是渐变
+      方舟用噪点和漫画网点纸做底图，理由是**散点"用在按钮上可以使留白不显得
+      单薄，用在卡片背景或底图上则能够提升对比度"**。数学的本命材质就是方格纸
+      （草稿纸），所以这里铺一层 16px 细格 + 80px 粗格的底纹，几乎看不见，
+      但留白不再是空的。
+
+   ★ 正文和小字号文字一律 ≥ 4.5:1。这不是好看不好看的问题——投影仪偏色，
+     对比度不够后排就看不见了。改这里的任何一个色值，都要重新核对对比度。 */
 
 :root {
-  --ink: #1b2a22;          /* 正文 */
-  --ink-2: #4a5c51;        /* 次要文字（对面板 6.9:1） */
-  --ink-3: #647468;        /* 提示、状态栏（对面板 4.8:1，不能再浅） */
-  --line: #dde8df;
-  --bg: #eef6ef;           /* 页面底：淡绿 */
-  --panel: #fbfdfb;        /* 面板：极淡绿白，不是纯白 */
-  --brand: #277a56;        /* 主色（对白 5.2:1，配小字也够） */
-  --brand-soft: #e4f2ea;
-  --brand-line: #bfdccb;
-  --code-bg: #e8f1ea;
-  --warn: #b4451f;
-  --demo: #6f7a1f;         /* 演示模式：苔绿——要和主色一眼分得开，又不能跳出绿色系 */
-  --demo-soft: #f4f7e3;
-  --demo-line: #d8dfae;
-  --r: 14px;
+  --ink: #16241c;          /* 正文 */
+  --ink-2: #3f5147;        /* 次要文字 */
+  --ink-3: #5f7065;        /* 提示、状态栏（对面板 ≈5.2:1，不能再浅） */
+  --line: #d2e0d6;         /* 细线：比原来深一档，不然拉不开层级 */
+  --rule: #bcd0c4;         /* 重一档的线（角标、强调分隔） */
+
+  --paper: #e9f1ec;        /* 页面底：纸。带格纹，是三层里最暗的 */
+  --panel: #f9fcfa;        /* 面板：浮在纸上 */
+  --sunken: #e4ede7;       /* 凹槽：比面板暗，陷进去（气泡、切换器底、输入框） */
+
+  --brand: #1f7a54;        /* 主色（对白 5.4:1，配小字也够） */
+  --brand-deep: #145237;
+  --brand-soft: #e0f0e6;
+  --brand-line: #b4d6c2;
+  --code-bg: #e3ece6;
+
+  --warn: #a83c18;
+  --demo: #67711a;         /* 演示模式：苔绿——要和主色一眼分得开，又不能跳出绿色系 */
+  --demo-dark: #55600f;
+  --demo-soft: #f1f5de;
+  --demo-line: #cdd79c;
+
+  --r: 3px;                /* 几乎是直角。圆角越大越像聊天软件，越不像仪表盘 */
+  --grid: rgba(31, 122, 84, .05);
+  --grid-2: rgba(31, 122, 84, .095);
 }
 
 * { box-sizing: border-box; }
@@ -34,11 +64,38 @@ html, body {
 body {
   font: 16px/1.75 "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
   color: var(--ink);
-  background: linear-gradient(180deg, #f0f8f2 0%, #e9f4ec 100%) fixed;
+  background-color: var(--paper);
+  /* 方格纸：80px 一格是粗线，16px 一格是细线。淡到只在留白处看得见，
+     正好对上那篇里说的"使留白不显得单薄"。background-attachment:fixed
+     让格纹不跟着滚动跑（跟着跑的话，聊天区一滚就像整页在抖）。 */
+  background-image:
+    linear-gradient(var(--grid-2) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-2) 1px, transparent 1px),
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 80px 80px, 80px 80px, 16px 16px, 16px 16px;
+  background-attachment: fixed;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
+
+/* ── 四角角标 ──────────────────────────────────────────────
+   只在左上和右下画两个 L 形短角线——四角都画会太吵，两个正好是"读数头"
+   那种仪表盘味道。角标画在里面（top/left:0 而不是 -1px），
+   因为 .col 是 overflow:hidden 的，画到框外面会被裁掉。
+   pointer-events:none 是必须的：不写它，角标会挡住底下按钮的点击。 */
+.tick { position: relative; }
+.tick::before, .tick::after {
+  content: ''; position: absolute; width: 9px; height: 9px; pointer-events: none;
+  border: 0 solid var(--rule); opacity: .85; z-index: 3;
+}
+.tick::before { top: 0; left: 0; border-top-width: 2px; border-left-width: 2px; }
+.tick::after  { bottom: 0; right: 0; border-bottom-width: 2px; border-right-width: 2px; }
+
+/* 当前模式是演示时，角标跟着换成苔绿——同一套语言，配色分档 */
+body[data-mode="demo"] .tick::before,
+body[data-mode="demo"] .tick::after { border-color: var(--demo-line); }
 
 /* ---------- 顶栏 ---------- */
 header {
@@ -46,11 +103,18 @@ header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 9px 18px;
+  padding: 8px 18px;
   background: var(--panel);
-  border-bottom: 1px solid var(--line);
-  box-shadow: 0 1px 0 rgba(39,122,86,.05);
+  /* 下面那条线是重一档的 rule，和左边那道 3px 竖条一起，把顶栏"压"在页面上。
+     原来只有一条 1px 淡线加一点几乎看不见的阴影，顶栏像浮着。 */
+  border-bottom: 2px solid var(--rule);
+  position: relative;
 }
+header::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--brand);
+}
+body[data-mode="demo"] header::before { background: var(--demo); }
 
 /* ★ `flex: 0 0 auto` 不能省（2026-10-01 手机实测）：不写就是默认的 `0 1 auto`，
    顶栏一挤它**可以被压到 0 宽**——logo、站名、by KAX 一起消失得干干净净。
@@ -61,48 +125,79 @@ header {
 .brand { display: flex; align-items: center; gap: 9px; margin-right: auto; min-width: 0; flex: 0 0 auto; }
 .brand .logo { width: 30px; height: 30px; flex: 0 0 auto; display: block; }
 /* nowrap + 不压缩：顶栏一挤，「数根」两个字会被从中间折断成竖排（实测截到过） */
-.brand .name { font-size: 21px; font-weight: 700; letter-spacing: .5px; color: var(--brand); white-space: nowrap; flex: 0 0 auto; }
-/* 署名：紧跟着站名，不让人把这一页扒走改成自己的 */
+.brand .name {
+  font-size: 21px; font-weight: 700; letter-spacing: 2px; color: var(--brand);
+  white-space: nowrap; flex: 0 0 auto;
+}
+/* 署名：紧跟着站名，不让人把这一页扒走改成自己的。
+   直角 + 左竖线，不用胶囊——胶囊是"聊天软件"的形状，不是"铭牌"的形状。 */
 .brand .by {
-  font-size: 12.5px; font-weight: 600; color: var(--brand); white-space: nowrap; flex: 0 0 auto;
-  background: var(--brand-soft); border: 1px solid var(--brand-line);
-  padding: 1px 8px; border-radius: 999px; letter-spacing: .4px;
+  font-size: 12px; font-weight: 700; color: var(--brand); white-space: nowrap; flex: 0 0 auto;
+  background: var(--brand-soft); border-left: 2px solid var(--brand);
+  padding: 2px 8px 2px 6px; letter-spacing: 1.1px; text-transform: uppercase;
 }
 .brand .sub {
-  font-size: 13px; color: var(--ink-3); padding-left: 4px;
-  border-left: 1px solid var(--line); margin-left: 4px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 12.5px; color: var(--ink-3); padding-left: 8px;
+  border-left: 1px solid var(--line); margin-left: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .3px;
 }
 
-.modes { display: flex; flex: 0 0 auto; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
-.modebtn {
-  border: 0; background: transparent; font: inherit; font-size: 14px;
-  padding: 6px 16px; border-radius: 999px; cursor: pointer; color: var(--ink-2);
+/* 分段切换器（模式 / 通道 / 视角，三处共用一套语言）。
+   ★ 采用的是"当前项＝抬起来的一格 + 底下一条色条"，不是"填充的胶囊"。
+     那篇里反复讲层级靠对比和线，不靠色块堆；而且胶囊一旦有五个，
+     投影仪上就是五个大色团，看不出哪个是当前的。 */
+.modes, .backs, .viewsw {
+  display: flex; flex: 0 0 auto; gap: 0;
+  background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 0;
 }
-.modebtn.on { background: var(--brand); color: #fff; font-weight: 600; }
-body[data-mode="demo"] .modebtn.on { background: var(--demo); }
-
-#badge { font-size: 12.5px; color: var(--ink-3); flex: 0 0 auto; }
-
-/* 后端切换：两格胶囊。左边是孔老师的免费通道，右边用访客自己的 Key。 */
-.backs { display: flex; flex: 0 0 auto; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
-.backbtn {
-  border: 0; background: transparent; font: inherit; font-size: 13px;
-  padding: 5px 12px; border-radius: 999px; cursor: pointer; color: var(--ink-2); white-space: nowrap;
+.modebtn, .backbtn, .viewbtn {
+  border: 0; background: transparent; font: inherit; cursor: pointer;
+  color: var(--ink-3); white-space: nowrap;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
 }
-.backbtn.on { background: var(--panel); color: var(--brand); font-weight: 600; box-shadow: 0 1px 3px rgba(27,42,34,.10); }
-.backbtn .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #c9d6cd; margin-right: 5px; vertical-align: 1px; }
+.modebtn { font-size: 14px; padding: 7px 16px 6px; }
+.backbtn { font-size: 13px; padding: 6px 12px 5px; }
+.viewbtn { font-size: 13px; padding: 5px 13px 4px; }
+
+.modebtn.on, .backbtn.on, .viewbtn.on {
+  background: var(--panel); color: var(--brand); font-weight: 700;
+  border-bottom-color: var(--brand);
+}
+body[data-mode="demo"] .modebtn.on { color: var(--demo); border-bottom-color: var(--demo); }
+
+/* 通道那两格带状态点：绿＝在用，砖红＝这条走不通 */
+.backbtn .dot {
+  display: inline-block; width: 6px; height: 6px; background: #b6c7bc;
+  margin-right: 6px; vertical-align: 1px; border-radius: 0;
+}
 .backbtn.on .dot { background: var(--brand); }
 .backbtn.on.warn .dot { background: var(--warn); }
+/* 短文案只在手机上顶班，桌面上不出现 */
+.backbtn .short { display: none; }
 
+/* 小号大写字距标签——那篇里说"中英结合总能够比较好看，多用于装饰"。
+   这里中西本来就没有，就用字距和小字号做出"铭牌"的感觉。 */
+#badge {
+  font-size: 11.5px; color: var(--ink-3); flex: 0 0 auto;
+  letter-spacing: 1.4px; border-left: 2px solid var(--line); padding-left: 10px;
+}
+
+/* 通用按钮。悬停时右下角冒出一小段角线——那篇讲"交互时的强调方式"，
+   角线比变色更省、比阴影更清楚，而且跟面板四角的角标是同一套语言。 */
 .tool {
-  font: inherit; font-size: 13.5px;
+  font: inherit; font-size: 13.5px; position: relative;
   border: 1px solid var(--line); background: var(--panel);
-  color: var(--ink-2); padding: 6px 12px; border-radius: 8px; cursor: pointer;
+  color: var(--ink-2); padding: 6px 12px; border-radius: var(--r); cursor: pointer;
   white-space: nowrap;
 }
-.tool:hover { border-color: var(--brand); color: var(--brand); }
-.tool:disabled { opacity: .5; cursor: default; }
+.tool:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
+.tool:hover::after {
+  content: ''; position: absolute; right: -1px; bottom: -1px; width: 6px; height: 6px;
+  border-right: 2px solid var(--brand); border-bottom: 2px solid var(--brand);
+}
+.tool:disabled { opacity: .45; cursor: default; }
+.tool:disabled::after { content: none; }
 
 /* ---------- 主体 ---------- */
 main {
@@ -114,25 +209,33 @@ main {
   min-height: 0;
 }
 
-.col { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.col {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+  min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+}
 
 /* ---------- 左：对话 ---------- */
 #msgs { flex: 1 1 auto; overflow-y: auto; padding: 18px 18px 6px; scroll-behavior: smooth; }
 
-.msg { display: flex; margin-bottom: 16px; }
+.msg { display: flex; margin-bottom: 14px; }
 .msg.user { justify-content: flex-end; }
 
+/* 气泡：去掉圆角，改成左侧一道 3px 的色条来标"谁在说"。
+   那篇里讲扁平化不是"平"，是"减少与交互无关的细节"——气泡的圆角、
+   小尾巴、渐变阴影全都是与交互无关的细节；留下色条，一眼就分得清。 */
 .bubble {
   max-width: 88%;
-  padding: 11px 15px;
-  border-radius: 13px;
+  padding: 10px 14px;
+  border-radius: 0 var(--r) var(--r) 0;
+  border-left: 3px solid var(--rule);
+  background: var(--sunken);
   white-space: normal;
   word-break: break-word;
   overflow-wrap: anywhere;
 }
-.msg.assistant .bubble { background: var(--bg); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
-.msg.user .bubble { background: var(--brand-soft); border: 1px solid var(--brand-line); border-bottom-right-radius: 4px; }
-body[data-mode="demo"] .msg.user .bubble { background: var(--demo-soft); border-color: var(--demo-line); }
+.msg.assistant .bubble { border-left-color: var(--brand-line); }
+.msg.user .bubble { background: var(--brand-soft); border-left-color: var(--brand); }
+body[data-mode="demo"] .msg.user .bubble { background: var(--demo-soft); border-left-color: var(--demo); }
 
 .bubble p { margin: .45em 0; }
 .bubble p:first-child { margin-top: 0; }
@@ -142,88 +245,146 @@ body[data-mode="demo"] .msg.user .bubble { background: var(--demo-soft); border-
 .bubble strong { color: var(--brand); }
 body[data-mode="demo"] .bubble strong { color: var(--demo); }
 .bubble code {
-  background: var(--code-bg); padding: 1px 5px; border-radius: 4px;
+  background: var(--code-bg); padding: 1px 5px; border-radius: 2px;
   font-family: Consolas, "Courier New", monospace; font-size: .93em;
 }
-.bubble pre { background: var(--code-bg); padding: 9px 12px; border-radius: 8px; overflow-x: auto; }
+.bubble pre { background: var(--code-bg); padding: 9px 12px; border-radius: var(--r); overflow-x: auto; }
 .bubble pre code { background: none; padding: 0; }
-.bubble img.shot { max-width: 100%; border-radius: 8px; margin-bottom: 6px; display: block; }
+/* ★ 高度要封顶（2026-10-01 截图发现）：手机竖拍的一张卷子，图本身很长，
+   只限宽度的话它能在气泡里铺满整屏，把对话和右边画板一起顶出去——
+   学生发完照片，屏幕上只剩自己那张图。封在 300px 高、宽度跟着比例走，
+   既看得出是那张卷子，也留得住上下文。 */
+.bubble img.shot {
+  max-width: 100%; max-height: 300px; width: auto;
+  border-radius: var(--r); margin-bottom: 6px; display: block;
+}
+/* 学生发来的是 Word/PDF 时，气泡里只挂这一行文件名。
+   不把正文摊出来：一整份卷子的文字塞进气泡，这段对话就没法看了。 */
+.bubble .docsent {
+  font-size: 13px; color: var(--ink-3); margin-bottom: 6px;
+  border-left: 2px solid var(--line); padding-left: 8px;
+}
 
 .err { color: var(--warn); font-size: 14px; }
 
-/* 出错气泡里那个"切到自己的 Key" */
+/* 出错气泡里那个"再试一次" */
 .err .inlinebtn {
   font: inherit; font-size: 13.5px; margin-left: 8px;
   border: 1px solid var(--brand-line); background: var(--brand-soft); color: var(--brand);
-  padding: 3px 10px; border-radius: 999px; cursor: pointer;
+  padding: 3px 10px; border-radius: var(--r); cursor: pointer;
 }
+.err .inlinebtn:hover { border-color: var(--brand); }
 
 /* 等回复的三点 */
 .dots { display: inline-flex; gap: 4px; align-items: center; height: 1.2em; }
-.dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); animation: bl 1.2s infinite; }
+.dots i { width: 6px; height: 6px; background: var(--ink-3); animation: bl 1.2s infinite; }
 .dots i:nth-child(2) { animation-delay: .18s; }
 .dots i:nth-child(3) { animation-delay: .36s; }
 @keyframes bl { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
 
 /* ---------- 可选回答 ---------- */
 #chips { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px 10px; }
-#chips:not(:empty) { padding-top: 10px; border-top: 1px dashed var(--line); }
+#chips:not(:empty) { padding-top: 10px; border-top: 1px solid var(--line); }
+/* 直角 + 左侧一道粗线。★ 这条粗线不只是装饰：它是"这是一句可以按的话"的记号，
+   跟左边气泡那道色条同族，学生一眼就知道这两种东西不是一回事。 */
 .chip {
-  font: inherit; font-size: 14.5px;
-  background: var(--panel); border: 1.5px solid var(--brand-line); color: #14573d;
-  padding: 8px 15px; border-radius: 999px; cursor: pointer; text-align: left;
-  transition: background .12s, transform .12s;
+  font: inherit; font-size: 14.5px; position: relative;
+  background: var(--panel); border: 1px solid var(--brand-line); color: var(--brand-deep);
+  padding: 8px 15px 8px 13px; border-left-width: 3px; border-radius: var(--r);
+  cursor: pointer; text-align: left;
+  transition: background .12s, border-color .12s;
 }
-.chip:hover { background: var(--brand-soft); transform: translateY(-1px); }
-body[data-mode="demo"] .chip { border-color: var(--demo-line); color: var(--demo); }
-body[data-mode="demo"] .chip:hover { background: var(--demo-soft); }
+.chip:hover { background: var(--brand-soft); border-color: var(--brand); }
+body[data-mode="demo"] .chip { border-color: var(--demo-line); color: var(--demo-dark); }
+body[data-mode="demo"] .chip:hover { background: var(--demo-soft); border-color: var(--demo); }
 
 /* ---------- 输入区 ---------- */
-.composer { flex: 0 0 auto; display: flex; gap: 9px; align-items: flex-end; padding: 12px 14px; border-top: 1px solid var(--line); }
+.composer {
+  flex: 0 0 auto; display: flex; gap: 9px; align-items: flex-end;
+  padding: 12px 14px; border-top: 1px solid var(--line); background: var(--panel);
+}
 
 #input {
   /* min-height 要够放一行（padding 22 + 边框 3 + 行高 25.6 ≈ 51），46 会切掉半个字 */
   flex: 1 1 auto; font: inherit; resize: none; min-height: 51px; max-height: 160px;
-  padding: 11px 13px; border: 1.5px solid var(--line); border-radius: 10px;
-  outline: none; line-height: 1.6; background: var(--panel); color: inherit;
+  padding: 11px 13px; border: 1.5px solid var(--line); border-radius: var(--r);
+  outline: none; line-height: 1.6; background: var(--sunken); color: inherit;
 }
-#input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
-#input:disabled { background: #edf2ee; color: var(--ink-3); }
+/* 聚焦＝"这一格现在归你"。给左边一道粗色条，不用外发光圈——
+   光圈是软的东西，跟我们这套硬边语言不是一路。 */
+#input:focus { border-color: var(--brand); border-left-width: 4px; padding-left: 10.5px; background: var(--panel); }
+#input:disabled { background: var(--sunken); color: var(--ink-3); }
 
 #send {
-  font: inherit; font-weight: 600; flex: 0 0 auto;
+  font: inherit; font-weight: 700; flex: 0 0 auto; letter-spacing: 1px;
   background: var(--brand); color: #fff; border: 0;
-  padding: 12px 22px; border-radius: 10px; cursor: pointer;
+  padding: 12px 22px; border-radius: var(--r); cursor: pointer;
 }
-#send:disabled { background: #adc0b3; cursor: default; }
+#send:hover { background: var(--brand-deep); }
+#send:disabled { background: #9fb4a7; cursor: default; }
 body[data-mode="demo"] #send { background: var(--demo); }
+body[data-mode="demo"] #send:hover { background: var(--demo-dark); }
 
-#attach { font-size: 21px; line-height: 1; padding: 10px 13px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--panel); cursor: pointer; }
-#attach:hover { border-color: var(--brand); }
-
-#thumb { display: none; padding: 0 18px 8px; position: relative; flex: 0 0 auto; }
-#thumb img { max-height: 90px; border-radius: 8px; border: 1px solid var(--line); display: block; }
-#thumb .x {
-  position: absolute; left: 100px; top: -6px; width: 22px; height: 22px; border-radius: 50%;
-  border: 1px solid var(--line); background: var(--panel); cursor: pointer; font-size: 15px; line-height: 1;
+#attach {
+  font-size: 20px; line-height: 1; padding: 10px 13px; border-radius: var(--r);
+  border: 1.5px solid var(--line); background: var(--panel); cursor: pointer;
 }
+#attach:hover { border-color: var(--brand); background: var(--brand-soft); }
+
+/* 待发送的文件。原来是"一张缩略图 + 一个绝对定位的 ×"，位置写死 left:100px——
+   一张图还行，两张就叠在一起了。现在改成横排的条：每个文件一格，
+   × 钉在自己那一格的右上角。见 js/chat.js 的 showThumb。 */
+#thumb { display: none; padding: 10px 18px 0; flex: 0 0 auto; }
+#thumb .strip { display: flex; flex-wrap: wrap; gap: 9px; }
+#thumb .fi { position: relative; }
+#thumb .fi img {
+  max-height: 76px; max-width: 120px; border: 1px solid var(--line);
+  border-radius: var(--r); display: block; object-fit: cover; background: var(--panel);
+}
+/* 不是图片的文件（PDF / Word）画成一个带名字的方块 */
+#thumb .fi .doc {
+  width: 108px; height: 76px; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--sunken); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 3px; padding: 4px;
+}
+#thumb .fi .doc b { font-size: 11.5px; color: var(--brand); letter-spacing: .8px; }
+#thumb .fi .doc span {
+  font-size: 10.5px; color: var(--ink-3); max-width: 96px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#thumb .fi .x {
+  position: absolute; right: -7px; top: -7px; width: 20px; height: 20px; border-radius: 0;
+  border: 1px solid var(--rule); background: var(--panel); cursor: pointer;
+  font-size: 14px; line-height: 1; padding: 0; color: var(--ink-2);
+}
+#thumb .fi .x:hover { border-color: var(--warn); color: var(--warn); }
+#thumb .meta { font-size: 12.5px; color: var(--ink-3); margin: 7px 0 0; }
 
 /* ---------- 右：画板 ---------- */
 .boardbar {
   flex: 0 0 auto; display: flex; align-items: center; gap: 9px;
-  padding: 10px 14px; border-bottom: 1px solid var(--line);
+  padding: 8px 14px; border-bottom: 1px solid var(--line);
 }
-.boardbar .t { font-size: 14px; color: var(--ink-2); margin-right: auto; }
-.boardbar .tool { font-size: 13.5px; }
-/* 平面 / 三维 两格胶囊 */
-.viewsw { display: flex; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 2px; }
-.viewbtn {
-  border: 0; background: transparent; font: inherit; font-size: 13px;
-  padding: 4px 13px; border-radius: 999px; cursor: pointer; color: var(--ink-2);
+/* 中英结合做装饰：中文给看得懂的人，拉丁小字给"读仪器"的感觉。
+   那篇里说这种搭配"总能够比较好看，多用于装饰考虑"。 */
+.boardbar .t {
+  font-size: 14px; color: var(--ink-2); margin-right: auto; font-weight: 700;
+  display: flex; align-items: baseline; gap: 7px;
 }
-.viewbtn.on { background: var(--brand); color: #fff; font-weight: 600; }
+.boardbar .t em {
+  font-style: normal; font-size: 10.5px; font-weight: 400; color: var(--ink-3);
+  letter-spacing: 1.8px;
+}
 
 .boardwrap { position: relative; flex: 1 1 auto; min-height: 0; display: flex; }
+/* 热点效应（vignette）：一圈极淡的内投影，把视线收到画面中间。
+   那篇里说这个效果"来源于影像中心的明度和饱和度比四周高"，
+   用在作战章节页上"突出页面中的卡片元素"。这里用来把眼睛按在画板上，
+   旁边那些按钮就不抢戏了。 */
+.boardwrap::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 4;
+  box-shadow: inset 0 0 48px rgba(31, 122, 84, .085);
+}
 /* ★ `min-height: 0` 是这里的关键，别删（2026-10-01 手机实测）：
    flex 子项默认 `min-height: auto`——**它撑不过内容**。于是 applet 说多高、
    它就有多高，而画板又是照它的高度去量的：`fit()` 量到 240，就给 applet 设 240，
@@ -238,7 +399,7 @@ body[data-mode="demo"] #send { background: var(--demo); }
 
 /* 画板水印。★ 这一档是真正防"截图当自己的作品"的：
    不挡作图（pointer-events 全关），但截图出去人名就跟在图上。
-   淡到平时注意不到，又不能淡到截图缩一缩就糊没——16% 是这个平衡点。
+   淡到平时注意不到，又不能淡到截图缩一缩就糊没——18% 是这个平衡点。
    ★ 字串里带上了站名（KAX · 数根 mathroot）：署名得能"找回来"，
    光一个人名，看见截图的第三个人不知道这是谁的什么。
    带站名后整串约 200px，画板 560px 宽，右下角放得下；
@@ -246,7 +407,7 @@ body[data-mode="demo"] #send { background: var(--demo); }
 .wm {
   position: absolute; right: 14px; bottom: 10px; z-index: 5;
   font-size: 15px; font-weight: 700; letter-spacing: 1.2px;
-  color: rgba(39, 122, 86, .16);
+  color: rgba(31, 122, 84, .18);
   pointer-events: none; user-select: none; -webkit-user-select: none;
 }
 
@@ -255,56 +416,97 @@ body[data-mode="demo"] #send { background: var(--demo); }
 /* ---------- 页脚（署名第二处） ---------- */
 footer {
   flex: 0 0 auto; text-align: center; font-size: 12px; color: var(--ink-3);
-  padding: 2px 14px 8px;
+  padding: 2px 14px 8px; letter-spacing: .4px;
 }
 
-/* 教师演示模式的角标 */
+/* 教师演示模式的角标。
+   ★ 底纹用的是斜条纹——那篇里专门讲了方舟的底图手法，粗条纹"类似警戒线的
+     风格，展现设计的工业感"。警戒线正好对上"现在不是普通模式"这件事。
+     条纹用同色系的深浅两档，不用对比色：底纹是背景，字还得看得清。 */
 #demoflag {
   position: fixed; right: 18px; bottom: 34px; z-index: 40;
-  background: var(--demo); color: #fff; font-size: 13px; font-weight: 600;
-  padding: 8px 16px; border-radius: 999px; box-shadow: 0 3px 12px rgba(0,0,0,.18);
+  background: repeating-linear-gradient(45deg, var(--demo) 0 9px, var(--demo-dark) 9px 18px);
+  color: #fff; font-size: 13px; font-weight: 700; letter-spacing: 1px;
+  padding: 8px 16px; border-radius: var(--r);
+  box-shadow: 0 3px 12px rgba(20, 40, 28, .22);
   pointer-events: none;
 }
 
-/* ---------- 弹层（Key 设置 / 关于，共用一套） ---------- */
+/* ---------- 弹层（Key 设置 / 关于 / 本地素材，共用一套） ---------- */
+/* 遮罩用毛玻璃。那篇讲 Fluent Design 时说背景模糊的关键好处是**覆盖特性**：
+   让人"窥"见下面那页还在，从而"降低玩家对忽然跳出的新页面的抗拒感"。
+   纯色遮罩是"把下面盖死了"，模糊是"下面还在，只是退后一层"。
+   浏览器不支持 backdrop-filter 时会退回纯色，不影响可用。 */
 .overlay {
-  position: fixed; inset: 0; z-index: 100; background: rgba(20, 40, 30, .45);
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(18, 36, 27, .42);
+  -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);
   display: none; align-items: center; justify-content: center; padding: 20px;
 }
 .overlay.open { display: flex; }
 .overlay .box {
-  background: var(--panel); border-radius: 16px; padding: 26px 26px 20px;
-  width: min(560px, 100%); box-shadow: 0 16px 50px rgba(16, 40, 28, .3);
+  background: var(--panel); border-radius: var(--r);
+  border-top: 3px solid var(--brand);
+  padding: 24px 26px 20px;
+  width: min(560px, 100%); box-shadow: 0 14px 44px rgba(12, 34, 22, .28);
   max-height: 86vh; overflow-y: auto;
 }
-.overlay h2 { margin: 0 0 6px; font-size: 20px; color: var(--brand); }
+.overlay h2 {
+  margin: 0 0 10px; font-size: 19px; color: var(--brand); letter-spacing: .5px;
+  display: flex; align-items: baseline; gap: 9px;
+}
+.overlay h2 em {
+  font-style: normal; font-size: 10.5px; font-weight: 400; color: var(--ink-3);
+  letter-spacing: 1.8px;
+}
 .overlay p { margin: 0 0 14px; font-size: 14px; color: var(--ink-2); line-height: 1.75; }
 .overlay a { color: var(--brand); }
-.overlay code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-family: Consolas, monospace; font-size: .93em; }
-.overlay .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
+.overlay code { background: var(--code-bg); padding: 1px 5px; border-radius: 2px; font-family: Consolas, monospace; font-size: .93em; }
+.overlay .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
 .overlay .row .tool { padding: 9px 18px; font-size: 14.5px; }
-.overlay .row .primary { background: var(--brand); color: #fff; border-color: var(--brand); font-weight: 600; }
-.overlay .row .primary:hover { color: #fff; }
+.overlay .row .primary { background: var(--brand); color: #fff; border-color: var(--brand); font-weight: 700; }
+.overlay .row .primary:hover { color: #fff; background: var(--brand-deep); border-color: var(--brand-deep); }
+
+/* 弹层里的小标题：左边一道短色条，和气泡、chip 是同一个记号 */
+.overlay h3 {
+  font-size: 14px; margin: 16px 0 6px; color: var(--ink);
+  border-left: 3px solid var(--brand-line); padding-left: 8px;
+}
+
+/* ---------- Key 面板的状态牌 ---------- */
+/* 当前用哪条通道、Key 打没打上、尾号多少——一眼看完，不用先读一段话。
+   原来这个面板上来就是两段说明文字，看半天不知道自己现在是什么状态。 */
+#keystate {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--sunken); border: 1px solid var(--line); border-left: 3px solid var(--brand);
+  border-radius: var(--r); padding: 10px 13px; margin: 0 0 16px;
+}
+#keystate.warn { border-left-color: var(--warn); }
+#keystate .k { font-size: 12px; color: var(--ink-3); letter-spacing: 1px; }
+#keystate .v { font-size: 14px; font-weight: 700; color: var(--ink); }
+#keystate .v.ok { color: var(--brand); }
+#keystate .v.no { color: var(--warn); }
+#keystate .tail {
+  font-family: Consolas, monospace; font-size: 13px; color: var(--ink-2);
+  background: var(--panel); border: 1px solid var(--line); padding: 1px 7px;
+}
 
 /* ---------- 本地素材面板（只在本机出现，见 js/resources.js） ---------- */
 /* 它列的是长路径，560px 的框放不下会折得很难看，所以这一档单独放宽。 */
 .overlay .box.wide { width: min(760px, 100%); }
-#resq {
-  width: 100%; font: inherit; font-size: 14px; padding: 9px 12px;
-  border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink);
-}
-#resq:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+/* #resq / #kbq 的样式在下面跟知识库面板写在一起（两个面板的输入框是同一种东西） */
 #resmeta { font-size: 12.5px; color: var(--ink-3); margin: 10px 0 8px; }
 #resrows { max-height: 46vh; overflow-y: auto; border-top: 1px solid var(--line); }
 .resrow { padding: 9px 2px 10px; border-bottom: 1px solid var(--line); }
 .reshape { font-size: 14px; color: var(--ink); display: flex; align-items: baseline; gap: 8px; }
 .ressrc {
-  font-size: 11.5px; color: var(--brand); background: var(--brand-soft);
-  border: 1px solid var(--brand-line); border-radius: 999px; padding: 1px 7px; white-space: nowrap; flex: 0 0 auto;
+  font-size: 11px; color: var(--brand); background: var(--brand-soft);
+  border-left: 2px solid var(--brand); padding: 1px 7px 1px 5px;
+  letter-spacing: .6px; white-space: nowrap; flex: 0 0 auto;
 }
 .respath {
   display: block; margin-top: 5px; font-family: Consolas, monospace; font-size: 12px;
-  color: var(--ink-2); background: var(--code-bg); border-radius: 6px; padding: 4px 7px;
+  color: var(--ink-2); background: var(--code-bg); border-radius: 2px; padding: 4px 7px;
   cursor: pointer; word-break: break-all;
 }
 .respath:hover { color: var(--brand); }
@@ -312,39 +514,117 @@ footer {
 .respath.copied::after { content: '  ✓ 复制了'; font-family: inherit; }
 .resempty { font-size: 13.5px; color: var(--ink-3); padding: 14px 2px; }
 
+/* ---------- 知识库面板（只在本机出现，见 js/kb.js） ---------- */
+/* 输入框样式跟 #resq 是同一套，所以两条写在一条规则里——不然改一处忘一处，
+   两个长得一样的面板会用上两种边框。 */
+#resq, #kbq {
+  width: 100%; font: inherit; font-size: 14px; padding: 9px 12px;
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--sunken); color: var(--ink);
+}
+#resq:focus, #kbq:focus { outline: none; border-color: var(--brand); border-left-width: 4px; padding-left: 9px; background: var(--panel); }
+#kbstat { margin: 10px 0 12px; border-top: 1px solid var(--line); }
+.kbrow {
+  font-size: 13px; color: var(--ink-2); padding: 7px 2px;
+  border-bottom: 1px solid var(--line); font-family: Consolas, monospace;
+}
+/* "没装上"要看得出来。它一般不是坏消息（离线而已），但绝不能看着像"装上了"。 */
+.kbrow.miss { color: var(--ink-3); text-decoration: line-through; }
+#kbhits { max-height: 42vh; overflow-y: auto; margin-top: 10px; }
+#kbhits h3 {
+  font-size: 12.5px; font-weight: 600; color: var(--ink-3); letter-spacing: .5px;
+  margin: 14px 0 6px; padding-left: 7px; border-left: 3px solid var(--brand);
+}
+.kbhit {
+  display: flex; align-items: baseline; gap: 9px;
+  font-size: 13.5px; padding: 6px 2px; border-bottom: 1px solid var(--line);
+}
+/* 分数是这一屏的主角：阈值卡在哪儿，全靠这一列看出来 */
+.kbscore {
+  font-family: Consolas, monospace; font-size: 11.5px; color: var(--brand);
+  background: var(--brand-soft); padding: 1px 6px; flex: 0 0 auto; min-width: 46px;
+  text-align: center;
+}
+/* 被阈值卡掉的那几条：**留着、但要一眼看出它没被用**。
+   直接不显示的话，就看不见"差一点就够上了"——那正是要调阈值时要看的。 */
+.kbhit.cut { opacity: .45; }
+.kbhit.cut .kbscore { color: var(--ink-3); background: var(--code-bg); }
+.kbtitle { color: var(--ink); }
+
+/* 「测一下」就摆在输入框右边——它验的是框里这一串，摆一起才不会点错对象 */
+.keyrow { display: flex; gap: 9px; align-items: stretch; }
+.keyrow #keyinput { flex: 1 1 auto; }
+.keyrow .tool { flex: 0 0 auto; font-size: 14px; }
+
 #keyinput {
   width: 100%; font: inherit; font-family: Consolas, monospace; font-size: 14px;
-  padding: 11px 13px; border: 1.5px solid var(--line); border-radius: 10px; outline: none;
-  background: var(--panel); color: inherit;
+  padding: 11px 13px; border: 1.5px solid var(--line); border-radius: var(--r); outline: none;
+  background: var(--sunken); color: inherit;
 }
-#keyinput:focus { border-color: var(--brand); }
+#keyinput:focus { border-color: var(--brand); border-left-width: 4px; padding-left: 10.5px; background: var(--panel); }
 #keyerr { color: var(--warn); font-size: 13.5px; min-height: 1.4em; margin: 8px 0 0; }
+/* ★ 这一行既报错也报"怎么办"。用同一身红字，会把"用免费通道也行，不用填"
+   这种**提示**读成报错——第一次进来的人会以为自己哪儿做错了。
+   提示走灰、出错才走红，按 .hint 分（见 main.js 的 openKeyDlg）。 */
+#keyerr.hint { color: var(--ink-3); }
+#keyok { color: var(--brand); font-size: 13.5px; min-height: 1.4em; margin: 8px 0 0; }
 
 /* 关于面板里的小节 */
-#about h3 { font-size: 15px; margin: 18px 0 4px; color: var(--ink); }
-#about h3:first-of-type { margin-top: 8px; }
 #about ul { margin: 4px 0 12px; padding-left: 1.3em; font-size: 14px; color: var(--ink-2); line-height: 1.75; }
 #about .sig { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 12px; font-size: 13px; color: var(--ink-3); }
 #about .sig b { color: var(--brand); }
 
 /* ---------- 窄屏 ---------- */
-@media (max-width: 1180px) {
+@media (max-width: 1240px) {
   #badge { display: none; }
 }
-@media (max-width: 1020px) {
+@media (max-width: 1060px) {
   .brand .sub { display: none; }
 }
 @media (max-width: 900px) {
   main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
-  .backs { display: none; }          /* 挤不下就不显；设置面板里照样能切 */
-  /* ★ 顶栏改成两行：第一行整行给"logo＋数根＋by KAX"，第二行才是那些按钮
-     （2026-10-01 手机实测）。一行排不下时，光把 .brand 设成不许压缩是没用的——
-     它不缩了，别的按钮就被挤出屏幕外，还是得横着拖。让它独占一行最省事。
-     代价：手机上顶栏高一档。换来的是**页面上始终写着这是谁做的**。 */
-  header { gap: 8px; padding: 8px 12px; flex-wrap: wrap; row-gap: 7px; }
-  /* 别写 `.brand { flex-basis: 100% }`——那会让品牌独占一行，剩下的按钮再排两行，
-     顶栏变成三行，最后一行只剩一个"免费通道"，看着像没做完（截到过）。
+  /* ★ 手机上顶栏原来排成了**三行**（2026-10-01 402px 实测截图）：
+     第一行 logo+站名+BY KAX，第二行 模式+通道+素材，第三行只剩一个「关于」。
+     最后那行孤零零一个按钮，看着像没做完，还白吃掉一整行的高度。
+     治法是把这一档的尺寸整体收一档——字号、间距、内边距都降一档，
+     四个按钮就回得去第二行。别去动 DOM 结构（那是给桌面排的）。 */
+  /* 顶栏。flex-wrap 不能省：一行排不下时得让它自然回卷。
+     别写 `.brand { flex-basis: 100% }`——那会让品牌独占一行，剩下的按钮再排两行，
+     顶栏变成三行，最后一行只剩一个按钮，看着像没做完（截到过）。
      让它自然回卷：排得下就排在站名右边，排不下才整块挪到下一行。 */
+  header { gap: 7px; padding: 7px 11px; row-gap: 6px; flex-wrap: wrap; }
+  .brand .name { font-size: 19px; letter-spacing: 1px; }
+  .brand .by { font-size: 11px; padding: 1px 6px 1px 5px; }
   .brand { margin-right: 0; }
+  .modebtn { font-size: 13px; padding: 6px 10px 5px; }
+  .backbtn { font-size: 12.5px; padding: 6px 9px 5px; }
+  .backbtn .dot { width: 7px; height: 7px; margin-right: 5px; }
+  header .tool { font-size: 13px; padding: 6px 10px; }
   .modes { margin-right: auto; }     /* 后面那些按钮往右推，跟桌面一个观感 */
+  /* ★ 手机上通道切换**不能藏**（2026-10-01 改）。
+     原来这里写的是 `.backs { display: none }`，理由写的是"设置面板里照样能切"——
+     可那时候手机上一个通往设置面板的入口都没有，等于学生在手机上
+     既切不了通道、也填不了自己的 Key。
+     收窄成"换成短文案"，入口保住了，也还看得出这是个能按的东西。 */
+  .backs .backbtn .label { display: none; }
+  .backs .backbtn .short { display: inline; }
+  .backs .backbtn { min-height: 34px; display: flex; align-items: center; }
+
+  /* 输入区。★ 手机上一行放不下「📎 + 输入框 + 发送」：
+     按桌面尺寸算，两个按钮加间距吃掉 168px，390 宽的屏只剩 185 给输入框，
+     placeholder「贴一道题，或者整张卷子」当场折成两行，第二行被边框切掉——
+     截图里就是"贴一道题，或者整张"后面没字了。这里把两边都收一档。 */
+  .composer { padding: 9px 10px; gap: 7px; }
+  #input { font-size: 15px; padding: 10px 11px; min-height: 47px; }
+  #input:focus { padding-left: 8.5px; }
+  #send { padding: 11px 15px; letter-spacing: .5px; }
+  #attach { font-size: 18px; padding: 9px 10px; }
+  #thumb { padding: 9px 12px 0; }
+
+  /* 画板工具条。★ 手机上原来「存图」被挤出右边框外（截图里只剩"存"）——
+     boardbar 是 nowrap 的 flex，挤不下就溢出，而 .col 是 overflow:hidden，
+     溢出的部分直接没了，不是出现滚动条。让它可以换行，按钮也收一档。 */
+  .boardbar { flex-wrap: wrap; row-gap: 6px; padding: 8px 11px; gap: 7px; }
+  .boardbar .t { margin-right: auto; font-size: 13px; white-space: nowrap; }
+  .boardbar .tool { font-size: 12.5px; padding: 5px 9px; }
+  .viewbtn { font-size: 12.5px; padding: 5px 11px 4px; }
 }

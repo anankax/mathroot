@@ -30,7 +30,7 @@ var SR = (window.SR = window.SR || {});
 SR.BACKENDS = {
   glm: {
     id: 'glm',
-    label: '免费体验',
+    label: '免费通道',
     hint: '不用注册，打开就能用',
     url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
     // [主模型, 降级一, 降级二]。主模型 429 时依次往后试（智谱官方也是这个建议）
@@ -75,11 +75,19 @@ SR.BACKENDS = {
     //   全量版留给 DeepSeek——那份提示词就是在它上面逐版调到围栏 8/8 的，别动。
     //   两份都由 test/build_prompt.py 生成。演示模式的提示词两个后端共用，不分档。
     promptProfile: 'lean',
-    budget: 7000          // 留给对话历史的 token 预算（16K - 提示词 7541 - 图 244 - 输出 1024 - 余量）
+    budget: 7000,         // 留给对话历史的 token 预算（16K - 提示词 7541 - 图 244 - 输出 1024 - 余量）
+    // ★ 带图那一轮单独放宽（2026-10-01 加）。上面那个 7000 是按**最小**那颗
+    //   （16K 的 glm-4v-flash）量的，可带图走的是 modelsImage，链上只有
+    //   128K 的 glm-4.6v-flash。而学生现在能一次发一整张卷子——五六页图
+    //   就占掉两千多字符当量，再拿 7000 去裁，历史会被裁到只剩最后一轮：
+    //   学生上一句"我算到 x=4"，下一句模型就忘了。
+    //   这里给 30000，是"够放十几轮 + 一整份卷子"且仍远低于 128K 的数。
+    //   真顶到上限时 trimHistory 会从最老的开始丢，不会报错。
+    budgetImage: 30000
   },
   deepseek: {
     id: 'deepseek',
-    label: '自带 Key',
+    label: '我的 Key',
     hint: '用你自己的 DeepSeek Key',
     url: 'https://api.deepseek.com/chat/completions',
     models: ['deepseek-flash'],

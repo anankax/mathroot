@@ -56,9 +56,32 @@ function req(opts, body) {
   for (const m of ['SR.config !== undefined || typeof SR !== "undefined"', "typeof SR.MODES", "typeof SR.api.ask", "typeof SR.render.parseFences",
                    "typeof SR.board.run", "typeof SR.chat.submit", "typeof SR.main.boot", "typeof SR.findTextbook",
                    "typeof marked", "typeof DOMPurify", "typeof renderMathInElement", "typeof GGBApplet",
-                   "SR.PROMPT_STUDENT.length", "SR.TEXTBOOK.length", "SR.PROMPT_DEMO.length"]) {
+                   "SR.PROMPT_STUDENT.length", "SR.PROMPT_DEMO.length"]) {
     console.log('  ' + m + '  =>  ' + JSON.stringify(await q(m)));
   }
+
+  // ★ 知识库（教材索引 + 追问条目库，117KB）**不该**出现在首屏——2026-10-01 把它从
+  //   index.html 的 <script defer> 挪到了 js/kb.js 按需拿。这里量两件事、**两件都判**：
+  //   首屏确实没有；调一次 load() 之后确实有。
+  //   只量前半句会放过"永远装不上"，只量后半句会放过"其实还在首屏"。
+  console.log('\n===== 知识库按需装载 =====');
+  const kb0 = [await q('typeof SR.TEXTBOOK'), await q('typeof SR.ZHUAWEN')];
+  console.log('  首屏 typeof SR.TEXTBOOK / SR.ZHUAWEN :', JSON.stringify(kb0));
+  console.log('  ' + (kb0[0] === 'undefined' && kb0[1] === 'undefined' ? '✓' : '✗') +
+    ' 首屏没有 117KB 语料（推迟到第一次提问）');
+  await q('window.__kb=null; SR.kb.load(function(ok){ window.__kb=ok; });');
+  for (let i = 0; i < 20; i++) { await new Promise(r => setTimeout(r, 300)); if (await q('window.__kb!==null')) break; }
+  const kbOK = await q('window.__kb');
+  const stat = await q('JSON.stringify(SR.kb.status().map(function(r){return r.条数}))');
+  console.log('  load() 回来了 :', JSON.stringify(kbOK), ' 条数:', stat);
+  console.log('  ' + (kbOK === true && stat === '[118,118]' ? '✓' : '✗') + ' 要用的时候装得上（教材索引 118 + 追问条目库 118）');
+  // 召回修正：学生只说"嗯"时，检索词要把前几轮学生自己的话带上
+  const rec = await q('SR.kb.queryFor("嗯",[{role:"user",content:"我算到 x=4 就卡了"},' +
+    '{role:"assistant",content:"那你当时怎么想的"},{role:"user",content:"绝对值我不会"}])');
+  console.log('  queryFor("嗯", 前面几轮) :', JSON.stringify(rec));
+  console.log('  ' + (rec.includes('x=4') && rec.includes('绝对值') && !rec.includes('怎么想的') ? '✓' : '✗') +
+    ' 带上学生前几轮的话、且不带模型自己说的话');
+
 
   console.log('\n===== 页面状态 =====');
   console.log('  模式:', await q('document.body.getAttribute("data-mode")'));

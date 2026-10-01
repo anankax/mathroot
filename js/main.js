@@ -46,17 +46,38 @@ SR.main = (function () {
       btns[i].classList.toggle('warn', on && !ready);
     }
 
-    var kb = $('keybtn');
-    if (cur === 'glm') {
-      kb.textContent = ready ? '免费通道' : 'Key ✗';
-      kb.title = ready ? '正在用 KAX 的免费通道，不用填任何东西' : '免费通道没配好';
-    } else {
-      kb.textContent = ready ? 'Key ✓' : 'Key';
-      kb.title = '用自己的 DeepSeek Key';
-    }
+    paintKeyState();
     $('input').disabled = !ready;
     SR.chat.setStatus(ready ? '' : (cur === 'glm' ? '免费通道暂时不可用，可以切到自己的 Key' : '还没有填 Key'));
     return ready;
+  }
+
+  // 设置面板顶上那块状态牌。做它的理由：原来这面板一上来就是两段说明文字，
+  // 看半天不知道自己现在到底在用什么、Key 到底填上没有——答案本来就该摆在这儿。
+  // ★ Key 只显示**尾号四位**。整串摆出来，旁边有人路过就看见了；
+  //   而且这块牌子在截图里也会出现（老师演示时会截图），尾号够认、不够用。
+  function paintKeyState() {
+    var plate = $('keystate');
+    if (!plate) return;
+    var cur = SR.api.getBackendId();
+    var b = SR.BACKENDS[cur] || {};
+    var ready = SR.api.ready(cur);
+    $('ks-now').textContent = b.label || cur;
+    var ok = $('ks-ok');
+    ok.textContent = ready
+      ? (b.keyInPage ? '已连上 · 不用填任何东西' : '已填好 · 用你自己的额度')
+      : (b.keyInPage ? '没配上' : '还没填');
+    ok.classList.toggle('ok', ready);
+    ok.classList.toggle('no', !ready);
+    plate.classList.toggle('warn', !ready);
+    var tail = $('ks-tail');
+    var k = SR.api.getKey(cur) || '';
+    if (!b.keyInPage && k) {
+      tail.textContent = '尾号 ' + k.slice(-4);
+      tail.style.display = '';
+    } else {
+      tail.style.display = 'none';
+    }
   }
 
   // 出错气泡里那个"切到自己的 Key"按钮会调到这儿
@@ -70,20 +91,42 @@ SR.main = (function () {
     $('keyset').classList.add('open');
     var inp = $('keyinput');
     inp.value = SR.api.getKey('deepseek');
-    $('keyerr').textContent = SR.api.hasKey('deepseek')
-      ? '' : '用数根的免费通道也行，不用填。填了就是用你自己的额度，更稳。';
+    $('keyok').textContent = '';                       // 上一轮留下的"通了"，换个面板就说不上话了
+    // 这句是**提示**不是报错：第一次进来的人看见红字，会以为自己哪儿做错了。
+    // 挂 .hint 走灰字（main.css 那条），真出错时不挂，才走红。
+    var fresh = !SR.api.hasKey('deepseek');
+    sayKeyLine(fresh ? '用数根的免费通道也行，不用填。填了就是用你自己的额度，更稳。' : '', true);
+    paintKeyState();
     inp.focus();
   }
   function closeKeyDlg() { $('keyset').classList.remove('open'); }
 
+  // 往那一行写字只有这一个口子。省得"忘了把上次的 .hint 摘掉"——
+  // 一忘，报错就顶着灰字出现，看着像句无关紧要的提示。
+  function sayKeyLine(text, isHint) {
+    var el = $('keyerr');
+    el.textContent = text || '';
+    el.classList.toggle('hint', !!isHint && !!text);
+  }
+
+  // 同一个校验在两处用（「测一下」和「保存并使用」），别各写一份
+  function checkKeyFormat(v) {
+    if (v.length < 20 || v.indexOf('sk-') !== 0) return '这不像一个 DeepSeek Key（一般以 sk- 开头）。';
+    return '';
+  }
+
   function saveKey() {
     var v = $('keyinput').value.trim();
-    if (v.length < 20 || v.indexOf('sk-') !== 0) {
-      $('keyerr').textContent = '这不像一个 DeepSeek Key（一般以 sk- 开头）。';
+    var bad = checkKeyFormat(v);
+    if (bad) {
+      $('keyok').textContent = '';
+      sayKeyLine(bad);
       return;
     }
     SR.api.setKey(v);
     if (SR.api.getBackendId() !== 'deepseek') SR.api.setBackend('deepseek');
+    sayKeyLine('');
+    $('keyok').textContent = '';
     closeKeyDlg();
     applyBackend();
     $('input').focus();
@@ -167,6 +210,88 @@ SR.main = (function () {
     } catch (e) { /* 选不中就算了，路径本来就看得见 */ }
   }
 
+  // ---- 知识库（验货） ----
+  // 这个面板要做的事只有一件：让"检索到底召回了什么"看得见。
+  // 在那之前它是个黑盒——学生问了、模型答了，中间那一步对不对，谁也说不出来。
+  function openKB() {
+    openOverlay('kblist');
+    paintKB($('kbq') ? $('kbq').value : '');
+    // 面板开着的时候才去装语料（跟正经使用同一条路，走的是同一个 kb.load）
+    SR.kb.load(function () { paintKB($('kbq') ? $('kbq').value : ''); });
+    var q = $('kbq');
+    if (q) { q.focus(); q.select(); }
+  }
+
+  function paintKB(q) {
+    var box = $('kbstat'), hits = $('kbhits');
+    if (!box || !hits) return;
+    var rows = SR.kb.status(), total = 0, any = false;
+    box.innerHTML = '';
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var el = document.createElement('div');
+      el.className = 'kbrow' + (r.ok ? '' : ' miss');
+      // ★ 只报"到了 / 没到"，不报"加载中"——load 是幂等的、有兜底的，
+      //   面板上多一个状态就等于多一个要跟代码对齐的东西，不值。
+      el.textContent = r.what + '　' + (r.ok ? r.条数 + ' 条 · 约 ' + r.KB + ' KB' : '没装上') + '　' + r.src;
+      box.appendChild(el);
+      if (r.ok) { total += r.条数; any = true; }
+    }
+    hits.innerHTML = '';
+    if (!any) {
+      hits.innerHTML = '<p class="resempty">语料还没到。等一下再打一次，或者看看上面那行是不是写着"没装上"。</p>';
+      return;
+    }
+    if (!q) {
+      hits.innerHTML = '<p class="resempty">两份语料共 ' + total + ' 条，都在了。' +
+        '在上面打一句学生真会说的话，看看能翻出什么。</p>';
+      return;
+    }
+    var res = SR.kb.search(q);
+    // ★ 分数线从 SR.kb.cut 取，**不写死在这儿**——写死的话，哪天 api.js 那边调了线，
+    //   这个面板还会照旧显示"10 分以下不给"，变成一台看着在验货、其实在骗人的仪器。
+    paintHits(hits, '教材索引', res.textbook, SR.kb.cut('textbook'));
+    paintHits(hits, '追问条目库', res.zhuawen, SR.kb.cut('zhuawen'));
+  }
+
+  function paintHits(box, name, list, cut) {
+    var h = document.createElement('h3');
+    h.textContent = name + '（' + list.length + ' 条）' + (cut ? '　阈值 ' + cut + ' 分以下不给' : '');
+    box.appendChild(h);
+    var p = document.createElement('p');
+    p.className = 'resempty';
+    if (!list.length) {
+      p.textContent = '一条都没翻出来——这一轮走"没召回到"那一档，一个字都不往 system 里加。';
+      box.appendChild(p);
+      return;
+    }
+    // ★「撞上了但够不着线」跟「压根没撞上」是两回事，得分开说。
+    //   前者是要调阈值时唯一值得看的那一屏——到底差多少，全在这儿。
+    var pass = 0;
+    for (var i = 0; i < list.length; i++) if (!cut || list[i].score >= cut) pass++;
+    if (!pass) {
+      p.textContent = '翻出来 ' + list.length + ' 条，一条都没够上 ' + cut + ' 分——这一轮走"没召回到"那一档，不给。';
+      box.appendChild(p);
+    }
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i];
+      var row = document.createElement('div');
+      row.className = 'kbhit' + (cut && it.score < cut ? ' cut' : '');
+      var sc = document.createElement('span');
+      sc.className = 'kbscore';
+      sc.textContent = it.score.toFixed(1);
+      if (cut && it.score < cut) sc.textContent += ' 卡掉';
+      // 条目正文里有换行，摆进这个列表只留标题那一行——要看全文去源文件看
+      var ttl = document.createElement('span');
+      ttl.className = 'kbtitle';
+      ttl.textContent = it.doc.title;
+      row.appendChild(sc);
+      row.appendChild(ttl);
+      row.title = it.doc.text;
+      box.appendChild(row);
+    }
+  }
+
   // ============================================================
   //  启动
   // ============================================================
@@ -222,21 +347,67 @@ SR.main = (function () {
         else if (window.console) console.info('数根：本机没有 js/resource-index.js，「素材」按钮就不显示了。');
       });
     }
-    $('keybtn').addEventListener('click', function () {
-      // 正在用免费通道：点它就切到"用自己的 Key"，顺手把设置层打开
-      if (SR.api.getBackendId() === 'glm') applyBackend('deepseek');
-      openKeyDlg();
+    // ---- 知识库（验货用）----
+    // ★ 跟「素材」不一样：那一个是本机才有的**文件**，公开站上根本没有。
+    //   知识库这两份语料是自写内容、公开站上也有，谁都能下下来看——
+    //   不公开的只是**这个面板**（它显示分数和阈值，是给编目的人看的），
+    //   所以门禁判的是"是不是本机"，不是"文件在不在"。
+    var kb = $('kbbtn');
+    if (kb && SR.kb) {
+      var local = location.hostname === 'localhost' || location.hostname === '127.0.0.1' ||
+                  location.protocol === 'file:' || location.hostname === '';
+      if (local) {
+        kb.style.display = '';
+        kb.addEventListener('click', openKB);
+        var kq = $('kbq');
+        if (kq) kq.addEventListener('input', function () { paintKB(kq.value); });
+        // ★ 这里**不预装**语料。本机"不心疼"是错觉：开了这个头，
+        //   首屏就照样得付那 117KB，跟没改一样——而且本机是唯一测得出来
+        //   "延迟装载到底有没有生效"的地方，在这儿破例，等于把量具自己拆了。
+        //   装语料只有两个时机：学生真提问（api.js 的 ask），或者点开这个面板（openKB）。
+      }
+    }
+
+    // ★ 这里原来还挂着一个独立的 #keybtn（点了会切后端＋弹这个面板）。
+    //   2026-10-01 拆掉了：它和顶栏「我的 Key」那一格通向的是同一件事，
+    //   两个长得差不多的入口摆在一起，谁都说不清该点哪个。现在只剩顶栏那一处。
+    $('keytest').addEventListener('click', function () {
+      var btn = this;
+      var v = $('keyinput').value.trim();
+      var bad = checkKeyFormat(v);
+      $('keyok').textContent = '';
+      if (bad) { sayKeyLine(bad); return; }
+      sayKeyLine('');
+      var old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '测…';
+      // ★ 验的是**输入框里这一串**，不是已经存下来的那一串——
+      //   学生刚改了一位还没保存，测出"通了"就等于骗他。
+      SR.api.probeKey(v, function (res) {
+        btn.disabled = false;
+        btn.textContent = old;
+        if (res && res.ok) {
+          sayKeyLine('');
+          $('keyok').textContent = '通了。点「保存并使用」就切过去。';
+        } else {
+          $('keyok').textContent = '';
+          sayKeyLine('没通：' + ((res && res.error) || '不知道什么原因'));
+        }
+      });
     });
 
     $('keysave').addEventListener('click', saveKey);
     $('keyforget').addEventListener('click', function () {
       SR.api.forgetKey();
-      $('keyerr').textContent = '已忘掉。要用得重新填。';
+      $('keyok').textContent = '';
+      sayKeyLine('已忘掉。要用得重新填。');
       $('keyinput').value = '';
       applyBackend();
     });
     // 「免费通道就行」——一键切回去，对不想注册的人最要紧的一步
     $('keyfree').addEventListener('click', function () {
+      $('keyok').textContent = '';
+      sayKeyLine('');
       closeKeyDlg();
       applyBackend('glm');
       $('input').focus();

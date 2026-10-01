@@ -12,9 +12,15 @@ SR.chat = (function () {
   var MAX_TURNS = 24;
   var lastFail = null;       // 上一轮失败的提问，切完 Key 可以一键重发
 
+  // 开场白。★ 短，而且**不自述**（2026-10-01 孔老师的原话："说说你怎么做的，有点刻意了"）。
+  //   原来那句「我不判对错、不给答案、只顺着你的思路往下问，问到你自己说出错在哪儿为止」，
+  //   是把自己的工作方式讲给学生听——像一份说明书，不像一个人开口说话。
+  //   这层意思没丢，它挪到「关于」面板的「为什么这么设计」那一节去了，那里才是该讲道理的地方。
+  //   ★ 第二句里"整张卷子也行"要留着：学生发一整份卷子是这个站的常见用法，
+  //     开场白不提，他就不敢发（见 js/files.js 的多文件支持）。
   var OPENING = {
-    student: '你好，我是数根。把你做错的题贴进来，再说说你当时是怎么想的——算到哪一步都行，说得乱也没关系。我不判对错，不给答案，只顺着你的思路往下问，问到你自己说出错在哪儿为止。',
-    demo: '教师演示模式。你说要画什么，我直接画到右边的画板上。想让它动起来就说一声——比如「画个数轴，带个动点 P」。'
+    student: '把题发给我吧。做错的、不会的都能发，整张卷子也行。先说说你想到哪一步了。',
+    demo: '你说画什么，我画什么。想让它动就说一声，比如「画个数轴，带个动点 P」。'
   };
 
   function $(id) { return document.getElementById(id); }
@@ -42,18 +48,20 @@ SR.chat = (function () {
     });
     els.input.addEventListener('input', autoGrow);
     els.attach.addEventListener('click', function () { els.file.click(); });
-    els.file.addEventListener('change', function () { onPick(els.file.files[0]); });
-    // 直接往输入框里粘贴截图
+    els.file.addEventListener('change', function () { onPick(els.file.files); });
+    // 直接往输入框里粘贴截图。★ 粘贴都是**追加**，不是替换：
+    //   学生常常一张一张截、一张一张粘，替换的话前面的就白发了。
     els.input.addEventListener('paste', function (e) {
       var items = e.clipboardData && e.clipboardData.items;
       if (!items) return;
+      var got = [];
       for (var i = 0; i < items.length; i++) {
         if (items[i].type && items[i].type.indexOf('image') === 0) {
-          e.preventDefault();
-          onPick(items[i].getAsFile());
-          return;
+          var f = items[i].getAsFile();
+          if (f) got.push(f);
         }
       }
+      if (got.length) { e.preventDefault(); onPick(got); }
     });
 
     // 画板按钮
@@ -131,16 +139,31 @@ SR.chat = (function () {
     return b;
   }
 
-  function addUser(text, imageDataUrl) {
+  // 学生这一轮发的东西：文字之外还可能是好几张图、几页 PDF、一份 Word。
+  // 图片各占一行（学生要能看清自己发的是哪几张），文档只挂一行小字——
+  // 把一整份卷子的文字正文摊在气泡里，对话会被撑得没法看。
+  function addUser(text, parts) {
     var el = document.createElement('div');
     el.className = 'msg user';
     var b = document.createElement('div');
     b.className = 'bubble';
-    if (imageDataUrl) {
-      var img = document.createElement('img');
-      img.className = 'shot';
-      img.src = imageDataUrl;
-      b.appendChild(img);
+    parts = parts || [];
+    var docs = [];
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i];
+      if (p.kind === 'image') {
+        var img = document.createElement('img');
+        img.className = 'shot';
+        img.src = p.dataUrl;
+        img.alt = p.name || '学生发来的图片';
+        b.appendChild(img);
+      } else if (p.kind === 'text') docs.push(p.name || '文件');
+    }
+    if (docs.length) {
+      var d = document.createElement('div');
+      d.className = 'docsent';
+      d.textContent = '📄 ' + docs.join('、');
+      b.appendChild(d);
     }
     if (text) {
       var t = document.createElement('div');
@@ -201,9 +224,9 @@ SR.chat = (function () {
       if (el.className.indexOf('assistant') < 0 && el.className.indexOf('user') < 0) break;
       els.msgs.removeChild(el);
     }
-    pendingImage = f.img || null;
-    // 照片也得回到输入框上——学生要看得见"那张图还在"，才敢按下发送
-    if (f.img) showThumb(f.img);
+    pendingParts = f.parts || [];
+    // 文件也得回到输入框上——学生要看得见"那几张图/那份卷子还在"，才敢按下发送
+    renderStrip();
     submit(f.text);
   }
 
@@ -271,19 +294,19 @@ SR.chat = (function () {
   function submit(forced) {
     if (busy) return;
     var text = forced != null ? forced : els.input.value.trim();
-    var img = pendingImage;
-    if (!text && !img) return;
+    var parts = pendingParts;
+    if (!text && !parts.length) return;
     if (!SR.api.ready()) { SR.main.needKey(); return; }
 
     busy = true;
     els.send.disabled = true;
     if (forced == null) { els.input.value = ''; autoGrow(); }
     clearChips();
-    pendingImage = null;
-    var thumbEl = document.getElementById('thumb');
-    if (thumbEl) { thumbEl.innerHTML = ''; thumbEl.style.display = 'none'; }
+    pendingParts = [];
+    pendingNote = '';
+    renderStrip();
 
-    addUser(text, img);
+    addUser(text, parts);
     // 兜底按钮要判"这段对话走到哪儿了"，所以在推入这一轮之前先记两个东西
     var isFirstTurn = !history.some(function (m) { return m.role === 'assistant'; });
     var prevAssistant = '';
@@ -291,7 +314,7 @@ SR.chat = (function () {
       if (history[hi].role === 'assistant') { prevAssistant = String(history[hi].content || ''); break; }
     }
     // 图片那段的组装只有一份，在 api.js 里（以前这里和 api.js 各写了一遍，改一处忘一处）
-    history.push({ role: 'user', content: SR.api.userContent(text, img) });
+    history.push({ role: 'user', content: SR.api.userContent(text, parts) });
 
     var el = document.createElement('div');
     el.className = 'msg assistant';
@@ -309,14 +332,16 @@ SR.chat = (function () {
       mode: mode,
       history: history.slice(0, -1),      // 最后一条（刚推入的）由 api 自己拼
       text: text,
-      imageDataUrl: img,
+      parts: parts,
       onChunk: function (piece) { msg.raw += piece; paint(msg); }
     }).then(function (res) {
       msg.streaming = false;
       // 这一轮到底是哪颗模型答的、有没有中途换过模型——探针要看这个。
       // ★ 2026-10-01 加：学生传图那轮走的是 modelsImage（只有一颗 glm-4.6v-flash），
       //   排查"是不是悄悄降级到会解题的那颗了"必须能看出来，光看回复内容看不出来。
-      SR.chat.lastMeta = { model: res.model || '', image: !!img, mode: mode, error: res.error || '' };
+      var hadImg = false;
+      for (var qi = 0; qi < parts.length; qi++) if (parts[qi].kind === 'image') { hadImg = true; break; }
+      SR.chat.lastMeta = { model: res.model || '', image: hadImg, mode: mode, error: res.error || '' };
       if (res.error) {
         paint(msg);
         // 免费通道排队排空了，别只说一句"再等等"——直接给一条出路：
@@ -324,7 +349,7 @@ SR.chat = (function () {
         showError(b, res.error, res.needOwnKey);
         setStatus(res.error);
         history.pop();                    // 这轮没成，别把话留在上下文里
-        lastFail = { text: text, img: img };
+        lastFail = { text: text, parts: parts };
       } else {
         lastFail = null;
         history.push({ role: 'assistant', content: res.text });
@@ -375,63 +400,86 @@ SR.chat = (function () {
     });
   }
 
-  // ---- 拍照 ----
-  var pendingImage = null;
+  // ---- 待发的东西（图片 / PDF / Word 统一排队）----
+  // 原来这里只有一个 pendingImage。2026-10-01 孔老师要"学生也能发一整张卷子"，
+  // 于是一张图变成了一队东西，各自的 kind/dataUrl/text 不同——见 js/files.js。
+  var pendingParts = [];
+  var pendingNote = '';     // "这是一份 12 页的 PDF，先看了前 6 页"这类要跟学生交代的话
 
-  // 输入框上方那张小缩略图。挑图和"重试"都要走它，所以抽出来了。
-  function showThumb(dataUrl) {
+  // 输入框上方那一条缩略图。挑文件、重试、删除都走它。
+  function renderStrip() {
     var el = document.getElementById('thumb');
     if (!el) return;
     el.innerHTML = '';
-    var im = document.createElement('img');
-    im.src = dataUrl;
-    var x = document.createElement('button');
-    x.type = 'button'; x.className = 'x'; x.textContent = '×';
-    x.addEventListener('click', function () {
-      pendingImage = null; el.innerHTML = ''; el.style.display = 'none';
+    if (!pendingParts.length) {
+      el.style.display = 'none';
+      return;
+    }
+    var strip = document.createElement('div');
+    strip.className = 'strip';
+    pendingParts.forEach(function (p, i) {
+      var box = document.createElement('div');
+      box.className = 'fi';
+      if (p.kind === 'image') {
+        var im = document.createElement('img');
+        im.src = p.dataUrl;
+        box.appendChild(im);
+      } else {
+        var d = document.createElement('div');
+        d.className = 'doc';
+        var b = document.createElement('b');
+        b.textContent = 'DOC';
+        var s = document.createElement('span');
+        s.textContent = p.name || '文档';
+        d.appendChild(b); d.appendChild(s);
+        box.appendChild(d);
+      }
+      var x = document.createElement('button');
+      x.type = 'button'; x.className = 'x'; x.textContent = '×';
+      x.title = '去掉这个';
+      x.addEventListener('click', function () {
+        pendingParts.splice(i, 1);
+        if (!pendingParts.length) pendingNote = '';
+        renderStrip();
+      });
+      box.appendChild(x);
+      strip.appendChild(box);
     });
-    el.appendChild(im); el.appendChild(x);
+    el.appendChild(strip);
+
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = SR.files.describe(pendingParts) + (pendingNote ? '　' + pendingNote : '');
+    el.appendChild(meta);
+
     // ★ 这里必须写死 `block`，**不能**写 `el.style.display = ''`（2026-10-01 实测的 bug）。
-    //   清空行内样式 = 让**样式表**说了算，而 `#thumb` 在 main.css:198 就是 `display:none`。
+    //   清空行内样式 = 让**样式表**说了算，而 `#thumb` 在 main.css 里就是 `display:none`。
     //   于是：图上去了、`#thumb img` 也在、探针量到的 len 也不为 0，**屏幕上就是看不见**。
-    //   学生的感受是"我拍了照，什么反应都没有"，看不见自己贴的是哪张，也没法点 × 撤掉。
+    //   学生的感受是"我发了文件，什么反应都没有"，看不见自己发了哪几张，也没法点 × 撤掉。
     //   ⚠ 判断"清除行内样式能不能显示"要看这条 `display:none` 在哪儿：
     //     写在 HTML 的 style 属性里（#resbtn、#btn-play）→ 清掉就显；
     //     写在样式表里（#thumb）→ 清掉反而按样式表藏起来。两者长得一样，结果相反。
     el.style.display = 'block';
   }
 
-  function onPick(file) {
-    if (!file) return;
-    if (!/^image\//.test(file.type)) { setStatus('这个不是图片'); return; }
-    downscale(file, function (dataUrl) {
-      pendingImage = dataUrl;
-      showThumb(dataUrl);
+  // 收下一批文件（可能来自文件选择框，也可能来自粘贴）。
+  // ★ 粘贴来的和选来的走同一个入口：都是 File 对象，凭什么一个能收一个不能。
+  function onPick(list) {
+    if (!list || !list.length) return;
+    var room = SR.files.maxFiles - pendingParts.length;
+    if (room <= 0) { setStatus('一次最多 ' + SR.files.maxFiles + ' 个文件，先去掉几个再加。'); return; }
+    var take = [];
+    for (var i = 0; i < list.length && take.length < room; i++) take.push(list[i]);
+    setStatus('正在读文件…');
+    SR.files.toParts(take, function (err, parts, note) {
       els.file.value = '';
+      if (err) { setStatus(err); return; }
+      pendingParts = pendingParts.concat(parts);
+      pendingNote = note || '';
+      renderStrip();
+      // 提示只留一句。文件多的时候 notes 会长，全塞进状态栏会盖掉整行；长的进 strip 的 meta。
+      setStatus(note ? '' : '收好了，还有别的可以接着发。');
     });
-  }
-
-  // 缩到最长边 1280，JPEG 0.82 —— 手写字的清晰度和体积的平衡点
-  function downscale(file, cb) {
-    var fr = new FileReader();
-    fr.onload = function () {
-      var img = new Image();
-      img.onload = function () {
-        var MAX = 1280;
-        var w = img.width, h = img.height;
-        var s = Math.min(1, MAX / Math.max(w, h));
-        var c = document.createElement('canvas');
-        c.width = Math.round(w * s); c.height = Math.round(h * s);
-        var g = c.getContext('2d');
-        g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
-        g.drawImage(img, 0, 0, c.width, c.height);
-        try { cb(c.toDataURL('image/jpeg', 0.82)); }
-        catch (e) { cb(fr.result); }
-      };
-      img.onerror = function () { setStatus('这张图读不出来'); };
-      img.src = fr.result;
-    };
-    fr.readAsDataURL(file);
   }
 
   return {
@@ -441,6 +489,11 @@ SR.chat = (function () {
     setStatus: setStatus,
     setMode: function (m) { mode = m; },
     getMode: function () { return mode; },
-    hasPendingImage: function () { return !!pendingImage; }
+    // main.js 用这个判"输入框那边有没有东西等着发"（空了就别送空请求）
+    hasPendingImage: function () { return pendingParts.length > 0; },
+
+    // —— 探针用的口子（test/probe_files.cjs）。不参与界面逻辑，也别在界面里调。
+    __parts: function () { return pendingParts; },
+    __clear: function () { pendingParts = []; pendingNote = ''; renderStrip(); }
   };
 })();

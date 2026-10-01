@@ -96,14 +96,63 @@ SR.api = (function () {
   // ============================================================
   //  正文的组装（chat.js 也用它，别在两处各写一遍）
   // ============================================================
-  function userContent(text, imageDataUrl) {
-    if (imageDataUrl) {
-      return [
-        { type: 'text', text: text || '（这是学生的解答，帮我看看）' },
-        { type: 'image_url', image_url: { url: imageDataUrl } }
-      ];
+  // parts 收两种形状：
+  //   • 一个图片 dataURL 字符串 —— 老写法（单张图），留着不破坏已有调用
+  //   • [{kind:'image', dataUrl}, {kind:'text', text, name}, …] —— 多文件，见 js/files.js
+  // 图片按 OpenAI 的约定排在文字之后；文本类文件（.docx/PDF 提不出图的那种）
+  // 拼进正文，前面挂一行【文件名】，让学生知道"这几行是从哪个文件里读出来的"。
+  function userContent(text, parts) {
+    if (typeof parts === 'string') parts = parts ? [{ kind: 'image', dataUrl: parts }] : [];
+    parts = parts || [];
+    var imgs = [], docs = [];
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i];
+      if (!p) continue;
+      if (p.kind === 'image' && p.dataUrl) imgs.push({ type: 'image_url', image_url: { url: p.dataUrl } });
+      else if (p.kind === 'text' && p.text) docs.push('【' + (p.name || '文件') + '】\n' + p.text);
     }
-    return text || '';
+    var t = text || '';
+    if (docs.length) t = (t ? t + '\n\n' : '') + docs.join('\n\n');
+    if (!imgs.length) return t || '';
+    if (!t) t = '（这是学生发来的题目，帮我看看）';
+    return [{ type: 'text', text: t }].concat(imgs);
+  }
+
+  // ============================================================
+  //  「测一下」：拿一串 Key 真打一次，看通不通
+  // ============================================================
+  // 存在的理由：不验的话，Key 填错了要等到下一次真提问（可能还带着一张照片）才知道，
+  // 中间白等一场；而且失败的是"那一轮对话"，学生分不清是网的问题还是 Key 的问题。
+  // 用一个最小请求：一句话、max_tokens 1、不流式。花掉的额度可以忽略。
+  // ★ 只报"通/不通 + 为什么"，不返回任何模型输出——这里不需要，也不该让它说话。
+  function probeKey(k, cb) {
+    var b = SR.BACKENDS.deepseek;
+    var ctl = new AbortController();
+    var t = setTimeout(function () { ctl.abort(); }, 20000);
+    var done = function (res) { clearTimeout(t); cb(res); };
+    fetch(b.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + k },
+      body: JSON.stringify({
+        model: (b.models && b.models[0]) || 'deepseek-chat',
+        messages: [{ role: 'user', content: '你好' }],
+        max_tokens: 1,
+        stream: false
+      }),
+      signal: ctl.signal
+    }).then(function (r) {
+      if (r.ok) { done({ ok: true }); return; }
+      return r.text().catch(function () { return ''; }).then(function (body) {
+        var why;
+        if (r.status === 401 || r.status === 403) why = '这个 Key 服务器不认（可能少复制了一段）';
+        else if (r.status === 402) why = '这个 Key 的余额不够了';
+        else if (r.status === 429) why = '被限流了——Key 本身是好的，等一会儿再试';
+        else why = 'HTTP ' + r.status + (body ? '：' + String(body).slice(0, 100) : '');
+        done({ ok: false, error: why });
+      });
+    }).catch(function (e) {
+      done({ ok: false, error: (e && e.name === 'AbortError') ? '等太久没响应' : ('连不上（' + ((e && e.message) || e) + '）') });
+    });
   }
 
   // ============================================================
@@ -143,14 +192,26 @@ SR.api = (function () {
     };
   }
 
+  // 分数线：低于它就不给。数值和理由在 js/kb.js 顶上那段（量出来的，不是拍的）。
+  // 取不到就退到 0（＝不卡）——宁可多给，也别因为一个加载顺序问题整段检索没了。
+  function cutOf(which) {
+    try { return (SR.kb && SR.kb.cut) ? SR.kb.cut(which) : 0; } catch (e) { return 0; }
+  }
+
   // ---- 本地检索：按学生这一轮说的话，从教材索引里挑几条塞进去 ----
+  // ★ 这里原来**没有**分数线，凡是撞上就全给。实测"这道题我不会"能召回
+  //   「1.5 等腰三角形」、「第二题」能召回「四分位数和箱线图」——都是噪声，
+  //   而附注是让人信的东西，塞一条错的进去还不如不塞。
   function pickTextbook(query, k) {
     try {
       if (!SR.findTextbook) return '';
       var hits = SR.findTextbook(query, k || 2);
       if (!hits || !hits.length) return '';
-      var out = [];
-      for (var i = 0; i < hits.length; i++) out.push(hits[i].doc.text.trim());
+      var cut = cutOf('textbook'), out = [];
+      for (var i = 0; i < hits.length; i++) {
+        if (hits[i].score < cut) continue;
+        out.push(hits[i].doc.text.trim());
+      }
       return out.join('\n\n');
     } catch (e) { return ''; }
   }
@@ -163,19 +224,22 @@ SR.api = (function () {
     try {
       if (!SR.findZhuawen) return '';
       var hits = SR.findZhuawen(query, 1);
-      if (!hits || !hits.length || hits[0].score < 3) return '';   // 分数太低＝没对上，不如不给
+      // 分数太低＝没对上，不如不给。原来这条线是 3，实测 13 句泛泛的学生话漏进去 11 句，
+      // 现在照量出来的数抬到 10（见 js/kb.js 顶上那段）。
+      if (!hits || !hits.length || hits[0].score < cutOf('zhuawen')) return '';
       return hits[0].doc.text.trim();
     } catch (e) { return ''; }
   }
 
   // ---- 组装 system ----
-  // mode: 'student' | 'demo'；query: 学生这一轮说的话，用来检索教材索引
+  // mode: 'student' | 'demo'；query: 学生这一轮说的话，用来检索教材索引；
+  // parts: 这一轮带的文件（见 userContent 上面那段），用来判"是不是一整份卷子"
   //
   // ★ 学生模式按后端挑提示词。免费通道那颗 glm-4v-flash 只有 16K 上下文，
   //   全量提示词 7618 tokens 塞进去它就顾不上读规则了（实测：想说围栏 2/4、0/4，
   //   还在照抄提示词里的例句）；换成 5303 字的精简版才是 4/4、4/4。见 config.js 的注释。
   //   演示模式两个后端共用一份——它短，而且实测在 GLM 上是 6/6 全绿。
-  function buildSystem(mode, query, backendId) {
+  function buildSystem(mode, query, backendId, parts) {
     var m = SR.MODES[mode] || SR.MODES.student;
     var b = backend(backendId);
     var lean = (mode === 'student' && b.promptProfile === 'lean' && SR.PROMPT_LEAN);
@@ -199,8 +263,42 @@ SR.api = (function () {
     //   而正文里那段内联收尾已经删掉（见 build_prompt.py 4b）。所以现在**只剩这一处**收尾，
     //   全量版不追加就等于没有格式要求。
     //   演示模式不追加：它自带的收尾是在演示提示词上测出来的（出图 10/10），别去动。
+    // ---- 整卷 / 多道题：学生一次发来一整份卷子 ----
+    // ★ 触发条件故意做得很粗：≥2 张图，或者正文超过 800 字。
+    //   因为"这是不是一整张卷子"是判不准的（一张照片也可能拍的是整页），
+    //   而**漏判的代价比误判大得多**：漏判了它就照着第一题开始追问，
+    //   学生手上还有十道不会的，却只能跟着一题走。误判最多是多列一遍题。
+    // ★ 只在学生模式加。演示模式不给任何附注——理由见上面教材索引那段：
+    //   演示提示词是另一个体系，塞一段它没有对应章节的话进去，实测出图率会掉。
+    var imgCount = 0, textLen = (query || '').length;
+    for (var pi = 0; pi < (parts || []).length; pi++) {
+      var pp = parts[pi];
+      if (!pp) continue;
+      if (pp.kind === 'image') imgCount++;
+      else if (pp.kind === 'text') textLen += (pp.text || '').length;
+    }
+    if (mode === 'student' && (imgCount >= 2 || textLen > 800)) {
+      sys += '\n\n---\n\n# 附：这一轮学生发来的是一整份（或好几道）题\n\n' +
+        '（系统看出来这一轮不是一道题，是一整张卷子、或者好几道一起发来的。按这个次序来：\n' +
+        '1. **先别追问。** 先把你能看到的题**列一遍**：题号 + 一句话说这题在问什么。' +
+        '看到几道列几道；看不清的题号就写"看不清"。**看不清的题不许猜、不许照着别的题补出来。**\n' +
+        '2. 列完再问一句：这些里面**哪些是不会的、哪些是做错的**？让他挑一道先说。\n' +
+        '3. 他挑定一道之后，就回到你平常那套，一道一道来。\n\n' +
+        '★ 这一轮格外要守住铁律第 7 条：你**不光看得见他的解答，还能一眼看出他哪一步错了**。' +
+        '看得见不等于可以说——列题号的时候**只许说这题在问什么**，' +
+        '一个字都不许提他做得对不对、错在哪一步、哪一步可以更快。\n' +
+        '★ 万一题都看不清，别硬列：直说"这份我这边看得不太清"，然后问他哪一道先说。）';
+    }
+
     // 追问条目库：只有学生模式才给。它是"这一类题该怎么问"的参考，
     // 演示模式是老师自己画图，用不上；给了反而多一段要读的东西。
+    //
+    // ★「没召回到怎么办」这一档就在下面那个 if 的反面：**一个字都不加**。
+    //   检索分数不够就不给，system 退回只有提示词本身——这正是加知识库之前的行为，
+    //   是安全的默认档。别哪天改成"没召到就补一段通用追问"，
+    //   那等于在模型本来就会的地方再教它一遍，反而会把它带离这道题。
+    //   （本条来自那六次缺陷的共同根因：要它做一件事、却没给它那一档句式，它就自己编。
+    //     这里反过来——**没有那一档，就不提那件事**。）
     if (mode === 'student') {
       var zw = pickZhuawen(query);
       if (zw) {
@@ -218,7 +316,8 @@ SR.api = (function () {
   // ============================================================
   //  一次对话
   // ============================================================
-  // opts: {mode, history, text, imageDataUrl, onChunk, onNotice}
+  // opts: {mode, history, text, parts, onChunk, onNotice}
+  //   parts 见 userContent 上面那段。老的 opts.imageDataUrl 仍然认。
   // 返回 {text, model} 或 {error, needOwnKey?}
   async function ask(opts) {
     var onChunk = opts.onChunk || function () {};
@@ -232,9 +331,31 @@ SR.api = (function () {
     }
     if (!navigator.onLine) return { error: '断网了' };
 
-    var msgs = [{ role: 'system', content: buildSystem(opts.mode, opts.text || '', b.id) }]
-      .concat(trimHistory(opts.history || [], b.budget))
-      .concat([{ role: 'user', content: userContent(opts.text, opts.imageDataUrl) }]);
+    var parts = opts.parts || (opts.imageDataUrl ? [{ kind: 'image', dataUrl: opts.imageDataUrl }] : []);
+    var hasImg = false;
+    for (var pi = 0; pi < parts.length; pi++) if (parts[pi] && parts[pi].kind === 'image') { hasImg = true; break; }
+
+    // ★ 带图那一轮单独给历史预算（b.budgetImage）。b.budget 是按免费通道
+    //   最小那颗模型的 16K 上下文量的；带图走的是 128K 的 glm-4.6v-flash，
+    //   而一整张卷子的五六页图本来就占掉两千多字符当量，再用 7000 去裁，
+    //   历史会被裁到只剩最后一轮——学生上一句说"我算到 x=4"就白说了。
+    var budget = (hasImg && b.budgetImage) ? b.budgetImage : b.budget;
+
+    // ★ 知识库(教材索引 + 追问条目库，共 117KB)从首屏挪到这儿按需拿。
+    //   要 await：buildSystem 里那两段附注得等语料真到了才检索得到。
+    //   但**绝不与它共沉浮**——拿不到就返回 false，附注走"没检索到"那一档，
+    //   kb.js 那边还有 3 秒兜底，学生不会因为一个 404 就卡在"正在输入"。
+    try { if (SR.kb) await new Promise(function (r) { SR.kb.load(function () { r(); }); }); } catch (e) {}
+
+    // ★ 召回用的不是 opts.text 一句，而是"这一轮的话 + 前几轮学生自己的话"。
+    //   原因见 js/kb.js 的 queryFor：学生说"这题我不会"时，话里一个知识点的字都没有，
+    //   照原样检索永远召不回。传 opts.history 而不是裁过的那份——
+    //   裁历史是为省 token，这里只要有字就行。
+    var recall = SR.kb ? SR.kb.queryFor(opts.text, opts.history) : (opts.text || '');
+
+    var msgs = [{ role: 'system', content: buildSystem(opts.mode, recall, b.id, parts) }]
+      .concat(trimHistory(opts.history || [], budget))
+      .concat([{ role: 'user', content: userContent(opts.text, parts) }]);
 
     var ctl = new AbortController();
     var timer = null, got = false;
@@ -279,7 +400,7 @@ SR.api = (function () {
       //     学生模式不带图走 modelsText（文字模型会当老师，正文稳；围栏丢了有本地兜底）。
       //     DeepSeek 三条都没配，一律回落到 models。
       var chain;
-      if (opts.imageDataUrl) chain = b.modelsImage || b.models;
+      if (hasImg) chain = b.modelsImage || b.models;
       else if (opts.mode === 'demo') chain = b.models;
       else chain = b.modelsText || b.models;
 
@@ -382,6 +503,7 @@ SR.api = (function () {
   return {
     ask: ask,
     getKey: getKey, setKey: setKey, forgetKey: forgetKey, hasKey: hasKey, ready: ready,
+    probeKey: probeKey,
     backend: backend, getBackendId: getBackendId, setBackend: setBackend,
     userContent: userContent, trimHistory: trimHistory, estTokens: estTokens,
     usage: usage, usageText: usageText, pickTextbook: pickTextbook, buildSystem: buildSystem
