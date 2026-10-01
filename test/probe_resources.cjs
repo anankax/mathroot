@@ -88,6 +88,20 @@ function put(p) {
   console.log('  按钮 display               :', shown2);
   await send('Network.setBlockedURLs', { urls: [] });
 
+  // ★ 拿公开站当靶子跑的时候（SR_PAGE=https://anankax.github.io/mathroot/），
+  //   第一半**本来就不适用**——那边没有索引，按钮理应一直藏着，
+  //   可上一段的判据里把"第二趟也得藏着"当成必需，于是会报"尺子坏了"。
+  //   这两种情形要分开说：本机 = 两半都要过；公开站 = 只判第二半。
+  const onLocal = await q('/^(localhost|127\\.0\\.0\\.1|)$/.test(location.hostname) || location.protocol === "file:"');
+  if (!onLocal) {
+    const pass = !has && shown === 'none' && shown2 === 'none';
+    console.log('\n（这是公开站 ' + await q('location.host') + '，第一半不适用：那边本来就没有索引，'
+      + '按钮理应一直藏着。下面只判这一条。）');
+    console.log('\n===== 公开站上没有本地素材：' + (pass ? '通过（按钮自始至终没露过面）' : '有问题') + ' =====');
+    ws.close();
+    process.exit(pass ? 0 : 1);
+  }
+
   const pass = shown !== 'none' && hitAbs > 0 && absPath && !has && shown2 === 'none';
   // 尺子自检：第一趟按钮要是也没显示，那"第二趟没显示"什么都说明不了
   if (shown === 'none') {

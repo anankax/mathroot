@@ -182,6 +182,8 @@ node test/probe_render.cjs              # 拆围栏 + 删行规则（不联网�
 node test/probe_chips.cjs               # 抄示范的按钮拦没拦住（不联网，改 chips.js / 改提示词示范必跑）
 node test/probe_board.cjs               # 数轴／坐标系／播放键／错误弹窗／代数面板
 node test/probe_resources.cjs           # 本地素材：本机出现 + 拦掉索引就彻底消失（两面都要过）
+SR_PAGE=https://anankax.github.io/mathroot/ node test/probe_resources.cjs
+                                        # 拿公开站当靶子：那边只判"按钮自始至终没露过面"
 node test/e2e.cjs student 90 "第一句" "第二句" "第三句"   # 真调后端的多轮端到端
 node test/e2e.cjs demo 90 "画个数轴，带个动点 P"
 ```
