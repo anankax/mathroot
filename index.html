@@ -3,9 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>数根 · 初中数学错题复盘</title>
-<meta name="description" content="只问不答的初中数学错题复盘助手，带一块随讲随画的互动画板。">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231f7a5a'/><text x='16' y='23' font-size='19' text-anchor='middle' fill='%23fff' font-family='sans-serif'>根</text></svg>">
+<title>数根 mathroot · 初中数学错题复盘 · by KAX</title>
+<meta name="description" content="KAX 做的只问不答的初中数学错题复盘助手，带一块随讲随画的互动画板，能画平面也能画三维。">
+<meta name="author" content="KAX">
+<!-- 署名：把作者写进元数据，别人整页扒走也留着出处 -->
+<meta name="copyright" content="© 2026 KAX · 数根 mathroot">
+<meta name="theme-color" content="#277a56">
+<!-- favicon 和顶栏那个 logo 是同一套路径（assets/logo.svg），改一处记得改另一处 -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%23277a56'/><g fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round'><path d='M9 31L20 51L35 13L58 13' stroke-width='7'/><path d='M20 50L13 60' stroke-width='5'/><path d='M20 50L28 60' stroke-width='5'/></g></svg>">
 
 <link rel="stylesheet" href="css/main.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
@@ -20,11 +25,15 @@
 <!-- 本项目（按依赖顺序） -->
 <script defer src="js/config.js"></script>
 <script defer src="js/prompt-student.js"></script>
+<script defer src="js/prompt-lean.js"></script>
+<script defer src="js/prompt-tail.js"></script>
 <script defer src="js/prompt-demo.js"></script>
 <script defer src="js/textbook.js"></script>
+<script defer src="js/zhuawen.js"></script>
 <script defer src="js/retrieve.js"></script>
 <script defer src="js/api.js"></script>
 <script defer src="js/render.js"></script>
+<script defer src="js/chips.js"></script>
 <script defer src="js/board.js"></script>
 <script defer src="js/chat.js"></script>
 <script defer src="js/main.js"></script>
@@ -34,14 +43,26 @@
 
 <header>
   <div class="brand">
+    <img class="logo" src="assets/logo.svg" alt="" width="30" height="30">
     <span class="name">数根</span>
-    <span class="sub">初中数学错题复盘 · 只问不答，问到你自己说出来</span>
+    <span class="by" title="本站由 KAX 制作">by KAX</span>
+    <!-- 副标题要短到放得下：顶栏一横排全是按钮，长了会被裁成"…"，
+         截图和展板上看着就像没做完。完整那句话在「关于」里说。 -->
+    <span class="sub">初中数学错题复盘</span>
   </div>
+
   <div class="modes">
     <button type="button" class="modebtn on" data-mode="student">学生模式</button>
     <button type="button" class="modebtn"    data-mode="demo">教师演示模式</button>
   </div>
   <span id="badge">只问不答 · 不给答案</span>
+
+  <div class="backs" title="换一个模型通道">
+    <button type="button" class="backbtn on" data-backend="glm"><span class="dot"></span>免费体验</button>
+    <button type="button" class="backbtn"    data-backend="deepseek"><span class="dot"></span>用自己的 Key</button>
+  </div>
+
+  <button type="button" class="tool" id="aboutbtn">关于</button>
   <button type="button" class="tool" id="keybtn">Key</button>
 </header>
 
@@ -54,7 +75,9 @@
     <div class="composer">
       <button type="button" id="attach" title="上传错题或解答的照片（也可以直接粘贴截图）">📷</button>
       <input type="file" id="file" accept="image/*" capture="environment" style="display:none">
-      <textarea id="input" rows="1" placeholder="把做错的题贴进来，再说说你当时是怎么想的……"></textarea>
+      <!-- placeholder 要短：输入框最矮只放得下一行，长占位符会被边框切掉半行
+           （2026-10-01 截图里就切着）。详细的引导在左边开场白里已经说过了。 -->
+      <textarea id="input" rows="1" placeholder="贴上你做错的那道题"></textarea>
       <button type="button" id="send">发送</button>
     </div>
   </section>
@@ -63,23 +86,68 @@
   <section class="col">
     <div class="boardbar">
       <span class="t">画板</span>
+      <div class="viewsw">
+        <button type="button" class="viewbtn on" data-view="2d">平面</button>
+        <button type="button" class="viewbtn"    data-view="3d">三维</button>
+      </div>
       <button type="button" class="tool" id="btn-play" style="display:none">▶ 播放</button>
       <button type="button" class="tool" id="btn-redraw">重画</button>
       <button type="button" class="tool" id="btn-clear">清空</button>
     </div>
-    <div id="ggb"></div>
+    <div class="boardwrap">
+      <div id="ggb"></div>
+      <!-- 署名第三处：画板水印。截图外传也带着出处，且不挡作图。
+           只写 KAX 的话，截图传出去只说得出"某人"，说不出这页是哪儿来的；
+           带上站名，谁捡到都能找回来。 -->
+      <div class="wm">KAX · 数根 mathroot</div>
+    </div>
     <div id="status"></div>
   </section>
 </main>
 
+<footer id="credits">© 2026 KAX · 数根 mathroot · 保留所有权利</footer>
+
 <div id="demoflag" style="display:none">教师演示模式</div>
 
-<!-- Key 设置层 -->
-<div id="keyset">
+<!-- 关于 -->
+<div class="overlay" id="about">
   <div class="box">
-    <h2>先填一个 DeepSeek Key</h2>
+    <h2>数根 mathroot</h2>
+    <p>一个初中数学的<strong>错题复盘</strong>助手。它不判对错、不给答案，只顺着学生的思路往下问，问到他自己说出错在哪一步为止。</p>
+
+    <h3>怎么用</h3>
+    <ul>
+      <li>把做错的题贴进来——打字、拍照、直接粘截图都行。</li>
+      <li>再说说你当时是怎么想的。算到哪一步都行，说得乱也没关系。</li>
+      <li>想问什么就问，卡住了就点下面的三个按钮，那里有现成的话可以点。</li>
+      <li>右边是画板。题目里能画的东西，它会画出来——坐标系、数轴、三角形、圆，立体图形也有三维画板。</li>
+      <li>老师上课用，点顶上的<strong>教师演示模式</strong>，或者把网址后面加上 <code>#demo</code> 存成书签。</li>
+    </ul>
+
+    <h3>为什么这么设计</h3>
+    <p>错题讲一遍，学生点头，第二天照样错——因为他听懂了，但没想通。数根故意不把答案给出来：一道题的卡点，只有在学生自己讲出"我当时是这么想的"之后才露出来。所以它只问、不答。</p>
+
+    <h3>用的是哪个模型</h3>
+    <p>默认走<strong>免费通道</strong>，不用注册、不用填任何东西，打开就能用（是 KAX 自己的额度，够用，请省着点）。如果你用得多，或者想更稳，可以切到<strong>「用自己的 Key」</strong>，填一个自己的 DeepSeek Key——Key 只存在你这台电脑的浏览器里，不会发给任何人，也不会写进网页。</p>
+    <p>免费通道偶尔会排队（人多了会提示"有点挤"）。它会自己先换个备用模型试，还不行就提示你切到自己的 Key。</p>
+
+    <h3>别的</h3>
+    <p>整站是一个纯静态网页——没有服务器、没有数据库，你打的字和我们说的每一句话都不落盘。画板用的是 GeoGebra。</p>
+
+    <p class="sig">制作者 <b>KAX</b> · 初中数学教师<br>本页面与其中的画板、提示词均为原创，欢迎拿去用，请勿改个名字当成自己的作品。</p>
+
+    <div class="row">
+      <button type="button" class="tool primary" data-close="about">知道了</button>
+    </div>
+  </div>
+</div>
+
+<!-- Key 设置层（只在用"自己的 Key"这一档时才需要） -->
+<div class="overlay" id="keyset">
+  <div class="box">
+    <h2 id="keytitle">用你自己的 DeepSeek Key</h2>
     <p>
-      数根是一个纯静态网页，<strong>自己不带任何密钥</strong>，得用你自己的 DeepSeek Key 去调模型。
+      这一档是给用得多、或者想要更稳的人准备的：模型费从你自己的账号走，不占数根的免费额度。
       Key 只存在<strong>这台电脑的浏览器里</strong>（localStorage），不会发给别人，也不会写进网页。
       换台电脑、换个浏览器，要重新填一次。
     </p>
@@ -90,8 +158,9 @@
     <input id="keyinput" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false">
     <p id="keyerr"></p>
     <div class="row">
+      <button type="button" class="tool" id="keyfree">免费通道就行</button>
       <button type="button" class="tool" id="keyforget">忘掉 Key</button>
-      <button type="button" class="tool primary" id="keysave">保存</button>
+      <button type="button" class="tool primary" id="keysave">保存并使用</button>
     </div>
   </div>
 </div>

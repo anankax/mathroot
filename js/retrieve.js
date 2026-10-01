@@ -82,3 +82,11 @@ SR.findTextbook = function (query, k) {
   if (!SR.textbookIndex) SR.textbookIndex = SR.retrieve.build(SR.TEXTBOOK || '');
   return SR.retrieve.search(SR.textbookIndex, query, k || 2);
 };
+
+// 追问条目库（118 条，孔老师自己写的）。格式跟教材索引一模一样，同一个检索器直接吃。
+// 条目里那五个【…】标记正好对上「追问的五个台阶」，见 js/zhuawen.js 顶上的说明。
+SR.zhuawenIndex = null;
+SR.findZhuawen = function (query, k) {
+  if (!SR.zhuawenIndex) SR.zhuawenIndex = SR.retrieve.build(SR.ZHUAWEN || '');
+  return SR.retrieve.search(SR.zhuawenIndex, query, k || 1);
+};

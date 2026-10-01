@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     role="img" aria-label="数根 · 根号长成树根">
+  <title>数根 · 根号长成树根</title>
+  <!--
+    「数根」的标记：数学里的根号 √，折点往下长成两股树根。一笔两用，别再加枝叶。
+
+    ★ 上一版是"白底 + 细绿线"，缩到 32px 塌成了一个叉——实测截图看过的。
+      这一版只改两件最管用的事，都是为了小尺寸：
+        1. 垫一块实心绿牌子。32px 下面是"一块绿 + 一个白记号"，对比度完全不是一个量级。
+           favicon 早就是这么做的，现在两处统一了。
+        2. 根号那一横拉长（34→58）、须根收短（只探出去 9 个单位）。
+           上一版横短根长，远看是个"X"；现在轮廓是清楚的"√ 下面挂两条小根"。
+      笔画也加粗到 7（须根 5）——小尺寸下细笔画最先糊。
+    ★ 必须在 32px 下看过再定稿（邰言那次的教训，以及这一版自己的教训）。
+  -->
+  <defs>
+    <linearGradient id="sr" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#35a173"/>
+      <stop offset="1" stop-color="#1c6347"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 牌子 -->
+  <rect width="64" height="64" rx="14" fill="url(#sr)"/>
+
+  <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 根号：短下行 + 长上扬 + 顶上那一横，一笔连到底 -->
+    <path d="M9 31 L20 51 L35 13 L58 13" stroke-width="7"/>
+    <!-- 树根：从折点往下岔两股，短、粗、对称 -->
+    <path d="M20 50 L13 60" stroke-width="5"/>
+    <path d="M20 50 L28 60" stroke-width="5"/>
+  </g>
+</svg>

@@ -8,9 +8,14 @@ const http = require('http'), fs = require('fs'), path = require('path');
 const ROOT = path.join(__dirname, '..');
 const PORT = Number(process.argv[2] || 8138);
 
+// ★ .svg 一定要列进来：漏了就会按 application/octet-stream 发，
+//   Chrome 拿到 octet-stream 的图是**拒绝渲染**的——<img> 直接 onerror、naturalWidth 0。
+//   这不影响线上（GitHub Pages 自己认 .svg），但会让本地验证看到一个和线上不一样的页面，
+//   属于"测试环境骗自己"那一类坑。logo 就这么在本地一直是隐形的一段时间。
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.json': 'application/json; charset=utf-8'
+  '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2'
 };
 
 http.createServer((req, res) => {
