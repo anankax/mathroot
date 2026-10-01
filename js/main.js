@@ -444,11 +444,22 @@ SR.main = (function () {
     });
 
     // ---- 后端切换 ----
+    // ★ 点「我的 Key」**每一下都得有去处**（2026-10-01 孔老师："我的 key 点了
+    //   有反应不"）。原来漏了一整条岔路：**已经在这一格上、Key 也是好的，再点一下**
+    //   ——applyBackend 原样重跑一遍，通道没变、不弹窗，屏幕上**一点动静都没有**。
+    //   人的直觉是"我点了这个东西，就该给我这个东西"，没动静就等于按钮坏了。
+    //   现在三种情况都有去处：
+    //     ① 没填过 Key           → 弹面板让他填
+    //     ② ★ 已经就在这一格上    → 也弹面板（"点它"的意思就是"我要看看我的 Key"）
+    //     ③ 从免费通道切过来、Key 是好的 → 直接切，不弹（这是设好之后的日常动作，
+    //        每次切都糊一个框才是烦人）
     document.querySelectorAll('.backbtn').forEach(function (b) {
       b.addEventListener('click', function () {
         var id = b.getAttribute('data-backend');
+        var was = SR.api.getBackendId();
+        if (id === 'deepseek' && was === id) { openKeyDlg(); return; }
         var ready = applyBackend(id);
-        if (id === 'deepseek' && !ready) openKeyDlg();   // 没 Key 就别让它干等着
+        if (id === 'deepseek' && !ready) openKeyDlg();
         else $('input').focus();
       });
     });
