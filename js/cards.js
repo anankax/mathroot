@@ -210,18 +210,23 @@ SR.cards = (function () {
       el.title = '复制了';
       window.setTimeout(function () { el.classList.remove('copied'); el.title = '点一下复制这句话'; }, 1200);
     }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(t).then(done, fallback);
-    } else fallback();
-    function fallback() {
-      // 剪贴板 API 在非 https 下没有（本机 http://localhost 也算安全上下文，
-      // 但 file:// 打开就没有）。退回老办法，别静默失败。
-      var ta = document.createElement('textarea');
-      ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
-      document.body.appendChild(ta); ta.select();
-      try { document.execCommand('copy'); done(); } catch (e) {}
-      document.body.removeChild(ta);
-    }
+    // ★ 2026-10-02 改成走全站那唯一一份 `SR.copyText`（定义在 js/chat.js）。
+    //   这里原来是自己写的一套：先够 `navigator.clipboard`，等它 reject 才退回
+    //   `document.execCommand`。可那个 Promise **在拿不到用户手势时会永远挂着**，
+    //   reject 根本不发生——于是这里既不打"复制了"、也不退老办法，点下去就是没动静。
+    //   （同一处病在备课气泡上发作过，就是那次"按钮按下去毫无反应"。）
+    //   `SR.copyText` 是反过来的：同步那条先跑、当场拿到真假，异步那条带 1.5 秒上限。
+    SR.copyText(t, function (ok) {
+      // 两条路都不成（比如这一页是从 file:// 双击打开的）：**别假装复制上了**，
+      // 把这句选中，老师自己按 Ctrl+C 还有救。
+      if (ok) { done(); return; }
+      try {
+        var r = document.createRange();
+        r.selectNodeContents(el);
+        var s = window.getSelection();
+        s.removeAllRanges(); s.addRange(r);
+      } catch (e) {}
+    });
   }
 
   // ---- 打开 ----

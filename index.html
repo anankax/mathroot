@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>数根 mathroot · 初中数学备课台 · by KAX</title>
-<meta name="description" content="KAX 做的初中数学备课台：画图、备课追问预演、出题变式、整卷挑题，带一块能画平面也能画三维的互动画板。">
+<meta name="description" content="KAX 做的初中数学备课台：备课摆追问链、整卷讲评、出题变式、画图，带一块能画平面也能画三维的 GeoGebra。">
 <meta name="author" content="KAX">
 <!-- 署名：把作者写进元数据，别人整页扒走也留着出处 -->
 <meta name="copyright" content="© 2026 KAX · 数根 mathroot">
@@ -40,12 +40,12 @@
 <!-- 本项目（按依赖顺序） -->
 <script defer src="js/config.js"></script>
 <!-- 四份提示词，一个工位一份（见 js/config.js 的 SR.WORKS）。
-     ★ 备课和讲评共用 rehearse 那一份——讲评是备课的一个阶段，不是另一个职责。
-     ★ rehearse 那三份由 test/build_prompt.py 生成，别手改；
-       draw / vary 两份是手写的。 -->
-<script defer src="js/prompt-rehearse.js"></script>
-<script defer src="js/prompt-rehearse-lean.js"></script>
-<script defer src="js/prompt-rehearse-tail.js"></script>
+     ★ 备课和讲评共用 prep 那一份——讲评是备课的一个阶段，不是另一个职责。
+     ★ 这四份**全是手写的**，都在 js/ 下面，改提示词就改这四个文件。
+       （2026-10-02 之前备课那三份是 test/build_prompt.py 从 05c 生成出来的，
+         那份 05c 是扣子「数小问」学生版的翻面稿，主体反了——整份重写，已脱离生成链。
+         那个脚本还留着，它另外还生成 js/textbook.js 和 js/zhuawen.js 两份检索语料。） -->
+<script defer src="js/prompt-prep.js"></script>
 <script defer src="js/prompt-draw.js"></script>
 <script defer src="js/prompt-vary.js"></script>
 <!-- 出材料工位（这一版的主线）。★ 它只管"说话"那部分——套模板、出 docx
@@ -172,17 +172,30 @@
       <button type="button" class="railbtn" id="resbtn" style="display:none">本地素材</button>
       <button type="button" class="railbtn" id="cardbtn">备课卡片</button>
       <button type="button" class="railbtn" id="kbbtn" style="display:none">知识库</button>
-      <button type="button" class="railbtn" id="newbtn" title="清空重新开始这一件">新的一件</button>
+      <!-- ★ 这一条**不写字，只放一个 ⟳**（2026-10-02 定案）。
+           原来是「新的一件」，孔老师问"为啥要叫新的一件"；换「新的一课」、
+           「重新开始」她也说不对。症结其实不在词上——上面四条（我的模板／
+           本地素材／备课卡片／知识库）**全是名词**，点开看一眼东西；
+           而这一条是个**动作**，清空重来。混在一列名词里怎么起名都像个"东西"，
+           「件」字尤其怪。她第一遍就管它叫"刷新重置的那个"——说明这个动作本身
+           一眼就看得懂，那就不必费字：给回它最能被认出的样子（圆形箭头），
+           说明话进 title，鼠标停上去才出。图标是内联 SVG（见 js/main.js 里注入），
+           不引字体——字体的箭头在不同机器上大小胖瘦差得远。 -->
+      <button type="button" class="railbtn railicon" id="newbtn" title="清空，重新开始" aria-label="清空，重新开始"></button>
     </div>
   </nav>
 
   <!-- 中：对话 -->
   <section class="col tick">
     <!-- 栏头。★ 那篇第六节讲"降低页面层级"时反复提到"赋予各系统一种空间上的
-         联系与包装"——每块面板各挂一个编号铭牌（01 工位 / 02 对话 / 03 产物 /
-         04 画板），它们就不再是"一堆白盒子"，而是同一台仪表上的几个工位。
-         ★ 中英叠排是第四节明写的装饰手法；编号走等距字体（对应那篇里的 Bender），
-         是让"读数"和"正文"一眼分得开。 -->
+         联系与包装"——每块面板有自己的名字，它们就不再是"一堆白盒子"，
+         而是同一台仪表上的几块牌子。
+         ⚠ **这里没有编号**，别再给加上"02 对话 CHAT"。原来这段注释写的是
+           "每块面板各挂一个编号铭牌（01 工位 / 02 对话 / 03 产物 / 04 画板）"，
+           可页面上一块都没有——2026-10-01 试过，孔老师当场否了
+           （"那个 02 03 的标签搞了干啥……搞什么英文在那干啥"）。
+           留着那句注释，下一个读代码的人（比如 2026-10-02 的我）就会以为
+           编号是丢了，再好心加回去一次。 -->
     <div class="colhead"><span>对话</span></div>
     <!-- 空对话区里那块浅到几乎看不见的大字。★ 学生一进来，这一栏九成是白的，
          光放一句「告诉我你的问题。」，上面那大片留白看着像"没做完"。
@@ -227,7 +240,13 @@
     <div class="outbox">
       <div class="colhead"><span>产物</span></div>
       <div id="out">
-        <p class="outempty">还没有产物。<br>在左边选<strong>出材料</strong>，传一份你学校自己的模板，出的卷子会摆在这儿。</p>
+        <!-- ★ 这段空白态只在**出材料工位**看得见（css 里 `body:not([data-work="material"])`
+             把整块 .outbox 收起来了），所以旧稿那句"在左边选**出材料**"是句废话——
+             他已经在出材料里了。现在改成**下一步做什么**，而且是这个工位真需要的两步：
+             说清要出什么；要套版式就把模板传上来。
+             ⚠ 这句话在**有没有模板**两种状态下都得成立（这段 HTML 是写死的，
+             传完模板也不会变），所以模板只作第二句的**条件从句**写，不当前提。 -->
+        <p class="outempty">还没有产物。<br>说一句要出什么——考哪一章、多少道、什么难度；<br>要套你学校自己的版式，就把模板传上来。出的卷子摆在这儿，能下载 .docx。</p>
       </div>
     </div>
 
@@ -235,8 +254,13 @@
     <div class="boardbox">
     <div class="boardbar">
       <!-- 加载提示：GeoGebra 那一包从网上拉，几秒钟里画板是块白的。
-           放在这一行（boardbar）而不是塞进 #ggb 里——见 js/board.js 里 note() 的注释。 -->
-      <span class="t"><span>画板</span><span class="ggbstate" id="ggbstate"></span></span>
+           放在这一行（boardbar）而不是塞进 #ggb 里——见 js/board.js 里 note() 的注释。
+           ★ 标题从「画板」改成「GeoGebra」（2026-10-02 孔老师："还是叫 geogebra 啊，
+             别叫画板行吗"）。原来那个词有两个毛病：一是**说的是什么形状的东西，
+             没说是什么东西**——「画板」可以指黑板、白板、任何一块板；二是
+             跟「几何画板」撞词：刚聊完"几何画板能不能接"，回头一看标题写着「画板」，
+             根本分不清指哪个。它本来就有名字，直接写名字。 -->
+      <span class="t"><span>GeoGebra</span><span class="ggbstate" id="ggbstate"></span></span>
       <div class="viewsw">
         <button type="button" class="viewbtn on" data-view="2d">平面</button>
         <button type="button" class="viewbtn"    data-view="3d">三维</button>
@@ -246,7 +270,7 @@
       <button type="button" class="tool" id="btn-clear">清空</button>
       <!-- 存图：导出的 PNG 右下角会烧上一行 "KAX · 数根 mathroot"。
            截图二维码、贴进课件、发群里，图自己带着出处走。 -->
-      <button type="button" class="tool" id="btn-png" title="把画板存成图片">存图</button>
+      <button type="button" class="tool" id="btn-png" title="把这张图存成图片">存图</button>
     </div>
     <div class="boardwrap">
       <div id="ggb"></div>
@@ -269,38 +293,41 @@
 <div class="overlay" id="about">
   <div class="box tick">
     <h2>数根<em>MATHROOT</em></h2>
-    <p>一个<strong>初中数学备课台</strong>。备课那一段里，它<strong>只问不答</strong>——它替你把学生要说的话说一遍，逼你把这条追问链在脑子里走完，再进教室。</p>
+    <p>一个<strong>初中数学备课台</strong>。备课那一段里，它<strong>演学生</strong>——把"学生大概会这么答、你接哪一句"一条一条摆出来，摆完你拷走就能用。</p>
 
-    <h3>四个工位</h3>
+    <h3>五个工位</h3>
     <ul>
-      <li><strong>画图</strong>——说一句"画个正方体，让它转起来"，右边画板就出来。题目里能画的东西它都画：坐标系、数轴、三角形、圆、函数图象，立体图形另有三维画板。画完点<strong>「存图」</strong>，右下角带着出处，直接贴进课件、卷子、学案。</li>
-      <li><strong>备课</strong>——把这一课要上的<strong>题</strong>贴进来，或者只写一个<strong>课题</strong>（例如"3.1 代数式的值"）都行。它不给你答案，而是<strong>一轮只问一句</strong>：先请"学生"复述做法，再定位卡在哪一步，再追问为什么，答不上来就递台阶，最后收口。底下有<strong>档位条</strong>，走到第几档一目了然，也可以点一下从哪一档接着走。</li>
+      <li><strong>出材料</strong>——传一份<strong>你学校自己的模板</strong>（周练卷、导学案、练习纸都行），说一句"第五周，考一元一次方程，选择 8 道、填空 6 道、解答 4 道"，它把内容编排好、套进你的模板，给你一份 <strong>.docx</strong>，打开就能印。手边有<strong>别人的卷子</strong>也能传上来——它拿那份当<strong>题源</strong>，沿用它的题型和难度、改成你要的范围，但<strong>不会把它的抬头和说明带过来</strong>。题目要图的时候它写一行画图命令，工作台自己把图渲出来印上去。</li>
+      <li><strong>画图</strong>——说一句"画个正方体，让它转起来"，右边 GeoGebra 就出来。题目里能画的东西它都画：坐标系、数轴、三角形、圆、函数图象；立体图形点一下<strong>「三维」</strong>切过去，还是这块 GeoGebra。画完点<strong>「存图」</strong>，右下角带着出处，直接贴进课件、卷子、学案。</li>
+      <li><strong>备课</strong>——把这一课要上的<strong>题</strong>贴进来，或者只写一个<strong>课题</strong>（例如"3.1 代数式的值"）都行。它<strong>演学生</strong>：<strong>一轮摆一节</strong>，每节四行——<code>第 2 节 · 定位</code>、"学生大概会说……"、"你接这句……"、"这么接的道理……"。五节是：复述 → 定位 → 追问 → 给台阶 → 肯定。底下有<strong>档位条</strong>，摆到第几节一目了然，也可以点一下把链子推到那一节。哪一节不对，直接跟它说<strong>"我们班孩子会说……"</strong>，它照你的话重摆。</li>
       <li><strong>出题</strong>——给一道题，它出几个变式：换数字、改条件、反过来问、改成开放题，<strong>每个变式都配一张图</strong>，答案也给。</li>
-      <li><strong>讲评</strong>——把<strong>整份卷子</strong>发过来（拍照、PDF、.docx 都行，一次可以发好几张）。它先把卷子上有哪些题念一遍，你说哪几道值得讲、按什么顺序讲，挑定一道再展开成上面那条追问链。</li>
+      <li><strong>讲评</strong>——把<strong>整份卷子</strong>发过来（拍照、PDF、.docx 都行，一次可以发好几张）。它先把卷子上有哪些题列一遍，你挑定一道，它再摆那一道的链子——<strong>从"学生大概错在哪"摆起</strong>，学生已经做过了，不用再复述题目。</li>
     </ul>
 
     <h3>怎么用</h3>
     <ul>
-      <li>底下那三个按钮是<strong>学生大概会这么答</strong>的话——你点一句，就等于替学生开了口，数根顺势问下一句。想说什么直接打字也行。</li>
-      <li>备完一课点<strong>「新的一课」</strong>清空，接着备下一课。备好的追问链可以<strong>「复制这段」</strong>带走，贴进教案或学案。</li>
+      <li>备课／讲评里，每一条回复底下都有一颗<strong>「复制这段」</strong>——链子是<strong>一节一节</strong>摆的，摆到哪儿想先拷走都行，贴进教案、学案、备课组的共享文档。</li>
+      <li>底下那三个按钮是<strong>你要跟它说的话</strong>，跟着工位换：备课／讲评里是<strong>"接着往下摆"</strong>、<strong>"这句我说不出口，换个说法"</strong>、<strong>"整条链子给我，我拷走"</strong>；出材料里是题量、难度、范围那几句；画图里是"换成三维""切回平面"。想说什么直接打字也行。</li>
+      <li>备完一课，点左栏最下面那颗<strong>圆形箭头</strong>（鼠标停上去写着"清空，重新开始"）清空，接着备下一课。</li>
       <li>顶栏<strong>「备课卡片」</strong>里是那 118 条追问条目，按册别分组、能搜，备课时随手查。
 
     </ul>
 
     <h3>为什么这么设计</h3>
-    <p>一道题讲不通，多半不是学生没听懂，而是<strong>他心里的那句话老师没听见</strong>。数根不替你把课备完：它把"学生大概会这么答"一句一句摆出来，逼你在进教室之前先把这条路走一遍——问到哪一步学生会卡、卡住了你递什么台阶。它只问、不答，因为答案你已经有了。</p>
+    <p>一道题讲不通，多半不是学生没听懂，而是<strong>他心里的那句话老师没听见</strong>。数根不替你把课备完，它<strong>演学生</strong>：把"学生大概会这么答"和"你接哪一句"一条一条摆出来，逼你在进教室之前先把这条路走一遍——问到哪一步学生会卡、卡住了你递什么台阶。它把答案给你，也把话给你；<strong>唯一要求你的那句话别把答案说出来</strong>——因为那句话是要在课堂上说出口的。</p>
 
     <h3>不做什么</h3>
-    <p><strong>出卷排版</strong>和<strong>成绩分析</strong>这两件事，本地的 Word 管线和学校已有的平台做得比网页好，这里就不重复造了。数根在出卷这件事里只负责一件事——<strong>供图</strong>。</p>
+    <p><strong>不碰学生的数据。</strong>没有成绩分析、不录姓名学号分数，也没有学生账号——这一页是给<strong>老师</strong>一个人用的。整站纯静态，你打的字不落盘。</p>
+    <p><strong>不编题源。</strong>自己出题的时候，它只保证一件事——<strong>这道题在数学上是对的</strong>。「某年某地中考题」「教材第几页」这种话它一个字都不会说，因为没查过的不许说。你要真题，就<strong>把你手上那份卷子传上来</strong>，它拿它当题源改。</p>
 
     <h3>用的是哪个模型</h3>
     <p>默认走<strong>免费通道</strong>，不用注册、不用填任何东西，打开就能用（用的是 GLM 免费模型，够用，请省着点）。如果你用得多，或者想更稳，点顶栏右上的<strong>「我的 Key」</strong>，填一个自己的 DeepSeek Key——Key 只存在你这台电脑的浏览器里，不会发给任何人，也不会写进网页。填完可以点<strong>「测一下」</strong>当场验，不用等下一次提问才知道填错了。</p>
     <p>免费通道偶尔会排队（人多了会提示"有点挤"）。它会自己先换个备用模型试，还不行就提示你切到自己的 Key。</p>
 
     <h3>别的</h3>
-    <p>整站是一个纯静态网页——没有服务器、没有数据库，你打的字和我们说的每一句话都不落盘。画板用的是 GeoGebra。</p>
+    <p>整站是一个纯静态网页——没有服务器、没有数据库，你打的字和我们说的每一句话都不落盘。作图那部分是 <strong>GeoGebra</strong>（开源免费软件），其余是本页面自己的。</p>
 
-    <p class="sig">制作者 <b>KAX</b> · 初中数学教师<br>本页面与其中的画板、提示词均为原创，欢迎拿去用，请勿改个名字当成自己的作品。</p>
+    <p class="sig">制作者 <b>KAX</b> · 初中数学教师<br>本页面与其中的提示词均为原创，欢迎拿去用，请勿改个名字当成自己的作品。</p>
 
     <div class="row">
       <button type="button" class="tool primary" data-close="about">知道了</button>
@@ -362,7 +389,8 @@
     <p>
       每一张卡是一类题在课上真实会走到的一小段：<strong>认这类题</strong>（这题长什么样）、
       <strong>还没开口</strong>、<strong>复述完了</strong>、<strong>卡住说不出</strong>、<strong>说对了</strong>
-      五档，正好是学生从"没思路"到"说出来"的五个位置。备课时挑一档直接念。
+      五档，正好是学生从"没思路"到"说出来"的五个位置。备课的时候照着它改一改，
+      就是链子里那两行「学生大概会说」和「你接这句」。
     </p>
     <input id="cardq" type="text" placeholder="搜知识点或别名，例如 绝对值、数轴、增长率" autocomplete="off">
     <p id="cardmeta"></p>

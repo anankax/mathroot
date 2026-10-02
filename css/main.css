@@ -10,9 +10,14 @@
    ① 画内界面（Diegetic Interface）
       那片讲方舟主看板"仿若钢铁侠头盔内的漂浮投影界面"，连手机的电量、信号、
       时间都被按统一风格塞进对应浮窗里。意思是：**界面不是贴在网页上的一张表，
-      是场景里真实存在的一块屏**。落到这儿就是——两块面板各挂一个编号铭牌
-      （01 对话 / 02 画板），四周有仪表那样的角标和内投影，读数用等距字体。
-      学生看到的是一台"错题复盘仪"，不是一张表单。
+      是场景里真实存在的一块屏**。落到这儿就是——四周有仪表那样的角标和内投影，
+      读数用等距字体，面板标题走衬线。老师看到的是一台备课台，不是一张表单。
+      ⚠ 这一条**不包括"编号铭牌"**。原来写到这儿写着"两块面板各挂一个编号铭牌
+        （01 对话 / 02 画板）"，可页面上从来没有过——2026-10-01 试过，
+        孔老师当场否了（"那个 02 03 的标签搞了干啥……搞什么英文在那干啥"），
+        编号只留在左栏试了一版，理由写在下面 .railhead 那儿。
+        那段注释从此就跟页面对不上了：照着它去找"01/02"找不着，还会有人
+        （比如 2026-10-02 的我）以为"编号丢了"再给加回去。所以在这儿改成实话。
 
    ② 层级对比度极高 ← ★ 上一版最大的失误
       那篇第二节的原话："方舟的 UI 一个突出特点就是层级对比度极高"。
@@ -103,9 +108,11 @@
   --alt-soft: #eff4d9;
   --alt-line: #c8d492;
 
-  /* ★ 几乎没有圆角。那篇说的是"扁平化不是为了平"，但圆角是"聊天软件"的形状，
-     不是"仪表"的形状。全部归零，层级改由角标和线来做。 */
-  --r: 0px;
+  /* ★ 全站没有圆角。那篇说的是"扁平化不是为了平"，但圆角是"聊天软件"的形状，
+     不是"仪表"的形状。层级改由角标和线来做。
+     ⚠ 原来这儿有个 `--r: 0px`，2026-10-02 删了：**全文件没有一处 `var(--r)`**，
+       而 0 本来就是 border-radius 的默认值，留着它只会让下一个人以为
+       "改这一个数就能全站改圆角"（改了没用）。要圆角就一处一处写。 */
   --grid: rgba(11, 107, 69, .045);
   --grid-2: rgba(11, 107, 69, .085);
 
@@ -170,27 +177,27 @@ body[data-work="vary"] .tick::before,
 body[data-work="draw"] .tick::after,
 body[data-work="vary"] .tick::after { border-color: rgba(95, 107, 18, .5); }
 
-/* 铭牌：编号 + 中文 + 拉丁小字。两块面板和两个弹层标题共用这一套。
-   ★ 编号走等距字体，是对那篇里 Bender（工业风伪等距体）的对应——
-     "读数"和"正文"一眼分得开，仪表感就是从这儿来的。
-   ★ 中文走衬线（那篇第四节）。别改成无衬线，改了整块铭牌就塌成一行小字。 */
+/* 铭牌：中文 +（可选的）拉丁小字。栏头和弹层标题共用这一套。
+   ★ 中文走衬线（那篇第四节）。别改成无衬线，改了整块铭牌就塌成一行小字。
+   ⚠ **这一套里没有编号**（原来写着"编号 + 中文 + 拉丁小字"，还配了条 `.colhead b`
+     的样式）——编号 2026-10-01 被孔老师否掉了，理由和经过写在 .railhead 那儿。
+     样式和注释一起清掉了，省得下一个人照着注释把"02 对话"加回来。 */
 /* ★ 基座一律给 --song（衬线）。**别写成 --sans**：弹层里的 h2 是
    `<h2>模型通道<em>CHANNEL</em></h2>`——中文是**裸文本节点**，外面没有 span 包着，
    所以只有落在基座上的字族才管得住它。上一版基座写的是 --sans，
    .overlay h2 span 那条选择器根本匹配不到任何东西（弹层的 h2 里压根没有 span），
    四个弹层的中文标题就全都退回了微软雅黑——只有 h3 是衬线，看着像两套东西。
-   b 和 em 各自有字族，会盖掉基座，不影响。 */
-.stag, .colhead, .overlay h2 {
+   em 有自己的字族，会盖掉基座，不影响。 */
+.colhead, .overlay h2 {
   font-family: var(--song);
 }
-.stag b, .colhead b, .overlay h2 b {
-  font-family: var(--mono); font-weight: 700; font-size: 11.5px; letter-spacing: .5px;
-  color: var(--brand); border: 1px solid var(--brand-line); padding: 1px 5px; margin-right: 9px;
-}
-.stag span, .colhead span, .overlay h2 span { font-weight: 700; color: var(--ink); }
+.colhead span, .overlay h2 span { font-weight: 700; color: var(--ink); }
 /* 拉丁小字：字距**拉开**（小字号拉开＝清楚），配中文字距**收紧**
-   ——那篇第四节说的"字距缩进"。两种情况方向相反，别写成一档。 */
-.stag em, .colhead em, .overlay h2 em, .boardbar em {
+   ——那篇第四节说的"字距缩进"。两种情况方向相反，别写成一档。
+   ⚠ `.boardbar em` 留着：手机上它是 display:none（见窄屏那一块），桌面上留着备用。
+      `.colhead em` 也留着同一个道理——**它现在没有真节点**，但 `.colhead` 是
+      那种"随时会想挂个拉丁小字上去"的位置，删了下次还得重写一遍样式。 */
+.colhead em, .overlay h2 em, .boardbar em {
   font-family: var(--lat); font-style: normal; font-weight: 400;
   font-size: 10.5px; color: var(--ink-3); letter-spacing: 2.2px;
   text-transform: uppercase;
@@ -432,6 +439,20 @@ main {
 .railbtn:last-child { border-bottom: 0; }   /* 最后一条后面是栏底，那条线是多余的 */
 .railbtn:hover { background-color: var(--brand-soft); color: var(--brand); }
 
+/* 清空重开那一条（⟳）。★ 上面四条都是**名词**——"我手上有些什么"，
+   左对齐、像清单里的一行；这一条是**动作**（清空重来），
+   摆在一列名词里怎么起名都像个"东西"（原来叫「新的一件」，"件"字尤其怪）。
+   所以**不写字、不左对齐**：居中一颗圆形箭头，一眼看出它是颗按钮、不是一档内容。
+   图标是 main.js 塞进来的内联 SVG（不引字体：图标的箭头在不同机器上胖瘦差得远，
+   缺字形还会吐豆腐块），颜色走 currentColor，hover 变色照旧重用它上面那条。 */
+.railbtn.railicon { text-align: center; padding: 9px 0; line-height: 0; }
+.railbtn.railicon svg {
+  width: 16px; height: 16px; vertical-align: middle;
+  transition: transform .18s ease;   /* 时长归零那条兜底在文件末尾的 reduced-motion 里 */
+}
+/* hover 时箭头往回拧一点——"要转了"这个暗示，比把说明字写出来省地方 */
+.railbtn.railicon:hover svg { transform: rotate(-40deg); }
+
 /* ---------- 右栏：上产物、下画板 ---------- */
 /* ★ 为什么合成一栏而不是再开第三栏：出材料的时候这两样是**同屏要用**的——
    一边看生成的卷子、一边调题目要的图。1280 的屏再切一刀，对话栏就没法读了。 */
@@ -469,14 +490,18 @@ body:not([data-work="material"]) .outbox { display: none; }
 }
 #msgs, #thumb, #chips, .composer { position: relative; z-index: 1; }
 
-/* ---------- 栏头铭牌（01 对话 / 02 画板） ---------- */
+/* ---------- 栏头 ---------- */
+/* ⚠ **这一套里没有编号。** 这个注释原来写的是「栏头铭牌（01 对话 / 02 画板）」，
+   而且底下真有一条 `.colhead b, .boardbar b { margin-right: 9px }` 在给编号留位。
+   编号是 2026-10-01 孔老师当面否掉的（"那个 02 03 的标签搞了干啥"），
+   从那以后 #about 和 index.html 里都没编号了——**这两行是那次的残渣**，2026-10-02 清掉。
+   别再照着这个标题给它加回来。 */
 .colhead, .boardbar {
   flex: 0 0 auto; display: flex; align-items: center; gap: 0;
   padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--panel);
 }
 .colhead { padding: 9px 14px; }
 .colhead span, .boardbar span { font-size: 15px; margin-right: 10px; }
-.colhead b, .boardbar b { margin-right: 9px; }
 
 /* ---------- 左：对话 ---------- */
 #msgs { flex: 1 1 auto; overflow-y: auto; padding: 18px 18px 6px; scroll-behavior: smooth; }
@@ -733,9 +758,24 @@ footer .r {
 .figbtn:hover { border-color: var(--brand); color: var(--brand); }
 .figbtn.on:hover { color: #fff; }
 
-/* ---------- 档位条（#steps）：备课／讲评那两个工位的"走到第几档" ----------
+/* ---------- 备课／讲评气泡下的「复制这段」（见 js/chat.js 的 attachCopy） ----------
+   这两个工位的产物就是**一段文字**——老师要贴进教案、学案、备课组的共享文档。
+   摆的位置和形状跟上面那排「图 N」是一对（都挂在气泡里、都比 .chip 小一档），
+   因为它们干的是同一类事：**对"这一条回复"做点什么**，而不是发一句话出去。 */
+.copybar { display: flex; gap: 6px; margin-top: 9px; }
+.copybtn {
+  border: 1px solid var(--line); background: var(--sunken); font: inherit;
+  font-size: 11.5px; padding: 3px 10px; cursor: pointer;
+  color: var(--ink-2); letter-spacing: .3px;
+}
+.copybtn:hover { border-color: var(--brand); color: var(--brand); }
+/* 拷成的那一瞬间换个说法（"复制好了"）。★ 用 .done 而不是 :active——
+   剪贴板这一下是异步回来的，:active 在手指抬起来的时候就没了，看不见反馈。 */
+.copybtn.done { border-color: var(--brand); color: var(--brand); font-weight: 700; }
+
+/* ---------- 档位条（#steps）：备课／讲评那两个工位的"链子摆到第几节" ----------
    这一条是这一版的核心可发现性：备课本来的样子是一条没有终点的对话，
-   老师不知道要走几步、现在走到哪。挂上这五个格子，"一档一档走"就看得见了。
+   老师不知道要走几步、现在走到哪。挂上这六个格子，"一节一节摆"就看得见了。
 
    ★ 它不是导航，是**进度**，所以它的形状照着仪表来，不照按钮来：
      走过的那几格填深色实心（已经走完了），当前那格是主色 + 一道下划线（正在这），
@@ -783,7 +823,7 @@ footer .r {
   background: var(--panel);
   border-top: 4px solid var(--brand);
   padding: 24px 26px 20px;
-  width: min(560px, 100%); box-shadow: 0 18px 50px rgba(6, 24, 15, .34);
+  width: min(560px, 100%); box-shadow: var(--sh-2);   /* 离得最远的那一档，见 --sh-2 */
   max-height: 86vh; overflow-y: auto;
 }
 /* ★ 字号必须写在 h2 自己身上：弹层 h2 里没有 span，写 `.h2 span{font-size}` 等于没写 */
@@ -998,6 +1038,16 @@ footer .r {
   /* 给满色块（发送键、演示模式角标）用的高光，因为底本来就不白 */
   --hilt-solid: linear-gradient(180deg, rgba(255, 255, 255, .16) 0%, rgba(0, 0, 0, .07) 100%);
 
+  /* 落影。★ 全站**只有两处**该有影子，就是这两档：
+        --sh-1  右栏那张"纸"（预览），离面板最近；
+        --sh-2  浮层，离得最远。
+     分档看的是"行程"不是"元素大小"——那篇第三节讲层级对比度，用的就是这个道理：
+     近的东西影子**短而实**，远的东西影子**长而散**。ⓘ 别顺手给按钮也加一个：
+     按钮是靠底色、边框和散点翻身的，一加影子整页东西全"浮"起来，跟底图那层
+     扁平的网点打架，而且 1px 的按钮影子在投影仪上根本看不见、只在视网膜屏上脏。 */
+  --sh-1: 0 1px 0 rgba(6, 24, 15, .17), 0 3px 10px rgba(6, 24, 15, .07);
+  --sh-2: 0 18px 50px rgba(6, 24, 15, .34);
+
   /* 散点。★ 页面底那层 --grain 是给底图的，浓度对；铺到按钮这种小面积上
      就太糙了，单独调淡一档。那篇第五节的原话是"散点……用在基础组件
      （如按钮上）可以使**留白不显得单薄**"——说的正是按钮这个尺寸。 */
@@ -1007,7 +1057,10 @@ footer .r {
      落在 50% -40% —— 圆在框子外面，等于看不见。所以默认状态和
      "这一版没加光照"是完全一样的，不会因为 JS 没跑就多出一块斑。 */
   --cl:    radial-gradient(220px circle at var(--mx, 50%) var(--my, -40%), rgba(11, 107, 69, .085), transparent 70%);
-  --cl-sm: radial-gradient(64px circle at var(--mx, 50%) var(--my, -40%), rgba(11, 107, 69, .16), transparent 72%);
+  /* ⚠ 原来这儿还有一个 `--cl-sm`（小一号的指针光，原本打算给按钮用），
+     2026-10-02 删了：**全仓库没有一处 `var(--cl-sm)`**。
+     按钮那块的光最后是拿散点 + --hilt 做的——见下面 .tool/.chip 那段，
+     理由也写在那儿（那么小一块，光一晃像个脏点）。 */
 }
 
 /* ---------- 光照：把"材质"变成"有光打在上面"的材质 ---------- */
@@ -1119,6 +1172,45 @@ footer .r {
 @keyframes breath { 0%, 100% { opacity: .045; } 50% { opacity: .078; } }
 .ghost { animation: breath 15s ease-in-out infinite; }
 
+/* ---------- 四个"浏览器自己画的"部件 ---------- */
+/* 这四个都是浏览器**默认就给**的东西，所以谁也不会想着去写它们——
+   可它们照样在屏幕上，而且是全站唯一没被这套语言管过的地方：
+   一排 Chrome 默认的圆角灰滚动条、一圈默认蓝的焦点框，跟"零圆角、硬边"打架。
+
+   ① 选中一段文字。★ 用主色**实底**（不是那种半透明的淡蓝）：跟全站的硬边
+      语言是一路的，而且投影仪偏色以后照样一眼看得出选没选中。 */
+::selection { background: var(--brand); color: #fff; }
+
+/* ② 占位符。★ 浏览器默认那个灰（Chrome 是 rgba(0,0,0,.54)）压在 --sunken 上
+   只有 3 点几比一，**低于这个文件顶上写的 4.5:1 那条线**（那是全站的规矩，
+   占位符不算数就不对了），投影仪上后排根本看不清。换成 --ink-3（对面板约 5.1:1）。
+   Firefox 默认还会在颜色之上再加一层 opacity，一并扳回 1，否则三个浏览器三个样。 */
+::placeholder { color: var(--ink-3); opacity: 1; }
+
+/* ③ 滚动条。★ 右栏看一份长卷子的时候它一直在屏幕上——原来那条是系统给的
+   圆角灰条。做窄、做方、跟着主色走。两条路都得写：Firefox 只认
+   scrollbar-width/color，WebKit 只认 ::-webkit-scrollbar，谁也不管对方。
+   ★ thumb 那圈 3px 透明边框是故意的：11px 的槽，真正露出来的条只有 5px，
+     既够手指点，又不会在卷子右边糊一道粗边。 */
+* { scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--rule); border: 3px solid transparent; background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--brand); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* ④ 键盘焦点。★ 这一版之前**一个 :focus-visible 都没有**（全仓库 0 处）：
+   用 Tab 走过去，用的是浏览器自带那圈蓝框（有的浏览器还是虚线），
+   于是全站唯一一个没被设计过的状态，恰好是键盘用户唯一看得见的状态。
+   给一圈**硬边、留空隙**的方框——角标和内投影是这套语言的形状，光圈不是。
+   ⚠ 那五个文字框（#input / #keyinput / #resq / #kbq / #cardq）不归这条管：
+     它们自己有"左边一道粗色条"的焦点样子，而且各自的基准规则里已经写了
+     outline: none（id 选择器比这里的伪类权重高，轮不到这条生效）。
+     别把它们的 id 改成 class——改了就同时出现两种焦点提示了。 */
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
 /* ---------- 出材料：模板库 + 产物栏 ---------- */
 /* 模板列表的一行。★ 排版跟 .kbrow / .resrow 一族保持同一套：直角、细分隔线、
    名字一行小字一行。同一个站里"一行可点的东西"不该有两种形状。 */
@@ -1168,6 +1260,17 @@ footer .r {
 .pvwrap {
   border: 1px solid var(--line); background: #fff; padding: 18px 20px;
   font-size: 12pt; line-height: 1.9; color: #111;
+  /* 纸躺在面板上。★ 全站两处该有影子的地方之一（另一处是浮层，见 --sh-2）。
+     预览这个块的隐喻就是**一叠纸**，而它和面板的颜色几乎一样
+     （--panel #fdfefd vs 纸 #fff），原来唯一的界线就是这条 1px 的 --line。
+     影子往下偏、不做四周均匀——光从上面来，纸才躺得住。
+     ★ 第一版的影子我写了 `0 1px 2px / 3px 10px`、透明度 .07/.05，然后**放大 3 倍拍下来看**：
+       有，但只在 3 倍下看得见，1 倍下等于没有。那种影子不算"浅"，
+       算"我写了、屏幕上没有"——而且我给它的理由（投影仪对比度差时兜底）它根本没做到：
+       5% 的灰是**第一**个在差投影上消失的东西，比它旁边那条实线先没。
+       现在这版底下那层改成 `0 1px 0` + .17：**不虚化**的一根实线，
+       是这套硬边语言里的影子画法（角标、下划线都是这么干的），1 倍下才有分量。 */
+  box-shadow: var(--sh-1);
 }
 .pv-p { margin: 0; }
 .pv-blank { height: 1.1em; }
@@ -1204,7 +1307,16 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
 @media (max-width: 900px) {
   /* ★ 三栏在手机上变**三行**：左栏先横过来占满一整行，对话和右栏各占一行。
      不这么做的话左栏只有 200px 宽却要占一整行高度，中间那栏会窄到没法读。 */
-  main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr); }
+  /* ★ 第三行（右栏＝画板）比第二行（对话）多分一点：1.25 : 1。
+     为什么不是平分（2026-10-02 实测）：手机上一行高度很贵，而画板那一栏里
+     boardbar 自己要占掉 80px（标题+三个工具+平面/三维，手机上还会折成两行）。
+     平分 758px 的可分配高度时，画板盒子只剩 170px，去掉 boardbar 就只有 90px 给画布——
+     画布 160px 塞进 90px，底下切掉大半块（这就是"手机上画板被切"那一处）。
+     倾斜到 1.25 之后画板那一行从 293 涨到约 330，画布能拿到 160px 出头。
+     ⚠ 两边都保 minmax(0, …)：**下限写 0，任何一栏都能被压小**。
+       要是给这一行写死下限（minmax(260px,1fr)），短横屏的手机上总高不够，
+       行会被顶出去，而 body 是 overflow:hidden——顶出去的东西直接没了，比切一半更糟。 */
+  main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr) minmax(0, 1.25fr); }
   .rail { flex-direction: row; flex-wrap: wrap; align-items: center; overflow: visible; padding: 6px 0; }
   .railhead { border-bottom: 0; padding: 4px 10px; }
   .railhead em { display: none; }            /* 拉丁小字这档留给面板，栏头不占位 */
@@ -1218,6 +1330,10 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
   .rail #badge { display: none; }             /* 手机上一行高都很贵，这句留到横屏 */
   .railtools { flex-direction: row; flex-wrap: wrap; }
   .railbtn { border-bottom: 0; border-right: 1px solid var(--line); padding: 7px 12px; font-size: 13px; }
+  /* ★ ⟳ 那条在竖排里是"撑满整宽、图标居中"，横排回去就没宽度可撑了：
+     上面 `.railbtn.railicon` 的 `padding: 9px 0` 会比这条 `.railbtn` 更specific，
+     不在这儿补一句，它会窄成 16px 一条——手指按不住。 */
+  .railbtn.railicon { padding: 7px 14px; }
   /* ★ 手机上顶栏原来排成了**三行**（2026-10-01 402px 实测截图）：
      第一行 logo+站名+BY KAX，第二行 模式+通道+素材，第三行只剩一个「关于」。
      最后那行孤零零一个按钮，看着像没做完，还白吃掉一整行的高度。
@@ -1242,6 +1358,12 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
      ★ 再小就不能收了——那是手机上唯一一处"现在走到哪"，
        收了字就等于这一条白做。宁可让它横着滑。 */
   #steps { overflow-x: auto; flex-wrap: nowrap; }
+  /* ⚠ 别在这儿给我加 `#steps::-webkit-scrollbar { height: 4px }`。
+     2026-10-02 我加过一条，随后实测发现**它永远不会生效**：台阶一共 6 格，
+     360px 下格宽 39/40/40/51/40/40（合计 ≈251），320px 下**一模一样**——
+     连最窄的手机都不用横着滑。上面那个 overflow-x 是留给"以后有人加了第 7 格"
+     的保险，而在那之前，任何"横滑外观"的样式都是死码。
+     （`flex-wrap: nowrap` 倒是真在干活：它逼着 6 格排成一行，不许折成两行。） */
   #steps .stepbtn { font-size: 11.5px; padding: 6px 8px; }
   .backbtn { font-size: 12.5px; padding: 6px 9px; }
   .backbtn .dot { width: 7px; height: 7px; margin-right: 5px; }
@@ -1260,7 +1382,15 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
   /* 栏头铭牌：手机上两栏各挂一块会白吃两行高度，对话栏这块先收起来
      （画板那块的编号就留在 .boardbar 里，本来就要占一行）。 */
   .colhead { display: none; }
-  .boardbar span { font-size: 14px; }
+  /* 画板那一行。★ 标题从「画板」改成「GeoGebra」（2026-10-02）之后，
+     它从 30px 宽变成 78px——**360/380px 的小屏上，多出来的这 48px 正好
+     把工具条挤到第二行去**（实测：改名后 90px 高，把字改回「画板」是 50px）。
+     这一行的高度在小屏上很贵，所以整条收一档按回一行：标题降一档、
+     工具按钮和 平面/三维 各收一点内边距。
+     ⚠ 别改成"窄屏就把标题藏掉"——标题是这个面板里唯一说明"这是 GeoGebra"的地方，
+       而孔老师这次改名的理由正是它得说明白。
+     ⚠ 也别在 DOM 上加换行结构（那是给桌面排的），自然回卷就够。 */
+  .boardbar span { font-size: 12.5px; }
   .ghost { display: none; }   /* 手机上这一栏本来就不够高，别再铺字 */
 
   /* 输入区。★ 手机上一行放不下「📎 + 输入框 + 发送」：
@@ -1268,7 +1398,11 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
      placeholder「贴一道题，或者整张卷子」当场折成两行，第二行被边框切掉——
      截图里就是"贴一道题，或者整张"后面没字了。这里把两边都收一档。 */
   .composer { padding: 9px 10px; gap: 7px; }
-  #input { font-size: 15px; padding: 10px 11px; min-height: 47px; }
+  /* ⚠ 47 → 50（2026-10-02）：47 − padding20 − 边框3 = 24，**刚好等于**一行 15×1.6=24，
+     一个字都不富余，字的下缘贴着边框。多给 3px 留出余量。
+     ★ 但根子不在这 3px：原来真正被切掉 21～45px，是因为**提示语折了 2～3 行**
+       （见 js/chat.js 的 TIP_SHORT）。框最矮只放得下一行，所以提示语必须写得下一行。 */
+  #input { font-size: 15px; padding: 10px 11px; min-height: 50px; }
   #input:focus { padding-left: 7.5px; }
   #send { padding: 12px 15px; letter-spacing: 1.5px; }
   #attach { font-size: 18px; padding: 9px 10px; }
@@ -1276,12 +1410,29 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
 
   /* 画板工具条。★ 手机上原来「存图」被挤出右边框外（截图里只剩"存"）——
      boardbar 是 nowrap 的 flex，挤不下就溢出，而 .col 是 overflow:hidden，
-     溢出的部分直接没了，不是出现滚动条。让它可以换行，按钮也收一档。 */
-  .boardbar { flex-wrap: wrap; row-gap: 6px; padding: 8px 11px; gap: 7px; }
+     溢出的部分直接没了，不是出现滚动条。让它可以换行，按钮也收一档。
+     ★★ 2026-10-02 又收了一档：标题从「画板」改成「GeoGebra」之后，
+       它从 30px 宽变成 66px。**360–380px 的小屏上这一行会折成两行**
+       （实测：改名后 92px 高，把字改回「画板」是 50px）——这一行的高度
+       在小屏上很贵，所以间距和内边距各再收一档，把它按回一行。
+       量过的账：360px 时 5 个孩子加间距要 333px、只有 331px 可用，
+       现在收到 311px，留 20px 余量（不同机器字体宽一点窄一点都还放得下）。
+       ⚠ 别改成"窄屏就把标题藏掉"——标题是这块面板里唯一说明"这是 GeoGebra"
+         的地方，而这次改名的理由正是它得说明白。 */
+  .boardbar { flex-wrap: wrap; row-gap: 6px; padding: 8px 10px; gap: 5px; }
   .boardbar .t { margin-right: auto; white-space: nowrap; }
-  .boardbar .tool { font-size: 12.5px; padding: 5px 9px; }
-  .viewbtn { font-size: 12.5px; padding: 5px 11px; }
-  .boardbar b, .boardbar em { display: none; }   /* 手机上只留"画板"两个字 */
+  .boardbar .t span { margin-right: 6px; }
+  .boardbar .tool { font-size: 12.5px; padding: 5px 8px; }
+  .viewbtn { font-size: 12.5px; padding: 5px 8px; }
+  .boardbar b, .boardbar em { display: none; }   /* 手机上标题只留那一串名字本身 */
+
+  /* ★ 手机上让状态条**空着的时候别占地方**（2026-10-02）。
+     桌面那条 `min-height: 30px` 是有道理的——它让"存好了：xxx"这类一闪而过的提示
+     不会把画板顶得一跳一跳。可手机上画板那一整块才 156px（360 实测），
+     这 30px 是它的**五分之一**，而且绝大多数时候它是空的。
+     代价是手机上出提示时画板会重排一次——比"永远少五分之一"划算。
+     ⚠ 只在这一档收：桌面（>900px）那块地方不值钱，不值得为它换来画板跳动。 */
+  #status:empty { min-height: 0; padding: 0; border-top: 0; }
 
   footer .r { display: none; }
   footer { padding: 2px 12px 7px; }

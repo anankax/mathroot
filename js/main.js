@@ -243,11 +243,11 @@ SR.main = (function () {
         return function () {
           var t = p.textContent;
           var done = function () { p.classList.add('copied'); setTimeout(function () { p.classList.remove('copied'); }, 900); };
-          // navigator.clipboard 在 http://localhost 下能用；万一不行还有老办法，
-          // 都没有就让用户自己选中——所以要 title 提示它。
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(t).then(done, function () { selectNode(p); });
-          } else selectNode(p);
+          // ★ 2026-10-02 改走全站那唯一一份 `SR.copyText`（js/chat.js），别在这儿再养一套。
+          //   这里原来赌的是"`navigator.clipboard` 不行就会 reject"——**它不 reject，它会挂着**，
+          //   于是 `selectNode` 那条退路永远走不到，点一下毫无动静。
+          //   现在是：成了亮一下，没成（file:// 之类）就把路径选中，老师自己 Ctrl+C。
+          SR.copyText(t, function (ok) { if (ok) done(); else selectNode(p); });
         };
       }(path));
       el.appendChild(head);
@@ -516,12 +516,26 @@ SR.main = (function () {
       b.addEventListener('click', function () { applyWork(b.getAttribute('data-work')); });
     });
 
-    // ---- 新的一课 ----
+    // ---- 清空重开（左栏「我的」最下面那个 ⟳）----
     // ★ 补这个按钮的理由：chat.js 里有 MAX_TURNS = 24 那道闸，可见前**没有任何清空入口**。
     //   备课是"一课一清"的活儿：上一节课的追问链留在屏幕上，下一课接着问会串味。
     //   原来只能靠切工位间接清（还得切两次），现在给它一个正当的门。
+    //
+    // ★ 里面的箭头是**在这儿塞进去的**，不写在 index.html 里，也不引字体：
+    //   图标字体的箭头在不同机器上大小胖瘦差得远（有的机器根本没有那个字形，
+    //   会吐一个豆腐块）；而 index.html 里那段 `<svg>` 的 path 数据长得会把
+    //   邻近几行按钮挤到屏幕外，读起来不知道在看什么。塞在这儿，上头那条按钮
+    //   仍然是"一行一个按钮"。
     var nb = $('newbtn');
-    if (nb) nb.addEventListener('click', function () { SR.chat.reset(work); });
+    if (nb) {
+      nb.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"'
+                   +   ' fill="none" stroke="currentColor" stroke-width="2"'
+                   +   ' stroke-linecap="round" stroke-linejoin="round">'
+                   +   '<polyline points="22 6 22 11 17 11"/>'
+                   +   '<path d="M19.6 15.5a8 8 0 1 1-2-8.4L22 11"/>'
+                   + '</svg>';
+      nb.addEventListener('click', function () { SR.chat.reset(work); });
+    }
 
     // ---- 平面 / 三维 ----
     document.querySelectorAll('.viewbtn').forEach(function (b) {

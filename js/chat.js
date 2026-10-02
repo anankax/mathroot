@@ -27,9 +27,13 @@ SR.chat = (function () {
     //   出来的东西就没有版式可套——那正是这个工位唯一的产品前提。
     material: '传一份你学校的模板，再说要出什么。',
     draw: '告诉我你想画什么。',
-    prep: '告诉我你要上的哪一课。',
+    // ★ 备课这一句要说清**进来什么、出去什么**（2026-10-02 改）。
+    //   原来那句是「告诉我你要上的哪一课。」——只说了一半：老师给完课题，
+    //   不知道会拿回什么，也就看不出这个工位跟"直接问 AI 答案"有什么两样。
+    //   现在这句把两件事都说出来：给的是题/课题，拿回去的是**学生怎么答**。
+    prep: '给我一道题或者一个课题，我把学生怎么答摆给你看。',
     vary: '把题目发过来，我给你出几个变式。',
-    review: '把卷子发过来，先看看哪些题值得讲。'
+    review: '把卷子发过来，我先列一遍题，你挑哪一道讲。'
   };
 
   // 输入框的提示语，跟开场白一样**按工位给**。
@@ -39,8 +43,33 @@ SR.chat = (function () {
     draw: '说说要画什么，例如 数轴上表示 -2 和 3',
     prep: '贴一道题，或者写一个课题，例如 3.1 代数式的值',
     vary: '贴一道题，我给你出几个变式',
-    review: '把卷子发过来，也可以先说说这次考得怎么样'
+    // ★ 原来后半句是"也可以先说说这次考得怎么样"——那是**学生**的口吻
+    //   （考完回来说自己考得怎么样）。老师发卷子是来讲评的，不是来报分数的。
+    review: '把卷子发过来，拍照、PDF、Word 都行，一次可以发好几张'
   };
+  // 窄屏那一版：**只剩动词，例子全去掉。**
+  //
+  // ★ 为什么要另开一版（2026-10-02 390/360 实测）：
+  //   index.html 上写着"placeholder 要短：输入框最矮只放得下一行，长占位符会被边框切掉半行"——
+  //   那条原则是对的，可上面这份 TIP 一句 21～28 字，**比它警告的还长**。
+  //   390px 上输入框内容宽 189px、15px 的字一行放 12 个字，于是材料那句折成 2 行、
+  //   360px 上折成 3 行，而框最矮只有 47px（正好一行）——底下被切掉 21px / 45px。
+  //   截图上就是"说说要出什么，例如 第五周 一元"后面没了。
+  //   ⚠ 一行的上限是 **10 个字**（360px 上内容宽 159px ÷ 15px ≈ 10.6），下面每句都在 10 以内；
+  //     超了就会折行，折行就又被切。改这几句之前先照这个数一数。
+  //   ⚠ 例子不是删了——它在**开场白**里（上面 OPENING），那一段在对话区，多长都放得下。
+  var TIP_SHORT = {
+    material: '说说要出什么',
+    draw: '说说要画什么',
+    prep: '贴一道题或写课题',
+    vary: '贴一道题试试',
+    review: '把卷子发过来'
+  };
+  // 用哪一版：窄屏用短的。**900px 跟 css 那条断点取同一个数**——
+  // 两边要是错开，就会出现"CSS 已经按手机排了、提示语还是长的那句"。
+  function tipFor(w) {
+    return (window.innerWidth <= 900 ? TIP_SHORT : TIP)[w] || TIP.prep;
+  }
 
   function $(id) { return document.getElementById(id); }
 
@@ -67,6 +96,12 @@ SR.chat = (function () {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
     });
     els.input.addEventListener('input', autoGrow);
+    // 提示语分长短两版，窗口跨过 900px 那条线时要换过来。
+    // ★ 不挂这个的话：手机竖着打开（短提示），转成横屏 / 拖宽窗口跨过 900px，
+    //   提示语还是那句短的不说，**长那版的例子永远回不来**——除非切一次工位。
+    window.addEventListener('resize', function () {
+      if (els.input) els.input.placeholder = tipFor(work);
+    });
     els.attach.addEventListener('click', function () { els.file.click(); });
     els.file.addEventListener('change', function () { onPick(els.file.files); });
     // 直接往输入框里粘贴截图。★ 粘贴都是**追加**，不是替换：
@@ -104,9 +139,11 @@ SR.chat = (function () {
     SR.board.exportPNG(function (url) {
       btn.disabled = false;
       btn.textContent = old;
-      if (!url) { setStatus('画板还没画东西，或者这一版的浏览器不让存图。'); return; }
+      if (!url) { setStatus('GeoGebra 上还没画东西，或者这一版的浏览器不让存图。'); return; }
       var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
-      var name = '数根-画板-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) +
+      // ★ 文件名里的「画板」也换掉了（2026-10-02）：存下来的图会被贴进课件、发进群里，
+      //   文件名是**别人第一眼看到的那行字**，它得自己说得清是拿什么画的。
+      var name = '数根-GeoGebra-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) +
                  '-' + p(d.getHours()) + p(d.getMinutes()) + '.png';
       var a = document.createElement('a');
       a.href = url;
@@ -147,10 +184,10 @@ SR.chat = (function () {
     // ★ 原来那句"贴一道题，或者写一个课题，例如 3.1 代数式的值"是**写死在 index.html** 里的，
     //   于是切到「出材料」时它还挂在那儿——**提示的是一个这个工位不接的用法**。
     //   提示语是老师唯一一定会读到的一句话，写错了比没有更坏。
-    if (els.input) els.input.placeholder = TIP[work] || TIP.prep;
-    // 备课工位一上来就把①复述点亮：这就是"一档一档走"的起点，摆在那儿他自己会看。
-    // ★ 讲评工位**整根藏起来**，不留空槽，也不点着任何一档：
-    //   它开头那一段是"先念题号、再说讲哪几道"，五档还没开始。
+    if (els.input) els.input.placeholder = tipFor(work);
+    // 备课工位一上来就把「复述」点亮：链子是从第一节摆起的，摆在那儿他自己会看。
+    // ★ 讲评工位**整根藏起来**，不留空槽，也不点着任何一节：
+    //   它开头那一段是"先列题号、再说讲哪一道"，链子还没开始。
     //   一打开讲评就摆出"复述／定位／追问"六格，老师会以为现在就该按这个走。
     //   等卷子发上来、挑定一道，第一轮回复之后它自己会冒出来。
     if (work === 'prep') paintStepBar(1); else hideStepBar();
@@ -158,11 +195,11 @@ SR.chat = (function () {
     els.input.focus();
   }
 
-  // ---- 档位进度条 ----
-  // ★ 「一档一档走」是这个产品的核心交互，所以它得**看得见**。
-  //   档位由 SR.inferStep 推断（纯前端，不靠模型在围栏里写档号——理由见 chips.js 那一段），
-  //   这里只负责画。进度条和下面的兜底按钮**共用同一份推断**，别各判一套。
-  // ★ 点某一段 = 替学生发一句那个档位的话（SR.STEP_JUMP），不是发魔法符号：
+  // ---- 链子进度条 ----
+  // ★ 「一条链子一节一节摆出来」是这个工位的核心交互，所以它得**看得见**。
+  //   走到第几节由 SR.inferStep 从模型那行节标题里读出来（纯前端，别让模型另写档号——
+  //   理由见 chips.js 那一段），这里只负责画。
+  // ★ 点某一段 = 把链子推到那一节（SR.STEP_JUMP），发的是人话不是魔法符号：
   //   小模型吃自然语言比吃 `JUMP=4` 稳，而且这句话留在 history 里下一轮还看得见。
   var stepNow = 0;
   // 藏起来。★ 走这个而不是 paintStepBar(0)：那个只是"不点亮任何一档"，
@@ -187,7 +224,7 @@ SR.chat = (function () {
           b.className = 'stepbtn';
           b.setAttribute('data-step', sd);
           b.textContent = SR.STEP_NAMES[sd] || sd;
-          b.title = '从这一档接着走';
+          b.title = '把链子摆到这一节';
           b.addEventListener('click', function () {
             if (busy) return;
             if (!SR.STEP_JUMP || !SR.STEP_JUMP[sd]) return;
@@ -297,7 +334,7 @@ SR.chat = (function () {
         b.type = 'button';
         b.className = 'figbtn';
         b.textContent = '图 ' + (i + 1);
-        b.title = '把这一张画到画板上';
+        b.title = '把这一张画到 GeoGebra 上';
         b.addEventListener('click', function () { pick(i); });
         btns.push(b);
         bar.appendChild(b);
@@ -307,6 +344,96 @@ SR.chat = (function () {
     // 第一张已经在 paint() 里自动画过了，这里只把高亮摆对，不重画——
     // 重画一遍会白等 550ms × 十几条命令，而且画面会先闪一下。
     btns[0].className = 'figbtn on';
+  }
+
+  // ---- 备课／讲评：把这一段拷走 ----
+  // ★ 「关于」里一直写着一句"备好的追问链可以「复制这段」带走"，
+  //   可**这个按钮根本不存在**（2026-10-02 才补上）。
+  //   备课／讲评这两个工位的产物就是**一段文字**——老师要把它贴进教案、学案、
+  //   备课组的共享文档里。没有这个按钮，他只能用鼠标划选，而气泡里的字是连着的，
+  //   一不留神就把上一轮的一起划进去，或者漏掉最后一行。
+  // ★ 为什么**每一条回复都挂**、而不是只在末尾挂一个总按钮：
+  //   链子是**一节一节摆**出来的，他摆到第三节想先把这三节拷走也完全合理。
+  //   挂的位置跟出题工位的「图 1 / 图 2 / 图 3」一样，都是挂在气泡里的
+  //   （见上面 attachFigSwitch 那段）——切换的是"这一条回复"，它属于那条回复。
+  function attachCopy(bubble, text) {
+    var t = String(text || '').trim();
+    if (!t) return;
+    var bar = document.createElement('div');
+    bar.className = 'copybar';
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'copybtn';
+    b.textContent = '复制这段';
+    b.title = '把这一条回复原样拷进剪贴板';
+    b.addEventListener('click', function () {
+      SR.copyText(t, function (ok) {
+        b.textContent = ok ? '复制好了' : '没拷成，手动选一下吧';
+        b.className = ok ? 'copybtn done' : 'copybtn';
+        setTimeout(function () { b.textContent = '复制这段'; b.className = 'copybtn'; }, 1600);
+      });
+    });
+    bar.appendChild(b);
+    bubble.appendChild(bar);
+  }
+
+  // 拷进剪贴板。
+  //
+  // ★★ 2026-10-02 实测重写。旧版是**按下去毫无反应**：按钮既不报成功、也不报失败，
+  //   就停在「复制这段」不动。量出来的病根是——
+  //   `navigator.clipboard.writeText()` 返回的那个 Promise **可能永远不结**：
+  //   在拿不到真正用户手势的时候（页面是脚本点出来的、标签页没有系统焦点），
+  //   它既不 resolve 也不 reject，就那么挂着（实测挂满 2 秒还是 pending，
+  //   同一次实测里 `document.execCommand('copy')` 是**干脆返回 false**）。
+  //   旧版把 cb 整个挂在 .then 上，于是**两条路一起断**——按钮上根本没有"有反应"这个状态。
+  //
+  //   现在：① **先走同步那条**——`document.execCommand('copy')` 当场返回真假，不等谁；
+  //   ② 它说不行，再去够异步那条，但**给它一个上限**（1.5 秒），到点就当没成；
+  //   ③ 无论走哪条，cb **保证被调一次**。按钮上不再有"没反应"。
+  //
+  // ★ 为什么反过来不行（先异步）：异步那条在**真老师真点**的时候当然更漂亮，
+  //   可它一旦挂住，老师看到的就是一个死按钮。宁可先用同步那条把结果攥在手里。
+  //   两条路给出去的都是**纯文本**，没有格式上的差别。
+  // ★ 同步那条要在**点击回调里**调（用户手势还没过期）；这一点 attachCopy 那边保证了。
+  //
+  // ★ 为什么两条路都得留：`navigator.clipboard` **只在 https 或者 localhost 下才有**，
+  //   老师很可能是在内网 http 上、或者把这一页存下来双击打开（file://）——
+  //   那种情况它是个 undefined。线上是 GitHub Pages（https），正常走得到。
+  //
+  // ★★ 挂到 SR 上，**全站就这一份**。同一件事原来在三处各写了一遍——备课气泡、
+  //   卡片墙的"复制一行"（cards.js）、教材资源页的"复制路径"（main.js）——三份写法还不一样，
+  //   于是"Promise 永远不结"这个病只在备课那一处发作，另外两处看着好好的。
+  //   这就是同一件事写三遍的下场：修的时候只修得到出症状的那一份。
+  //   现在另外两处都改成调 `SR.copyText`。**要改只改这里。**
+  SR.copyText = function (t, cb) {
+    var done = false;
+    function fin(ok) { if (done) return; done = true; cb(!!ok); }
+    function legacy(s) {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = s;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return !!ok;
+      } catch (e) { return false; }
+    }
+    if (legacy(t)) { fin(true); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      // ⚠ 上限到点之后它才 fulfilled 的话，按钮上写的是「没拷成」而东西其实已经进了剪贴板。
+      //   这是**故意**的取舍：宁可极偶尔报一次虚惊，也不要让按钮永远不吭声。
+      var timer = setTimeout(function () { fin(false); }, 1500);
+      navigator.clipboard.writeText(t).then(
+        function () { clearTimeout(timer); fin(true); },
+        function () { clearTimeout(timer); fin(false); }
+      );
+      return;
+    }
+    fin(false);
   }
 
   // 出错时的那一行。needOwnKey 时多给一个"切到自己的 Key"的按钮——
@@ -396,12 +523,53 @@ SR.chat = (function () {
   //   他一看文件名就知道是哪一份。
   // ⚠ 文件名的非法字符要清掉（Windows 里 `\ / : * ? " < > |` 一个都不许有），
   //   长度也要收——有些老师会把整段要求贴进来，那能有两百字。
+  //
+  // ★★ 2026-10-02 修：上面那段注释写的样子是对的，可代码没做到——旧版就是
+  //   **把老师那句话原样截 24 个字**，于是真下下来的文件叫
+  //   `出一份第五周 一元一次方程 周练卷，选择题 6 .docx`：
+  //   开头是"出一份"这种口气词，尾巴断在半个要求上（"选择题 6"）。
+  //   他说的确实是那句话，可那不是个名字。
+  //   现在做两件事：**剥掉开头的口气词**（给我／帮我／出一份／出 10 道…），
+  //   **在第一个逗号处断开**——逗号后面那些（"选择题 6 道、填空题 3 道"）是要求不是名字；
+  //   第一段太短（"导学案"）才往后并一段，最多并到 NAME_MAX。
+  //   ⚠ 已知不完美：「按这份卷子出一份周练卷」这种**动词在句中**的说法剥不掉，
+  //     会整句当名字（11 个字，认得出是哪份，就先不折腾了——
+  //     要在句子里找动词，误伤「初步」「出品」这类词的风险比收益大）。
+  var LEAD_POLITE = /^(请|帮我|帮忙|麻烦|给我|我要|我想要|我想|替我)/;
+  var LEAD_VERB = /^(出|做|来|生成|弄|整|搞|写)([几一数]*[份张套个本])/;
+  var LEAD_COUNT = /^(出|做|来|生成|弄|整|搞)([0-9]+|[一二三四五六七八九十两])道/;
+  // 名字最长多少字（含空格）。卡这么短是**给老师看的**：他下载三次要能一眼分清楚；
+  // 也是给"另存为"后面还要接 (1)(2) 留地方。
+  var NAME_MAX = 22;
+
   function fileTitle(ask, tpl) {
     var s = String(ask || '').replace(/[\r\n]+/g, ' ').trim();
+    // ① 剥口气词。**循环剥**——"给我出一份"是两层，剥一次还剩一层。
+    for (var i = 0; i < 4; i++) {
+      var before = s;
+      s = s.replace(LEAD_POLITE, '').replace(LEAD_VERB, '').replace(LEAD_COUNT, '').trim();
+      if (s === before) break;
+    }
+    // ② 非法字符 + 结尾的标点
     s = s.replace(/[\\\/:*?"<>|]/g, '').replace(/[，。；：、！？,.;:!]+$/g, '').trim();
-    if (s.length > 24) s = s.slice(0, 24);
-    if (!s) s = (tpl && tpl.name) || '材料';
-    return s;
+    // ③ 按标点切段，从前往后并，并到 NAME_MAX 就不再并。
+    //    ⚠ 逗号后面**不都是名字**：还有一种"要求"（「20 道」「答案附在最后」「难度照课本例题」），
+    //    并进来就成了「周练卷 答案附在最后.docx」。这类只可能是**第 2 段起**（第 1 段永远留着），
+    //    所以下面的跳过只对 j>0 生效，不会把名字清空。
+    var parts = s.split(/[，,。；;、]+/).map(function (x) { return x.trim(); }).filter(Boolean);
+    var out = '';
+    for (var j = 0; j < parts.length; j++) {
+      // 纯数量（「20 道」「6 个」）和要求句（带答案/难度/分值…的）不当名字
+      if (j > 0 && (/^[0-9０-９一二三四五六七八九十两]+\s*[道个张题分份]$/.test(parts[j])
+                 || /(答案|难度|分值|满分|时间|附在|要求)/.test(parts[j]))) continue;
+      var t = out ? out + ' ' + parts[j] : parts[j];
+      if (out && t.length >= NAME_MAX) break;   // ⚠ 是 >=：正好卡满也不并，
+      out = t;                                  //   不然「…周练卷 选择题 6 道」那种尾巴还会进来
+      if (out.length >= NAME_MAX) break;
+    }
+    if (out.length > NAME_MAX) out = out.slice(0, NAME_MAX).replace(/\s+$/, '');
+    if (!out) out = (tpl && tpl.name) || '材料';
+    return out;
   }
 
   // 本机在气泡底下补的一句（**不是模型说的**）。
@@ -594,7 +762,7 @@ SR.chat = (function () {
             // 悄悄少一张图，老师翻到那道题才发现，那时候他已经印了。
             if (r && r.dropped) {
               noteUnder(el, '有 ' + r.dropped + ' 张图没画出来，那几行我撤掉了——'
-                + '要么把题目里要画的东西说得再具体点，要么去画板那边自己画好、存图贴进来。');
+                + '要么把题目里要画的东西说得再具体点，要么去 GeoGebra 那边自己画好、存图贴进来。');
             }
           });
         }
@@ -605,6 +773,13 @@ SR.chat = (function () {
           var wp = SR.render.parseFences(String(res.text || ''), { stripAssign: !!(SR.WORKS[work].stripAssign) });
           attachFigSwitch(b, wp.ggb);
         }
+        // 备课／讲评：这一条回复底下挂「复制这段」。
+        // ★ 拷的是 `msg.lastVisible`——**老师在气泡上看到的那一份**，不是原始输出。
+        //   两者会差在 render.js 删掉的东西上（漏出来的 ```ggb 围栏和里面的画板命令、
+        //   整行的赋值、"想说"围栏）。那些东西要是跟着进了剪贴板，
+        //   老师是把它们贴进教案里的，一贴就是一串 `A=(-2,0)`。
+        //   链子那四行两份完全一样，所以拷"看得见的那份"只会少掉垃圾，不会少掉链子。
+        if (SR.WORKS[work] && SR.WORKS[work].copy) attachCopy(b, msg.lastVisible || res.text);
         setStatus(SR.api.usageText());
       }
     }).catch(function (e) {

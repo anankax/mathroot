@@ -479,7 +479,11 @@ SR.produce = (function () {
     build: build, buildXml: buildXml, save: save, check: check,
     parseBlocks: parseBlocks, lift: lift, LIFT_MIN: LIFT_MIN,
     pickSource: pickSource, lineCount: lineCount,
-    previewHtml: previewHtml, inlineHtml: inlineHtml, paraXml: paraXml
+    previewHtml: previewHtml, inlineHtml: inlineHtml, paraXml: paraXml,
+    // ★ 图上那行字该写多大，得知道**这张图会被缩到多小**才弄得准
+    //   （js/board.js 的 paperFontPx 要用）。所以这两个数得露出去。
+    //   抄一份在 board.js 里迟早会分叉，那时候的症状是"图上的字忽然跟别的不一样大"。
+    FIG_MAX_W: FIG_MAX_W, FIG_MAX_H: FIG_MAX_H
   };
 })();
 

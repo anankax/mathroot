@@ -78,12 +78,13 @@ SR.BACKENDS = {
     //   显式关掉之后：0/4 空，completion_tokens 只用 **9~14**（省 80 倍），回复也快了一个量级。
     //   万一哪颗不认这个参数，api.js 有现成的 400 兜底：认出错误里带 thinking 就去掉重发。
     sendThinking: true,
-    // ★ 备课/讲评提示词用精简版（prompt-rehearse-lean.js，5545 字）**不是审美取舍，是实测逼出来的**：
-    //   全量版 11711 字 = 7618 tokens 喂给 glm-4v-flash，```想说 围栏只中 2/4、0/4，
-    //   正文还在照抄提示词里的例句（"（好）学生：…"）；换成精简版，同一颗模型、同一批用例，
+    // ★ 备课/讲评提示词用精简版（js/prompt-prep.js 里的 PROMPT_PREP_LEAN）
+    //   **不是审美取舍，是实测逼出来的**：旧版全量 11711 字 = 7618 tokens 喂给 glm-4v-flash，
+    //   格式要求只中 2/4、0/4，正文还在照抄提示词里的例句；换精简版，同一颗模型、同一批用例，
     //   命中 4/4、4/4，抄例句清零，耗时从 13.8 秒降到 1.6 秒。
-    //   全量版留给 DeepSeek——那份提示词就是在它上面逐版调到围栏 8/8 的，别动。
-    //   两份都由 test/build_prompt.py 生成。画图／出题两个工位不分档，两个后端共用一份。
+    //   ★ 2026-10-02 那一份按新框架（摆链子）重写过了，但"小模型一次只服从得了一件事"
+    //     这条没变，所以精简版照样留着，别合并成一份。
+    //   全量版留给 DeepSeek。画图／出题两个工位不分档，两个后端共用一份。
     promptProfile: 'lean',
     budget: 7000,         // 留给对话历史的 token 预算（16K - 提示词 7541 - 图 244 - 输出 1024 - 余量）
     // ★ 带图那一轮单独放宽（2026-10-01 加）。上面那个 7000 是按**最小**那颗
@@ -162,19 +163,23 @@ SR.HARD_CAP = 240000;               // 全程硬顶
 //                       把学生那套索引塞进演示模式，出图率 8/8 → 6/8——
 //                       附注里那句"照上面「三、教材索引」那节的规矩"在演示提示词里
 //                       根本没有对应的一节，模型被一段没头没尾的话带跑了。
-//     tail         —— 追不追加 PROMPT_REHEARSE_TAIL（那条"只问不答"的围栏格式要求）。
-//                     画图／出题不追加：它俩本来就要给答案，收尾块会把输出拽回问句。
+//     tail         —— 追不追加 PROMPT_PREP_TAIL（备课／讲评那条"一节就四行、只许一节"的收尾块）。
+//                     ★ 它必须排在所有附注**后面**（api.js 里就是这么排的）：小模型只认最后读到的东西。
+//                     画图／出题不追加：那两份要的是图和答案，收尾块管的是链子的格式，跟它们无关。
 //     listPaper    —— 这一轮像"一整份卷子"时，挂不挂"先列题号"那段附注。
 //     stripAssign  —— 正文里出现整行画板赋值（`A=(-2,0)`）时删不删。
-//                     备课／讲评删（掉围栏必是漏出来的）；画图／出题不删
+//                     备课／讲评删；画图／出题不删
 //                     （老师板书里"y=(x+1)(x-2)"是正常话）。见 render.js 规则三。
+//     copy         —— 答复底下挂不挂「复制这段」（备课／讲评挂）。
+//                     那两个工位的产物就是**一段文字**，老师要贴进教案、学案、备课组的共享文档。
+//                     ★ 出材料不用它：那个工位的产物是 .docx，右栏有下载。
 //     chain        —— 模型链按什么优先：
-//                     'role'  = 角色优先（备课／讲评）。要它"会当老师"，
+//                     'role'  = 角色优先（备课／讲评）。要它守住"我是摆链子的、老师是导演"，
 //                               所以不带图走 modelsText、带图走 modelsImage。
 //                               ★ 这里有实测代价，别改成 board：视觉那颗 glm-4v-flash
 //                                 会**丢角色**（"学生说不会，它回『好的，老师，这道题我不会』"），
-//                                 备课工位一旦丢角色，数根变成学生，预演就没了。
-//                                 宁可正文对、围栏丢（围栏有 chips.js 本地兜底）。
+//                                 备课工位一旦丢角色，数根变成学生，整条链子就废了。
+//                                 宁可正文对、别的丢。
 //                     'board' = 围栏优先（画图／出题）。要它出 ```ggb，
 //                               不带图／带图都走 models（glm-4v-flash 打头，实测出图 6/6）。
 SR.WORKS = {
@@ -198,11 +203,14 @@ SR.WORKS = {
     prompt: function () { return window.SR.PROMPT_DRAW; },
     retrieve: false, tail: false, listPaper: false, stripAssign: false, chain: 'board'
   },
+  // ★★ 备课／讲评：**数根摆链子，老师是导演**（2026-10-02 重写，理由见 js/prompt-prep.js 顶上那段）。
+  //   prompt 那一份里写着：一轮只摆一节（"学生大概会说 → 你接这句 → 这么接的道理"），
+  //   老师随时叫它改哪一行、叫它把整条链子写出来拷走。
   prep: {
-    id: 'prep', label: '备课', badge: '只问不答 · 预演追问链',
-    prompt: function () { return window.SR.PROMPT_REHEARSE; },
-    lean: function () { return window.SR.PROMPT_REHEARSE_LEAN; },
-    retrieve: true, tail: true, listPaper: false, stripAssign: true, chain: 'role', steps: true
+    id: 'prep', label: '备课', badge: '学生怎么答 · 你接哪句',
+    prompt: function () { return window.SR.PROMPT_PREP; },
+    lean: function () { return window.SR.PROMPT_PREP_LEAN; },
+    retrieve: true, tail: true, listPaper: false, stripAssign: true, chain: 'role', steps: true, copy: true
   },
   vary: {
     id: 'vary', label: '出题', badge: '变式 · 每个都给图',
@@ -215,11 +223,14 @@ SR.WORKS = {
     multiFig: true,
     retrieve: false, tail: false, listPaper: false, stripAssign: false, chain: 'board'
   },
+  // ★ 讲评跟备课共用一份提示词（讲评是备课的一个阶段，不是另一个职责）。
+  //   两处不一样：① badge／开场白，② listPaper——老师一次发来一整份卷子时，
+  //   先只列题号、等他挑一道再摆链子（附注在 api.js 里）。
   review: {
-    id: 'review', label: '讲评', badge: '整卷挑题 · 挑一道展开',
-    prompt: function () { return window.SR.PROMPT_REHEARSE; },
-    lean: function () { return window.SR.PROMPT_REHEARSE_LEAN; },
-    retrieve: true, tail: true, listPaper: true, stripAssign: true, chain: 'role', steps: true
+    id: 'review', label: '讲评', badge: '先列题号 · 挑一道摆链子',
+    prompt: function () { return window.SR.PROMPT_PREP; },
+    lean: function () { return window.SR.PROMPT_PREP_LEAN; },
+    retrieve: true, tail: true, listPaper: true, stripAssign: true, chain: 'role', steps: true, copy: true
   }
 };
 // 默认落在**出材料**——这一版的主线。

@@ -1,19 +1,29 @@
 # -*- coding: utf-8 -*-
-"""把作品材料里教师备课侧的提示词抠出来，生成网页「备课」工位用的 JS 常量。
+"""把作品材料里的东西转成网页要的 JS 常量。
+  · js/textbook.js   ← 作品材料/14-苏科版教材索引.md
+  · js/zhuawen.js    ← 作品材料里孔老师自己写的 118 条追问条目
+  · test/_archive/prompt-rehearse*.js ← 05c / 05d / 06b 三份（**存档，网页已经不再读它们**）
 
-源头是 `05c`（由 v18 逐处翻面而来），只做四件事：
-  1. 取正文（05c 文件里 ``` 围栏之间那一段）
-  2. 「数小问」→「数根」的兜底改名，以及重写开头那句「名字里的 X」
-  3. 「办法三 · 递一张空数轴」换成「让右边画板出空数轴」（ggb 围栏）
-  4. 在「你手上拿到的东西」前面注入「画板」和「学生大概会这么答」两节
-其余一字不动——只问不答铁律、五个台阶、话术禁区、开场白全部照 05c。
+★★ 2026-10-02：原来这个脚本还生成 js/prompt-rehearse{,-lean,-tail}.js——网页
+   「备课／讲评」两个工位的系统提示词。**那三份已经删了。** 原因见 js/prompt-prep.js
+   顶上那段：这条链的源头 05c 是扣子**学生侧**智能体「数小问」v18 逐处"翻面"改出来的，
+   主体反了（模型把老师当学生问），而且"只问不答"那条铁律落到老师身上，
+   变成了"瞒着甲方"。现在备课／讲评的提示词是**手写的 js/prompt-prep.js**，不进这条链。
+
+★ 下面那三段生成逻辑**原样留着**（那是"05c 是怎么变成网页提示词的"的完整记录），
+  只把落盘路径挪到了 test/_archive/。★ **路径必须留在 archive**：不改的话，
+  哪天为了重生成 textbook.js 跑一次本脚本，就会把已经删掉的三个死文件又写回 js/ 里。
 ★ `05`（v18）那份是扣子学生侧智能体「数小问」的存档，**本脚本不读它、也不改它**。
 """
 import io, json, os, re, sys
 
 SRC = r"C:\数学办公\宜兴东氿中学\23-科技创作\作品材料\05c-系统提示词（教师备课侧·v1）.md"
-OUT_JS = r"C:\数学办公\数根\js\prompt-rehearse.js"
-OUT_TXT = r"C:\数学办公\数根\test\_prompt-rehearse.txt"
+# ★ 落盘到 test/_archive/（见上面那段）。目录不在就现建。
+_ARCH = r"C:\数学办公\数根\test\_archive"
+if not os.path.isdir(_ARCH):
+    os.makedirs(_ARCH)
+OUT_JS = os.path.join(_ARCH, "prompt-rehearse.js")
+OUT_TXT = os.path.join(_ARCH, "prompt-rehearse.txt")
 TEXTBOOK = r"C:\数学办公\宜兴东氿中学\23-科技创作\作品材料\14-苏科版教材索引.md"
 OUT_TB = r"C:\数学办公\数根\js\textbook.js"
 
@@ -204,7 +214,7 @@ print("正文落盘 %s  —— %d 字符" % (OUT_TXT, len(prompt)))
 #   不是模型不行，是七千多 token 把它淹了。全量版留给 DeepSeek（那份是在它上面调到 8/8 的），
 #   网页按后端自动挑，见 js/config.js 的 promptProfile。
 LEAN_SRC = r"C:\数学办公\宜兴东氿中学\23-科技创作\作品材料\05d-系统提示词（教师备课侧精简版·v1）.md"
-OUT_LEAN = r"C:\数学办公\数根\js\prompt-rehearse-lean.js"
+OUT_LEAN = os.path.join(_ARCH, "prompt-rehearse-lean.js")
 
 # 正文自带 ```ggb / ```想说 代码块，所以不能再用"找一对 ``` 围栏"的老办法取——
 # 会被正文里第一个收尾的 ``` 提前截断。这份从标题行取到文件末尾。
@@ -259,7 +269,7 @@ print("生成 %s  —— %d 字符（全量版的 %.0f%%）" % (OUT_LEAN, len(le
 #   实测原文：「以下是符合规则的回应，分为追问内容和想说环节两部分：」
 #   以及 `<>` 标签泄漏（`<answer>以下是针对…的模拟回复`、正文里带 `<think>`）。
 TAIL_SRC = r"C:\数学办公\宜兴东氿中学\23-科技创作\作品材料\06b-系统提示词收尾（教师备课侧）.md"
-OUT_TAIL = r"C:\数学办公\数根\js\prompt-rehearse-tail.js"
+OUT_TAIL = os.path.join(_ARCH, "prompt-rehearse-tail.js")
 
 # 这份正文自带 ```想说 代码块，同样不能找围栏取，从标题行取到文件末尾
 raw_tail = io.open(TAIL_SRC, encoding="utf-8").read().split("\n")
