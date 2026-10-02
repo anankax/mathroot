@@ -773,16 +773,23 @@ footer .r {
    剪贴板这一下是异步回来的，:active 在手指抬起来的时候就没了，看不见反馈。 */
 .copybtn.done { border-color: var(--brand); color: var(--brand); font-weight: 700; }
 
-/* ---------- 档位条（#steps）：备课／讲评那两个工位的"链子摆到第几节" ----------
+/* ---------- 进度条（#steps）：备课／讲评那两个工位的"链子摆到第几节" ----------
    这一条是这一版的核心可发现性：备课本来的样子是一条没有终点的对话，
-   老师不知道要走几步、现在走到哪。挂上这六个格子，"一节一节摆"就看得见了。
+   老师不知道要走几步、现在走到哪。挂上这排格子，"一节一节摆"就看得见了。
 
    ★ 它不是导航，是**进度**，所以它的形状照着仪表来，不照按钮来：
      走过的那几格填深色实心（已经走完了），当前那格是主色 + 一道下划线（正在这），
-     还没到的留空。点任意一格 = 从那一档接着走（见 js/main.js 的绑定）。
+     还没到的留空。点任意一格 = 从那一节接着走（见 js/chat.js 的 renderSteps）。
+
+   ★★ 2026-10-02：格数**不再是固定的六个**。步数、每步叫什么名字，都由模型按这道题
+     自己定（见 js/prompt-prep.js 顶上那两段诊断）。条子只照**已经摆出来的**那些节画，
+     末尾再补几格 `.todo`——那是它第一轮报的"大概几步"里**还没走到的**，
+     只是个预排，所以故意画得虚。计划读不出来就一格灰格都不画，退回一格「▶ 接着摆」——
+     「接着摆」的判据是**槽位 >= 预排**（走不到计划尽头就一定有得点），见 chat.js 那段注释。
+     一节都还没摆出来时整根藏起来（连备课也藏，理由见 js/chat.js 的 hideStepBar）。
 
    ★ 用 #steps:empty 来收自己：画图／出题两个工位没有台阶，
-     paintStepBar 往里面什么都不放，那两格里这一条整根消失——
+     renderSteps 往里面什么都不放，那两格里这一条整根消失——
      **不能让它在画图工位上留一条空槽**，那是"没做完"的形状。 */
 #steps {
   display: flex; flex-wrap: wrap; gap: 0;
@@ -804,6 +811,11 @@ footer .r {
   color: var(--brand); font-weight: 700;
   box-shadow: inset 0 -3px 0 var(--brand);
 }
+/* 报了、还没走到的（.todo）：字更淡、整格压虚。
+   ★ 故意跟"已经摆出来的"拉开一档——它表示"大概还有几步"，是**预排不是事实**，
+     画得一样实，老师就分不清哪几节是真摆过的了。 */
+#steps .stepbtn.todo { color: var(--ink-3); opacity: .58; }
+#steps .stepbtn.todo:hover { opacity: 1; }
 #steps .stepbtn:hover { background: var(--brand-soft); }
 #steps .stepbtn.now:hover { background: var(--brand-soft); }
 
@@ -1361,17 +1373,25 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
   .brand .by { font-size: 10px; padding: 1px 5px; letter-spacing: .8px; }
   .brand { margin-right: 0; }
   .workbtn { font-size: 13px; padding: 6px 10px; }
-  /* 档位条：手机上五格加"收尾"是六格，12.5px 的字会折成两行。
-     收到 11.5px、左右各留 8px，六格正好一行。
+  /* 台阶条：字号收到 11.5px、左右各留 8px。
      ★ 再小就不能收了——那是手机上唯一一处"现在走到哪"，
-       收了字就等于这一条白做。宁可让它横着滑。 */
-  #steps { overflow-x: auto; flex-wrap: nowrap; }
-  /* ⚠ 别在这儿给我加 `#steps::-webkit-scrollbar { height: 4px }`。
-     2026-10-02 我加过一条，随后实测发现**它永远不会生效**：台阶一共 6 格，
-     360px 下格宽 39/40/40/51/40/40（合计 ≈251），320px 下**一模一样**——
-     连最窄的手机都不用横着滑。上面那个 overflow-x 是留给"以后有人加了第 7 格"
-     的保险，而在那之前，任何"横滑外观"的样式都是死码。
-     （`flex-wrap: nowrap` 倒是真在干活：它逼着 6 格排成一行，不许折成两行。） */
+       收了字就等于这一条白做。
+     ★★ 2026-10-02 第二次改：**手机上允许折成两行（flex-wrap: wrap）。**
+     原来这里写的是 `flex-wrap: nowrap`，理由是一段实测数字："台阶一共 6 格，
+     360px 下格宽 39/40/40/51/40/40（合计 ≈251），连最窄的手机都不用横滑"。
+     ——那段数字是**固定六格**时代量的，格数一由模型按题定、名字一由模型自己起，
+     它当场作废。用 test/_stepbarfit.cjs 重量的结果（360px，框宽 329）：
+       3 节 + 名字短（"找方向"这种）  内容宽 329（100%）  一行放得下
+       4 节 + 名字是**常态长度**       内容宽 467（142%）
+       5 节 + 每格十来个字            内容宽 778（236%）
+     而 nowrap + overflow 那条路，**末尾那格「整条」会滑出屏幕**——
+     那是这个工位的终点动作（链子摆完就要拷走），摸不到就是真问题，
+     而且横滑在手机上没有滚动条提示，等于藏起来。
+     所以改成折行：多占一两行高度，换"每一格都摸得到、看得见"。
+     宁可它折行也别横滑：折行只是难看，横滑是**功能没了**。
+     ⚠ 留着 overflow-x: auto 兜底：万一哪一格自己的名字就宽过整个框（目前没量到），
+       至少还能滑，不至于被裁掉。 */
+  #steps { flex-wrap: wrap; overflow-x: auto; }
   #steps .stepbtn { font-size: 11.5px; padding: 6px 8px; }
   .backbtn { font-size: 12.5px; padding: 6px 9px; }
   .backbtn .dot { width: 7px; height: 7px; margin-right: 5px; }

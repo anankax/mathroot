@@ -203,14 +203,20 @@ SR.WORKS = {
     prompt: function () { return window.SR.PROMPT_DRAW; },
     retrieve: false, tail: false, listPaper: false, stripAssign: false, chain: 'board'
   },
-  // ★★ 备课／讲评：**数根摆链子，老师是导演**（2026-10-02 重写，理由见 js/prompt-prep.js 顶上那段）。
+  // ★★ 备课／讲评：**数根摆链子，老师是导演**（2026-10-02 两轮重写，理由见 js/prompt-prep.js 顶上那几段）。
   //   prompt 那一份里写着：一轮只摆一节（"学生大概会说 → 你接这句 → 这么接的道理"），
   //   老师随时叫它改哪一行、叫它把整条链子写出来拷走。
+  //   ★ 2026-10-02 第二改：**步数和节名不再固定**（原来锁死五节，她原话"被你的 12345 卡死了"），
+  //     改成"工具箱 + 三条底线"；新拿到一道题时先给「几路」（学生可能有哪几种错法）。
+  //   ★ chainStart：新拿到一道题、还没开始摆链子的那一轮，api.js 会追加一段「几路」附注。
+  //     判据是"这整条对话还没出现过 `第 N 节 ·`"，不是"第 0 轮"——讲评第一轮是列题号，
+  //     真正该给几路的是**老师挑定一道之后**那一轮（见 js/api.js buildSystem 里那段）。
   prep: {
     id: 'prep', label: '备课', badge: '学生怎么答 · 你接哪句',
     prompt: function () { return window.SR.PROMPT_PREP; },
     lean: function () { return window.SR.PROMPT_PREP_LEAN; },
-    retrieve: true, tail: true, listPaper: false, stripAssign: true, chain: 'role', steps: true, copy: true
+    retrieve: true, tail: true, chainStart: true, listPaper: false,
+    stripAssign: true, chain: 'role', steps: true, copy: true
   },
   vary: {
     id: 'vary', label: '出题', badge: '变式 · 每个都给图',
@@ -230,7 +236,8 @@ SR.WORKS = {
     id: 'review', label: '讲评', badge: '先列题号 · 挑一道摆链子',
     prompt: function () { return window.SR.PROMPT_PREP; },
     lean: function () { return window.SR.PROMPT_PREP_LEAN; },
-    retrieve: true, tail: true, listPaper: true, stripAssign: true, chain: 'role', steps: true, copy: true
+    retrieve: true, tail: true, chainStart: true, listPaper: true,
+    stripAssign: true, chain: 'role', steps: true, copy: true
   }
 };
 // 默认落在**出材料**——这一版的主线。

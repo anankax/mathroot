@@ -185,81 +185,127 @@ SR.chat = (function () {
     //   于是切到「出材料」时它还挂在那儿——**提示的是一个这个工位不接的用法**。
     //   提示语是老师唯一一定会读到的一句话，写错了比没有更坏。
     if (els.input) els.input.placeholder = tipFor(work);
-    // 备课工位一上来就把「复述」点亮：链子是从第一节摆起的，摆在那儿他自己会看。
-    // ★ 讲评工位**整根藏起来**，不留空槽，也不点着任何一节：
-    //   它开头那一段是"先列题号、再说讲哪一道"，链子还没开始。
-    //   一打开讲评就摆出"复述／定位／追问"六格，老师会以为现在就该按这个走。
-    //   等卷子发上来、挑定一道，第一轮回复之后它自己会冒出来。
-    if (work === 'prep') paintStepBar(1); else hideStepBar();
+    // ★★ 2026-10-02 改：备课工位**一进来也不点亮任何一节了**（原来点着「复述」）。
+    //   理由：链子从哪一节起、一共几节、每节叫什么，现在都得等它先报出来——
+    //   第一轮给的是"几路"（学生可能有哪几种错法），链子还没开始摆。
+    //   一进来就摆出"复述／定位／追问"六格、第一格还点着，
+    //   老师会以为现在就该按这个走，而那正是被改掉的那套固定五节。
+    hideStepBar();
     setStatus('');
     els.input.focus();
   }
 
   // ---- 链子进度条 ----
   // ★ 「一条链子一节一节摆出来」是这个工位的核心交互，所以它得**看得见**。
-  //   走到第几节由 SR.inferStep 从模型那行节标题里读出来（纯前端，别让模型另写档号——
+  //   走到第几节由 SR.parseChain 从那行节标题里读出来（纯前端，别让模型另写档号——
   //   理由见 chips.js 那一段），这里只负责画。
-  // ★ 点某一段 = 把链子推到那一节（SR.STEP_JUMP），发的是人话不是魔法符号：
+  // ★ 点某一格 = 把链子推到那一节（SR.stepJump），发的是人话不是魔法符号：
   //   小模型吃自然语言比吃 `JUMP=4` 稳，而且这句话留在 history 里下一轮还看得见。
-  var stepNow = 0;
-  // 藏起来。★ 走这个而不是 paintStepBar(0)：那个只是"不点亮任何一档"，
-  //   六格还是摆在那儿。讲评工位一进来不该摆出来（见 reset 里那段）。
-  //   下一次 paintStepBar 会把 display 还原成 ''，所以藏过之后不用特意恢复。
+  //
+  // ★★ 2026-10-02 改：原来是**固定六格**（复述/定位/追问/给台阶/肯定/整条），
+  //   现在步数和名字由模型按这道题自己定，条子照**已经摆出来的**那些节画。
+  //   状态就三个：
+  //     stepSlots —— 已经摆出来的节，[{n, name}]
+  //     stepPlan  —— 它第一轮报的"大概几步"，只用来在末尾补几格**灰格**（预排）
+  //     stepNow   —— 现在停在第几节
+  //   ★ 灰格是**预排、不是事实**，而且**只增不减**：它报了 4 步却走到 6 步，
+  //     槽位就长到 6；报了 5 步只走到 3 步，那三格照样在——
+  //     **绝不把已经摆出来的节藏起来**，老师看得见的东西不能说没就没。
+  //     计划整个读不出来 → 一格灰格都不画，退回一格「▶ 接着摆」兜着。
+  //   ⚠ 这两条规矩（只增不减 / 计划只认第一次报的）**写在 js/chips.js 的 SR.absorbChain 里**，
+  //     不在这儿：那边是纯函数，test/probe_chain.cjs 能量到。这里只管画。
+  var stepSlots = [], stepPlan = 0, stepNow = 0;
+
+  // 把这一段回复"吃"进槽位里。**只加不减**。
+  // ★ 逻辑本身在 js/chips.js 的 SR.absorbChain 里，这里只做一次变量搬运——
+  //   这么放的唯一理由是**让 test/probe_chain.cjs 能量到它**（那边没有 DOM，
+  //   在 node 里直接拿假回复喂纯函数）。写在 chat.js 里就只能靠肉眼看。
+  function absorbChain(text) {
+    if (!SR.absorbChain) return;
+    var st = SR.absorbChain({ slots: stepSlots, plan: stepPlan, now: stepNow }, text);
+    stepSlots = st.slots; stepPlan = st.plan; stepNow = st.now;
+  }
+
+  // 藏起来，并把状态清空。★ 走这个而不是"画一个空的"：
+  //   备课／讲评**一进来就不该有条子**——第 1 节叫什么、一共几步，
+  //   都得等它先报出来（讲评还得先列题号、等老师挑一道）。
+  //   一进来就摆出六格、第一格还点着，老师会以为现在就该按这个走。
   function hideStepBar() {
+    stepSlots = []; stepPlan = 0; stepNow = 0;
     var box = $('steps');
     if (box) { box.style.display = 'none'; box.innerHTML = ''; }
-    stepNow = 0;
   }
-  function paintStepBar(step) {
+
+  // 照着当前状态画。**只画，不改状态**——状态由 absorbChain / repaintSteps 管。
+  function renderSteps() {
     var box = $('steps');
-    if (!box || !SR.STEP_ORDER) return;
+    if (!box) return;
     var w = (SR.WORKS && SR.WORKS[work]) || {};
-    if (!w.steps) { box.style.display = 'none'; box.innerHTML = ''; stepNow = 0; return; }
+    if (!w.steps || !stepSlots.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
     box.style.display = '';
-    if (!box.childNodes.length) {
-      for (var i = 0; i < SR.STEP_ORDER.length; i++) {
-        (function (sd) {
-          var b = document.createElement('button');
-          b.type = 'button';
-          b.className = 'stepbtn';
-          b.setAttribute('data-step', sd);
-          b.textContent = SR.STEP_NAMES[sd] || sd;
-          b.title = '把链子摆到这一节';
-          b.addEventListener('click', function () {
-            if (busy) return;
-            if (!SR.STEP_JUMP || !SR.STEP_JUMP[sd]) return;
-            clearChips();
-            submit(SR.STEP_JUMP[sd]);
-          });
-          box.appendChild(b);
-        })(SR.STEP_ORDER[i]);
-      }
+    box.innerHTML = '';               // ★ 每次都重建：格数会变，旧版"只建一次"的做法作废了
+
+    function mk(label, sd, cls) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'stepbtn' + (cls ? ' ' + cls : '');
+      b.setAttribute('data-step', sd);
+      b.textContent = label;
+      b.title = (sd === 'close') ? '把整条链子一次摆完，好整段拷走'
+        : (sd === 'next') ? '接着往下摆'
+          : '把链子摆到这一节';
+      b.addEventListener('click', function () { if (!busy) stepGo(sd); });
+      box.appendChild(b);
+      return b;
     }
-    if (step === undefined || step === null || step === 0) step = stepNow;
-    stepNow = step;
-    var at = SR.STEP_ORDER.indexOf(step);
-    var btns = box.querySelectorAll('.stepbtn');
-    for (var j = 0; j < btns.length; j++) {
-      // .now = 正在这一档（主色 + 下划线）；.done = 已经走过（实心）。
+
+    for (var i = 0; i < stepSlots.length; i++) {
+      var s = stepSlots[i];
+      // .now = 正在这一节（主色 + 下划线）；.done = 已经走过（实心）。
       // ★ 这两个类名跟 css/main.css 的 #steps 那一节是一对，改一处忘一处就对不上。
-      btns[j].classList.toggle('now', SR.STEP_ORDER[j] === step);
-      btns[j].classList.toggle('done', at > 0 && j < at);
+      // ★ 按**节号**判，不按格子位置判：槽位是动态长出来的，位置会变，节号不会。
+      var b = mk(s.name, s.n, s.n === stepNow ? 'now' : (s.n < stepNow ? 'done' : ''));
+      if (s.n === stepNow) b.setAttribute('aria-current', 'step');
     }
+    for (var k = stepSlots.length; k < stepPlan; k++) mk('待定', k + 1, 'todo');
+    // 「▶ 接着摆」兜着——**只要没走到计划尽头就一定有得点**。
+    // ★ 判据是 `槽位 >= 预排`，不是原来那个 `!stepPlan`：
+    //   旧写法下"摆了 2 节、当初没报计划"这种情况，预排被补齐成 2 = 槽位 2，
+    //   于是灰格补 0 格、「接着摆」也不画 —— **条子上一个能往前走的格子都没有**，
+    //   老师只能离开条子去点底下那句话。条子看得见却走不动，比不画还坏。
+    //   现在：没报计划 → 一直有个「接着摆」；报了计划还没走完 → 点末尾那格灰的就行。
+    if (stepSlots.length >= stepPlan) mk('▶ 接着摆', 'next', 'todo');
+    // 「整条」永远在最后：它是这个工位的终点动作（链子的产物就是能拷走的一段文字）。
+    mk('整条', 'close', '');
+  }
+
+  function stepGo(sd) {
+    var say = SR.stepJump ? SR.stepJump(sd) : '';
+    if (!say) return;
+    clearChips();
+    submit(say);
   }
 
   // 换了工位之后把这一条重画一遍。★ 导出给 main.js 用：
-  //   它管"切工位要不要清对话"这条规则，但**档位条不能只清不清**——
-  //   备课↔讲评是同一条链的两个阶段，历史和档位都得留着，重新推一次就行
-  //   （推的依据还是那条：模型上一轮问出口的那句话）。
+  //   它管"切工位要不要清对话"这条规则，但**台阶条不能只清不清**——
+  //   备课↔讲评是同一条链的两个阶段，历史和档位都得留着，重新推一次就行。
+  // ★★ 这里**必须遍历整段 history**，不能像原来那样只看最后一条：
+  //   切过去之后最后一条很可能正是"先列一下题号"那一轮（没有节标题），
+  //   只看它，前面摆过的几节就全丢了。
   function repaintSteps() {
     var w = (SR.WORKS && SR.WORKS[work]) || {};
-    if (!w.steps) { paintStepBar(0); return; }
-    if (!history.length) { if (work === 'prep') paintStepBar(1); else hideStepBar(); return; }
-    var prev = '', first = true;
-    for (var i = history.length - 1; i >= 0; i--) {
-      if (history[i].role === 'assistant') { prev = String(history[i].content || ''); first = false; break; }
+    if (!w.steps) { hideStepBar(); return; }
+    stepSlots = []; stepPlan = 0; stepNow = 0;
+    for (var i = 0; i < history.length; i++) {
+      if (history[i].role !== 'assistant') continue;
+      var t = String(history[i].content || '');
+      absorbChain(t);
+      // 停在第几节：**最后一条真正摆过链子的**回复说了算。
+      // 中间那些"先列一下题号""按你说的改了一句"的回复读出来是 0，不许把指针拖回去。
+      var c = SR.inferStep({ prevAssistant: t });
+      if (c) stepNow = c;
     }
-    paintStepBar(SR.inferStep({ prevAssistant: prev, first: first }));
+    renderSteps();
   }
 
   function addAssistantText(text) {
@@ -750,9 +796,14 @@ SR.chat = (function () {
         showChips(modelChips.length ? modelChips : SR.fallbackChips({
           work: work, first: isFirstTurn, lastUser: text, prevAssistant: prevAssistant
         }));
-        // 档位进度条：判的是**这一轮它问出口的那句话**——模型跳到哪一档是它自己按学生
-        // 答话定的，只有它问出来的那句话能证明它到了哪儿（见 chips.js 的 SR.inferStep）。
-        paintStepBar(SR.inferStep({ prevAssistant: String(res.text || ''), first: isFirstTurn, lastUser: text }));
+        // 进度条：把这一轮**真摆出来的**那些节吃进槽位，然后重画。
+        // ★ 判的是这一轮它真写出来的那行节标题，不是它报的计划——计划是预测、会漂，
+        //   条子只画事实（见上面 stepSlots 那段）。第一轮给的是"几路"，读出来是 0，
+        //   槽位还是空的，条子就仍然藏着，正合预期。
+        absorbChain(String(res.text || ''));
+        var nowAt = SR.inferStep({ prevAssistant: String(res.text || '') });
+        if (nowAt) stepNow = nowAt;      // 读不出来 = 原地不动，绝不退回第 1 节
+        renderSteps();
         // 出材料：收完流了，**现在才画配图**（流式期间只摆文字，理由见 material.js 的 finish）。
         // ★ 放在这儿而不是 paint() 里：paint 每收到一截就调一次，
         //   在那儿画会让画板反复重画几十遍。
@@ -881,10 +932,10 @@ SR.chat = (function () {
     setStatus: setStatus,
     setWork: function (w) { work = w; },
     getWork: function () { return work; },
-    // main.js 用它切工位后把进度条重画一遍（工位一换，档位条要么换内容要么藏起来）
-    paintStepBar: paintStepBar,
-    // ★ 切工位走这个，别直接调 paintStepBar(0)：备课↔讲评是**同一条链的两个阶段**，
-    //   切过去不清历史，档位就该按历史重新推出来，而不是被打回零。
+    // ★ 切工位一律走这个。备课↔讲评是**同一条链的两个阶段**，切过去不清历史，
+    //   进度条就该**按整段历史重新推出来**，而不是被打回零。
+    //   （原来这里还导出一个 paintStepBar，2026-10-02 删了：格数现在是动态的，
+    //     "外部指定画第几格"这件事没有意义了，画什么完全由状态决定。）
     repaintSteps: repaintSteps,
     // main.js 用这个判"输入框那边有没有东西等着发"（空了就别送空请求）
     hasPendingImage: function () { return pendingParts.length > 0; },
