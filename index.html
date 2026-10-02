@@ -67,7 +67,14 @@
      首屏少 117KB。见 js/kb.js 顶上那段。 -->
 <script defer src="js/retrieve.js"></script>
 <script defer src="js/kb.js"></script>
+<!-- 云函数 gate 的前端那一半。★ 放在 api.js **前面**：api.js / flow.js 里那条
+     "云上优先、本机兜底"要知道 SR.gate 在不在（见 js/flow.js 三、那段）。 -->
+<script defer src="js/gate.js"></script>
 <script defer src="js/api.js"></script>
+<!-- 流水线的账本 + 面板。★ 排在 js/kb.js（分数线）和 js/gate.js 后面，
+     再往后它要用的是 js/chat.js（面板上那个"重问一轮"）和 js/config.js 的 SR.WORKS，
+     但那些都在**函数体里**（点按钮那一刻）才求值，defer 的先后不打紧。 -->
+<script defer src="js/flow.js"></script>
 <script defer src="js/render.js"></script>
 <script defer src="js/chips.js"></script>
 <script defer src="js/resources.js"></script>
@@ -85,7 +92,25 @@
      ★ 排在 board.js / figures.js / docx.js **后面**：它自己那两件依赖
      （SR.board.shootMarked 存带水印的图、SR.docx.write 当 zip 写入器）都在上面。 -->
 <script defer src="js/pack.js"></script>
+<!-- 首屏（见 js/landing.js）。
+     ★ 排在 chat.js **前一个**：它要读 SR.WORKS / SR.WORK_ORDER 现画那五块，
+       那两个在 config.js 里；而它的 init() 由 main.js 的 boot() 调，
+       那会儿 chat 已经装好了（见下面那行注释里的顺序）。
+     ★ 装载顺序没写死在这一句上——文件名排在这儿只是"config 在后面站着"。 -->
+<script defer src="js/memo.js"></script>
+<script defer src="js/landing.js"></script>
 <script defer src="js/chat.js"></script>
+<!-- 思维导图（见 js/mindmap.js）。
+     ★ 排在 chips.js **后面**：它读 SR.parseRoutes / SR.parseStepBody / SR.absorbChain
+       （"有几条岔路""每个环节里学生说了什么"），那几件全在 chips.js 里。
+     ★ 排在 pack.js **后面**：它画的**就是 pack 那一份账**（SR.pack.turns / topic），
+       不另记一份——另记一份的话，"打包里的图和导图上的图对不上"没有任何东西会报。
+     ★ 排在 board.js **后面**：署名那一行走 SR.board.mark，跟"存图"烧的是同一份。
+     ★ 排在 chat.js **后面**：chat.js 收完每一轮会喊 SR.mm.refresh()（跟它喊
+       SR.pack.note 是同一个位置、同一个理由：那一轮的东西刚齐）。
+       ⚠ 这个顺序**反过来也读得到 SR.mm**（两边都只在运行时互相找），
+         但排在这儿读起来跟上面那几条是同一套道理。 -->
+<script defer src="js/mindmap.js"></script>
 <!-- 指针光照。不依赖任何别的模块，也不给别的模块用——它做的事就是往元素上写
      --mx / --my，剩下的交给 main.css 的"动效与光照"那一节。放在 main.js
      前面，页一能点它就已经在了。 -->
@@ -148,8 +173,8 @@
        按钮就一直藏着，客户看不到。见 js/resources.js 顶上那段。 -->
   <!-- 备课卡片。★ 2026-10-02 起**也只在本机出现**了（HTML 里就是 display:none，
        main.js 判是不是本机才让它露面）。孔老师的原话是"那个我的的内容也需要去掉，
-       ……不要给使用的人看到了"。它列的是那 118 条追问条目库——**她自己写的**，
-       本来可以公开；现在改成只给她自己备课时查。
+       ……不要给使用的人看到了"。它列的是那 118 条追问条目库——**他自己写的**，
+       本来可以公开；现在改成只给他自己备课时查。
        ★ 跟「知识库」不是一回事：这个只显示条目正文，按册别分组、能搜，
          不显示分数、不显示阈值。教材索引和任何教材原文都不在这儿出现。 -->
   <!-- 知识库（验货用）。跟「素材」一样只在本机露头：它拿的是 js/textbook.js 和
@@ -176,14 +201,14 @@
          原来顶栏一横排十来个按钮，是"看着不像成熟产品"最直接的原因。
        ★ 上下两组**靠线分开、不靠字**（2026-10-02 孔老师定）：上面五个是"换一件
          要干的事"，下面那一列是"我手上有些什么"。原先是两块小标题（工位／我的），
-         她说不要小标题——去掉之后分界就落在 `.works` 和 `#badge` 各自那条
+         他说不要小标题——去掉之后分界就落在 `.works` 和 `#badge` 各自那条
          border-bottom 上，读得出来是哪一组，还省两行高度。
        ★ 下面那一列**访客是空的**：三个按钮 HTML 里全是 display:none，main.js 判准
          是不是本机才放行。所以公开站上访客看到的左栏 = 五个工位 + ⟳，没有别的。
-         ⚠ 别把编号（01/02）加回来：2026-10-01 她否过一次，理由在 css 的 .railhead 那段。
+         ⚠ 别把编号（01/02）加回来：2026-10-01 他否过一次，理由在 css 的 .railhead 那段。
        ★ 工位按钮还是 `.workbtn` 这个类名——main.js 照类名找、照 `data-work` 高亮。
        ★ 五个名字 2026-10-02 换成教师行话：组卷／作图／备课／命题／讲评
-         （原来是出材料／画图／出题，她说"奇怪、不够文雅"）。
+         （原来是出材料／画图／出题，他说"奇怪、不够文雅"）。
          源头在 js/config.js 的 SR.WORKS[].label，这里和那儿、以及「关于」里那串
          必须一起改——**三处同名**，只改一处会出现两个名字。 -->
   <nav class="rail tick">
@@ -204,10 +229,10 @@
       <button type="button" class="railbtn" id="kbbtn" style="display:none">知识库</button>
       <!-- ★ 这一条**不写字，只放一个 ⟳**（2026-10-02 定案）。
            原来是「新的一件」，孔老师问"为啥要叫新的一件"；换「新的一课」、
-           「重新开始」她也说不对。症结其实不在词上——上面那几条（本地素材／
+           「重新开始」他也说不对。症结其实不在词上——上面那几条（本地素材／
            备课卡片／知识库）**全是名词**，点开看一眼东西；
            而这一条是个**动作**，清空重来。混在一列名词里怎么起名都像个"东西"，
-           「件」字尤其怪。她第一遍就管它叫"刷新重置的那个"——说明这个动作本身
+           「件」字尤其怪。他第一遍就管它叫"刷新重置的那个"——说明这个动作本身
            一眼就看得懂，那就不必费字：给回它最能被认出的样子（圆形箭头），
            说明话进 title，鼠标停上去才出。图标是内联 SVG（见 js/main.js 里注入），
            不引字体——字体的箭头在不同机器上大小胖瘦差得远。 -->
@@ -227,6 +252,26 @@
            留着那句注释，下一个读代码的人（比如 2026-10-02 的我）就会以为
            编号是丢了，再好心加回去一次。 -->
     <div class="colhead"><span>对话</span></div>
+
+    <!-- ── 「这一份」：这一场对话到底在办哪一件东西 ──────────────────────
+         左边三格是**这一份是谁**（课题 · 班级 · 日期，点一下就能改），
+         右边是**手上攒下了什么**（图几张、题几道、卷子几份）。
+
+         ★ 为什么它摆在中栏最上面、而不是左栏或右栏：它属于**这一场对话**，
+           不属于任何一块面板。六个工位共用这一份，它在哪儿，就说明那六个工位
+           是同一件事上的六道工序，不是六个各自为政的小工具。
+         ★ 为什么这三格能点：课题是从老师第一句话里截出来的（可能截歪），
+           班级和日期这台电脑根本不知道。做成只读的话，一个错标题会跟着
+           这一场一直走到打包出来的压缩包名上。
+         ★ 数据在 js/memo.js，跟落盘那份记忆是**同一个对象**——屏幕上写的
+           和下次打开读的，不可能是两样东西。 -->
+    <div class="onep" id="onep">
+      <b>这一份</b>
+      <span class="of" id="op-topic" title="点一下改课题"></span>
+      <span class="of" id="op-cls" title="点一下改班级"></span>
+      <span class="of" id="op-date" title="点一下改日期"></span>
+      <span class="bag" id="op-bag"></span>
+    </div>
     <!-- 空对话区里那块浅到几乎看不见的大字。★ 学生一进来，这一栏九成是白的，
          光放一句「告诉我你的问题。」，上面那大片留白看着像"没做完"。
          那篇文章第五节讲的正是这件事——方舟拿网点纸和底图处理来让"留白不显得
@@ -234,6 +279,19 @@
          这里就用站名本身，压在气泡下面（气泡是不透明的，写正文时它自然被盖住）。
          aria-hidden：它纯装饰，读屏软件不该念。 -->
     <div class="ghost" aria-hidden="true">数根</div>
+    <!-- 首屏（见 js/landing.js）。★ 位置在**对话区里、气泡上面**：
+         它是"这一栏还没开始"的那一屏，跟开场白占的是同一块地方。
+         ★ 它跟 `.ghost` 那句大字**不能同屏**（两块大字撞在一起谁也读不清），
+           css 里 `body[data-landing="1"] .ghost{display:none}` 处理掉。
+         ★ 里面的五块**不写死在这儿**，由 landing.js 照 SR.WORKS 现画——
+           名字和那句小字只有 config.js 一个真源，写死在这儿就是第二个。
+             ——2026-10-02 那会儿的左栏就是栽在这上头：名字改了，另一处还是旧的，
+               而"两处不一样"在屏幕上看着完全正常。 -->
+    <div id="landing" hidden>
+      <p class="lq" id="lq">今天要办哪一件？</p>
+      <div class="lblocks" id="lblocks"></div>
+      <p class="ltip" id="ltip">也可以直接打一句话——说清要干什么，我看是哪一件。</p>
+    </div>
     <div id="msgs"></div>
     <div id="thumb"></div>
     <!-- 链子进度条。★ 「一节一节摆」是这个产品的核心交互，所以它得看得见：
@@ -246,6 +304,11 @@
          一节都没摆出来时整根藏起来；画图／出题两个工位没有台阶，也整根藏。 -->
     <div id="steps"></div>
     <div id="chips"></div>
+    <!-- 归类那一行（"我按【备课】办的" + 「换一件」）。★ 它紧贴在输入框上面：
+         这是"这句话被归到哪一件去了"唯一的落点，离框越近越像在说框里那句话。
+         ★ 不做成弹层、不做成 Toast：它得**待在那儿**，随时能点「换一件」——
+           一闪而过的提示等于没有这一层（看不见就改不了，改不了就是硬猜）。 -->
+    <div id="routebar" hidden></div>
     <div class="composer">
       <button type="button" id="attach" title="上传照片、扫描件、PDF 或 Word（也可以直接粘贴截图）">📎</button>
       <!-- ★ 这里**绝对不能**写 capture="environment"（2026-10-01 拆掉的）：
@@ -273,8 +336,8 @@
     <div class="outbox">
       <div class="colhead"><span>产物</span></div>
       <!-- ★ 版式那一行（2026-10-02 新增）。原来它是左栏「我的」区里一颗
-           「我的模板」，孔老师说那组像她自己的抽屉、要收掉，而且那名字挂在
-           "我的"底下读着像**她的**模板——其实模板是**每个老师传自己的**。
+           「我的模板」，孔老师说那组像他自己的抽屉、要收掉，而且那名字挂在
+           "我的"底下读着像**他的**模板——其实模板是**每个老师传自己的**。
            搬到这儿有两个实打实的好处，不只是挪个地方：
              ① 它是**「组卷」独有的入口**，而 .outbox 本来就只在组卷这一格显示
                 （css `body:not([data-work="material"]) .outbox{display:none}`）——
@@ -300,6 +363,22 @@
       </div>
     </div>
 
+    <!-- 流水线（2026-10-02 孔老师要的第五阶段）。
+         一道题走一遍是七步，每一步一行、亮起来，写清它用了什么、花了多久，
+         翻歪了的那一步能**单独重跑**。数据在 js/flow.js，画法也全在那边。
+
+         ★ 为什么占右栏一块地、而不是做成弹层（跟「关于」「知识库」那些一样的 overlay）：
+           弹层一盖上来就**看不见流水线边跑边亮了**——而"每步可见"是这东西的全部意义。
+         ★ 为什么**不是**第四颗视角按钮（跟平面/三维/导图并排）：谁亮那件事只有
+           js/mindmap.js 的 syncSwitcher 一处说了算，加第四颗要去动它，风险对不上收益。
+         ★ 显隐规则跟 .outbox 一个道理但**不是同一条**：流水线只在有它的工位上出现
+           （备课／讲评），判据是那个工位自己身上有没有 retrieve 这个开关——
+           由 js/flow.js 的 setWork 写 body[data-flow]（它不认识任何具体工位的名字）。 -->
+    <div class="flowbox" id="flowbox">
+      <div class="colhead"><span>流水线</span><span class="fhint" id="flowhint"></span></div>
+      <div id="flowlist"></div>
+    </div>
+
     <!-- 下：画板 -->
     <div class="boardbox">
     <div class="boardbar">
@@ -311,9 +390,19 @@
              跟「几何画板」撞词：刚聊完"几何画板能不能接"，回头一看标题写着「画板」，
              根本分不清指哪个。它本来就有名字，直接写名字。 -->
       <span class="t"><span>GeoGebra</span><span class="ggbstate" id="ggbstate"></span></span>
+      <!-- 这一栏显示什么：平面 / 三维 / 导图。
+           ★「导图」是**第三个视角**，不是第七个工具按钮——同一条 `.viewsw`
+             里放的就是"这一栏显示什么"这**一件事**（见 css 里 `.viewbtn` 那段）。
+             而且 boardbar 这一行在 360px 上 5 个孩子已经占掉 311/331px，
+             再加一个工具按钮不是折行就是直接少一个。
+           ★ 谁亮由 js/mindmap.js 的 syncSwitcher **一处**说了算：
+             导图一开就压过那两颗，不然切到导图了"三维"还亮着，
+             看着像是导图变成了三维。 -->
       <div class="viewsw">
         <button type="button" class="viewbtn on" data-view="2d">平面</button>
         <button type="button" class="viewbtn"    data-view="3d">三维</button>
+        <button type="button" class="viewbtn"    data-view="mm"
+                title="这一场备课的思维导图：几条岔路、走了哪条、摆到第几个环节">导图</button>
       </div>
       <button type="button" class="tool" id="btn-play" style="display:none">▶ 播放</button>
       <button type="button" class="tool" id="btn-redraw">重画</button>
@@ -330,9 +419,20 @@
     <div class="tabs" id="tabs" style="display:none"></div>
     <div class="boardwrap">
       <div id="ggb"></div>
+      <!-- 思维导图（见 js/mindmap.js）。**盖在画板上**，不是替换画板：
+           把 #ggb 藏起来它的盒子就塌，GeoGebra 那边量到 0 宽、切回来还要重排一次，
+           而它自己不会知道发生过这件事。盖着就只是"上面多了一层"。
+           ★ 画布是 js 里现开的（mount 时 createElement），这儿只留一个盒子。
+           ★ 没有 inline 的 display:none —— "显不显示"由 css 的
+             `.boardwrap.mmon .mmwrap` **一处**说了算（mindmap.js 只管往 .boardwrap
+             上加不加 `mmon` 这个类）。这儿再写一遍就是第二个真源，
+             哪天 css 那边改了，这行还把它按着，而且查起来得先想到这儿。 -->
+      <div class="mmwrap" id="mm"></div>
       <!-- 署名第三处：画板水印。截图外传也带着出处，且不挡作图。
            只写 KAX 的话，截图传出去只说得出"某人"，说不出这页是哪儿来的；
-           带上站名，谁捡到都能找回来。 -->
+           带上站名，谁捡到都能找回来。
+           ★ 导图那一层自己烧了同一行署名（走的都是 board.js 的 mark），
+             所以 mm 模式下这一处要收起来，不然同一行字出现两遍。 -->
       <div class="wm">KAX · 数根 mathroot</div>
     </div>
     <div id="status"></div>

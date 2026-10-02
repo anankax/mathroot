@@ -2,6 +2,7 @@
 """把作品材料里的东西转成网页要的 JS 常量。
   · js/textbook.js   ← 作品材料/14-苏科版教材索引.md
   · js/zhuawen.js    ← 作品材料里孔老师自己写的 118 条追问条目
+  · cloudfunctions/gate/kb.js ← 上面两份语料 + js/retrieve.js 的原文（给云函数用，★不进仓库）
   · test/_archive/prompt-rehearse*.js ← 05c / 05d / 06b 三份（**存档，网页已经不再读它们**）
 
 ★★ 2026-10-02：原来这个脚本还生成 js/prompt-rehearse{,-lean,-tail}.js——网页
@@ -297,8 +298,8 @@ print("生成 %s  —— %d 字符" % (OUT_TB, len(tb)))
 # --- 7. 追问条目库（孔老师自己写的 118 条，六册）---
 # ★ 这是「后备资源」里唯一能上公开站的一份，因为它**是孔老师自己写的**：
 #   教科书 PDF、学科网课件、上好课 PPT 那些有版权，不能往公开的 GitHub Pages 上放
-#   （她的原话是"没必要显示在客户面前，只需要成为网站的读取资源"——
-#     但网页读不到她本机的 C 盘，能上站的只有她自己创作的部分）。
+#   （他的原话是"没必要显示在客户面前，只需要成为网站的读取资源"——
+#     但网页读不到他本机的 C 盘，能上站的只有他自己创作的部分）。
 #   格式跟教材索引一模一样（"### 标题" + 五个【…】标记），所以直接复用同一套二元组 BM25，
 #   一个分词器、一个检索器都不用新写。
 #   【认这类题】/【还没开口】/【复述完了】/【卡住说不出】/【说对了】正好对上「追问的五个台阶」。
@@ -323,6 +324,47 @@ io.open(OUT_ZHUA, "w", encoding="utf-8", newline="\n").write(
     js_const("ZHUAWEN", zhuawen,
              r"24-知识库\02-条目\*.md 然后重跑本脚本"))
 print("生成 %s  —— %d 条 / %d 字符" % (OUT_ZHUA, zn, len(zhuawen)))
+
+# --- 8. 云函数 gate 要用的语料 + 检索器（★ 生成物不进仓库）---
+# ★ 为什么必须放到云上：教材索引是课本原文，按 .gitignore 里那条判据它不进仓库，
+#   公开站上连这一次请求都不发 → **线上那一版根本翻不到教材**（静默退回"没检索到"），
+#   只有孔老师本机是真在翻。语料和检索器一起放进云函数之后，线上才第一次是真翻；
+#   而且检索**在云上跑**，浏览器只收到命中的那几条，整份语料一个字节都不下到浏览器。
+# ★ 检索器**不重写**：把 js/retrieve.js 的原文整段嵌进来，一个字不改。
+#   所以云上的 BM25 与本机的 BM25 **必然同分**——"搬家搬坏了没有"是构造出来的，
+#   不是靠承诺。哨兵是 test/probe_kb_cloud.cjs（同一句话两边跑，比标题和分数）。
+# ★ 生成物 kb.js 已进 .gitignore：它只落在两处——孔老师本机、云函数 gate 的代码包。
+#   云函数的代码不对外服务，所以它没有被"发到网页上"，跟 js/textbook.js 一个待遇。
+RETRIEVE = r"C:\数学办公\数根\js\retrieve.js"
+OUT_KB = r"C:\数学办公\数根\cloudfunctions\gate\kb.js"
+_bm = io.open(RETRIEVE, encoding="utf-8").read().replace("\r\n", "\n")
+kb_out = "\n".join([
+    "// 本文件由 test/build_prompt.py 生成，不要手改。★ 不进仓库（见 .gitignore）",
+    "// 改检索规则去改 js/retrieve.js；改语料去改 14-苏科版教材索引.md / 24-知识库\\02-条目\\*.md。",
+    "//",
+    "// 里面是两段东西：",
+    "//   ① js/retrieve.js 的原文整段（一个字没改，所以云上的 BM25 与本机必然同分）",
+    "//   ② 两份语料：教材索引 + 追问条目库",
+    "// ★ 这份文件只存在于两处——孔老师本机、云函数 gate 的代码包里。",
+    "//   云函数的代码不对外服务，所以它没有被发到网页上，跟 js/textbook.js 一个待遇。",
+    "var window = {};   // retrieve.js 只是拿它挂命名空间，不碰真 DOM",
+    "",
+    _bm.rstrip(),
+    "",
+    "SR.TEXTBOOK = " + json.dumps(tb, ensure_ascii=False) + ";",
+    "SR.ZHUAWEN = " + json.dumps(zhuawen, ensure_ascii=False) + ";",
+    "module.exports = {",
+    "  retrieve: SR.retrieve,",
+    "  // 云上这一步走的是**本机同一对入口**，不是另写一套——所以分数、条数、排序都该一样",
+    "  findTextbook: function (q, k) { return SR.findTextbook(q, k); },",
+    "  findZhuawen: function (q, k) { return SR.findZhuawen(q, k); },",
+    "  TEXTBOOK: SR.TEXTBOOK,",
+    "  ZHUAWEN: SR.ZHUAWEN",
+    "};",
+    "",
+])
+io.open(OUT_KB, "w", encoding="utf-8", newline="\n").write(kb_out)
+print("生成 %s  —— 教材 %d 字 / 追问 %d 字" % (OUT_KB, len(tb), len(zhuawen)))
 
 # --- 自检 ---
 bad = []

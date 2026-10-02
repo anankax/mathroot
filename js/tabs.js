@@ -271,6 +271,14 @@ SR.tabs = (function () {
     var pg = pages[i];
     var fromPg = pages[cur];
 
+    // 老师要看某一页 → **先把思维导图让开**（js/mindmap.js 的 yieldToBoard）。
+    // ★ 放在这一行、**在下面那几个 return 之前**：点了一页却因为"还没存过"
+    //   被挡回来时，他想要的是看那张图，导图还盖着就说不通。
+    //   放在最前面还有个好处——后面每一处 status() 写的字，他都看得见
+    //   （导图盖着的时候状态条在下面，本来也在，但视线在那张图上）。
+    //   ⚠ yieldToBoard 自己判 open，不开的时候它一声不响。
+    if (SR.mm) SR.mm.yieldToBoard();
+
     if (pg.pending) { openPending(pg, fromPg); return; }
     if (!pg.snap) { status('这一页还没存过，切不过去。'); return; }
 

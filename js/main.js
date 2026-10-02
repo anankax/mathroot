@@ -38,6 +38,10 @@ SR.main = (function () {
     SR.chat.setWork(w);
     try { localStorage.setItem(SR.LS_WORK, w); } catch (e) {}
     document.body.setAttribute('data-work', w);
+    // 流水线那一块跟着这个工位显隐（见 js/flow.js 的 setWork）。
+    // ★ 备课↔讲评是**同一条链**，过去的时候账本留着不重开——
+    //   跟下面 `stepsOf(last) && stepsOf(w)` 那条"不把链子打回零"是同一个道理。
+    if (SR.flow) SR.flow.setWork(w);
     var btns = document.querySelectorAll('.workbtn');
     for (var i = 0; i < btns.length; i++) {
       btns[i].classList.toggle('on', btns[i].getAttribute('data-work') === w);
@@ -357,18 +361,30 @@ SR.main = (function () {
     var wm = document.querySelector('.wm');
     if (wm && SR.WATERMARK) wm.textContent = SR.WATERMARK;
 
+    // 统一记忆（见 js/memo.js）。★ 排在 chat.init 前面：
+    //   「这一份」那一行得先挂上，底下 chat.init 接按钮的时候它已经在屏幕上了；
+    //   而且 applyWork → chat.reset 要从它那儿把上一场读回来，它得先就位。
+    if (SR.memo) SR.memo.init();
+
     // 顺序要紧：chat 先把 DOM 句柄和按钮接好，board 才能挂牌，
     // applyMode 最后跑（它会重置对话、写开场白）。
     SR.chat.init();
     SR.board.init('ggb', {
       playState: SR.chat.onPlayState,
       log: SR.chat.setStatus,
-      // 模型在围栏里写 #三维 / #平面 时，把工具条那两个按钮跟着点亮
+      // 画板切了维度（老师点按钮，或者模型自己在围栏里写 #三维 / #平面）
+      //
+      // ★★ 2026-10-02：那一排「平面／三维／导图」**谁亮**不再由这儿点了，
+      //   交给 js/mindmap.js 的 syncSwitcher **一处**说了算。
+      //   非挪不可的理由：现在有三个可能的状态，而"导图开着"这一档**必须压过**
+      //   另外两颗——导图一开，「三维」要是还亮着，看着像导图变成了三维。
+      //   这边再点一次就是第二个真源，两个真源早晚会在某一刻说得不一样。
+      // ★ yieldToBoard：**模型把画板切了视角，就是把导图让开**——
+      //   跟 chat.js 收到围栏、tabs.js 点某页标签是同一个动作、同一个名字。
       view: function (is3d) {
-        var vs = document.querySelectorAll('.viewbtn');
-        for (var i = 0; i < vs.length; i++) {
-          vs[i].classList.toggle('on', vs[i].getAttribute('data-view') === (is3d ? '3d' : '2d'));
-        }
+        if (!SR.mm) return;
+        SR.mm.set3D(is3d);        // 它自己会 syncSwitcher，这儿不用再喊一次
+        SR.mm.yieldToBoard();
       }
     });
     // 右栏多页（见 js/tabs.js）。★ 排在 board.init **后面**：
@@ -376,6 +392,18 @@ SR.main = (function () {
     //   它自己会等画板就绪（GeoGebra 那一包要拉几秒），等不到就走老路——
     //   所以这一句是"加一层"，不是"换一条路"，画板起不来时画图照旧。
     if (SR.tabs) SR.tabs.init('tabs');
+    // 思维导图（见 js/mindmap.js）。★ 排在 board.init / tabs.init 之后：
+    //   它一装好就要读 `.viewsw` 那三颗按钮、画第一张（虽然这会儿多半是空场），
+    //   而且它按的 `SR.board.mark`（署名）、`SR.pack.turns`（账本）也都是前面装的。
+    //   ⚠ 这一句只是**把画布开出来**，导图仍然是关着的（css 里 display:none），
+    //     老师点「导图」那一下才第一次真画——所以它不拖慢开机。
+    if (SR.mm) SR.mm.init('mm');
+
+    // 流水线（见 js/flow.js）。★ 排在 chat.init 之后：init 里要读 SR.chat.getWork()
+    //   才判得出现在是哪个工位（判据是那个工位身上有没有 retrieve 这个开关，
+    //   所以 flow.js 里看不到任何具体工位的名字）。
+    //   它只是把右栏那一块显隐摆对、画一张空场——**不跑检索、不发请求**。
+    if (SR.flow) SR.flow.init();
 
     // ---- 弹层的关闭：点按钮、点遮罩空白处、按 Esc ----
     document.addEventListener('click', function (e) {
@@ -431,7 +459,7 @@ SR.main = (function () {
     // ---- 备课卡片 ----
     // ★ 2026-10-02 改：**只在本机出现**了（原来对访客公开）。孔老师的原话是
     //   "那个我的的内容也需要去掉……不要给使用的人看到了"。
-    //   它列的是那 118 条追问条目库——她自己写的，本来公开无妨；现在收成只给她
+    //   它列的是那 118 条追问条目库——他自己写的，本来公开无妨；现在收成只给他
     //   自己备课时查。门禁跟下面「知识库」同一套判法（判是不是本机）。
     // ★ 跟「知识库」面板仍是两件事，别往一处合：
     //   这个只列条目正文（没有分数）；那个显示分数和阈值，给编目的人验召回。
@@ -567,12 +595,30 @@ SR.main = (function () {
                    +   '<polyline points="22 6 22 11 17 11"/>'
                    +   '<path d="M19.6 15.5a8 8 0 1 1-2-8.4L22 11"/>'
                    + '</svg>';
-      nb.addEventListener('click', function () { SR.chat.reset(work); });
+      // ★★ 这颗是**唯一**能清记忆的地方（孔老师的原话：「除非我靠一个刷新按钮给他清了」）。
+      //   {wipe:true} 只在这一个调用点出现——见 js/chat.js 的 reset 和 js/memo.js 的 clear。
+      //   别把它加到 applyWork 上去：那样切一次工位就抹一场，
+      //   而"切工位顺手清掉了"在屏幕上和"本来就没记住"完全一样。
+      nb.addEventListener('click', function () { SR.chat.reset(work, { wipe: true }); });
     }
 
-    // ---- 平面 / 三维 ----
+    // ---- 平面 / 三维 / 导图（这一排是"右栏显示什么"，见 js/mindmap.js）----
+    // ★ 三颗按钮的监听**只在这一处**。mindmap.js 装的时候只认下它们用于点灯，
+    //   不自己绑一遍——绑两遍的话「导图」会同时走 show('mm') 和 setView('mm') 两条路，
+    //   setView 那头认不出 'mm'，`if (v === '3d') ... else showPlane()` 会把它当平面。
     document.querySelectorAll('.viewbtn').forEach(function (b) {
-      b.addEventListener('click', function () { SR.board.setView(b.getAttribute('data-view')); });
+      b.addEventListener('click', function () {
+        var v = b.getAttribute('data-view');
+        // 「导图」不开视角，只是把自己的那层盖到画板上。
+        if (v === 'mm') { if (SR.mm) SR.mm.show('mm'); return; }
+        // 平面／三维：**先把导图让开**，再真切视角。
+        // ★ 这一句不能省，也不能只靠 board 的 view 钩子：画板**已经在平面**时
+        //   点「平面」，board.js 的 to2D 是 `if (!api || !is3D) return`——
+        //   一个钩子都不发。少了这一句，老师点了「平面」，导图还盖在那儿，
+        //   看着就是"这个按钮坏了"。（点了没反应比反应错更难查。）
+        if (SR.mm) SR.mm.show(v);
+        SR.board.setView(v);
+      });
     });
 
     // ---- 备课卡片：挂搜索框和"点一行抄走" ----
@@ -581,6 +627,13 @@ SR.main = (function () {
     if (SR.cards) SR.cards.bind();
 
     applyWork(readSavedWork(), true);
+
+    // 首屏（见 js/landing.js）。★ 位置就压在 applyWork 后面，两个理由：
+    //   ① 它要画"上次用的是哪一件"那一块，得等 applyWork 把工位定下来才问得准；
+    //   ② 它要读 `body[data-work]`，那也是 applyWork 写的。
+    //   ⚠ 放在这串的最后（不是中间）：上面 board/mindmap/flow 谁先谁后各有各的理由，
+    //     而首屏**只跟 chat 的 getWork 有关**，跟画板、导图、流水线一个字都不搭。
+    if (SR.landing) SR.landing.init();
 
     // ★ 首屏不弹 Key 层了。默认后端是免费通道，本来就什么都不用填——
     //   一进来就糊一个"请填 Key"的框，是把人往外推。

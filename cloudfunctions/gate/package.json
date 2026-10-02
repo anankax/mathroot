@@ -1,0 +1,10 @@
+{
+  "name": "gate",
+  "version": "1.0.0",
+  "description": "数根的一步执行器：藏 Key、形状校验、每日次数",
+  "main": "index.js",
+  "private": true,
+  "dependencies": {
+    "@cloudbase/manager-node": "^5.9.0"
+  }
+}

@@ -22,7 +22,7 @@ const path = require('path'), fs = require('fs');
 
 // ★ SR_TABS 是给 `test/_redfirst_tabpage.cjs` 用的：它把**改坏的副本**写到别处，
 //   让探针去读那份，于是"证明它会红"这件事完全不用碰 js/tabs.js。
-//   （理由跟 probe_math.cjs 那份 SR_RENDER 一模一样：探针不许把东西留在她机器上。）
+//   （理由跟 probe_math.cjs 那份 SR_RENDER 一模一样：探针不许把东西留在他机器上。）
 const TFILE = process.env.SR_TABS || path.join(__dirname, '..', 'js', 'tabs.js');
 
 // tabs.js 是个 `(function(){...})()`，只看 window.SR。`module` 在 new Function 里
@@ -531,7 +531,7 @@ const closeTab = id => new Promise(res => http.get({ host: 'localhost', port: 92
     //     而且再切走、切回来，**不该把刚清掉的那张图长回来**。
     await q('SR.tabs.go(0)');
     await waitFor('pg0', r => has(r, 'P1', 'P2', 'axis') && !r.busy, 20000);
-    await q('SR.board.clear()');                 // 她点工具条那颗「清空」
+    await q('SR.board.clear()');                 // 他点工具条那颗「清空」
     await q('SR.tabs.cleared()');
     const r8a = await waitFor('cleared', r => r.names.length === 0, 10000);
     await q('SR.tabs.drawHere(' + JSON.stringify(F5) + ', "")');
@@ -550,7 +550,7 @@ const closeTab = id => new Promise(res => http.get({ host: 'localhost', port: 92
     let r8c = await waitFor('back0', r => has(r, 'U', 'V') && hasNot(r, 'P1', 'axis') && !r.busy, 20000);
     check('⑧b 切走再切回来：回来的是清空之后那张（U/V），**不是**清空之前那张（P1/axis）',
       !!r8c && has(r8c, 'U', 'V') && hasNot(r8c, 'P1', 'axis'),
-      r8c ? show(r8c) + '　★ 要是这里冒出 P1/axis，症状就是"清空没生效"——她点了清空，回头图自己长回来了' : '等了 20 秒没切回来');
+      r8c ? show(r8c) + '　★ 要是这里冒出 P1/axis，症状就是"清空没生效"——他点了清空，回头图自己长回来了' : '等了 20 秒没切回来');
 
     // ---- 格子 9：标签上限（放最后：它会连着排一队活儿，不等它画完）----
     //   ★ `addPage` 是**同步**的（挂标签不等板子），所以直接紧着喊十几次就够，

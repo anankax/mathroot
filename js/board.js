@@ -583,7 +583,7 @@ SR.board = (function () {
   //   「你这个画的效果哪里和正常的试卷上的做图效果一样。哪能直接放出的卷子上面去」）：
   //
   //   直接截画板的屏，得到的是**GeoGebra 屏幕的样子**，不是卷子上印的样子。
-  //   拿她真卷子里的图（B9 那份 image20.png，一条数轴）逐条比，差的正好是三样：
+  //   拿他真卷子里的图（B9 那份 image20.png，一条数轴）逐条比，差的正好是三样：
   //     ① 点是大蓝圆点（卷子上是实心小黑点）
   //     ② 点的名字写成 `A = (-2, 0)`（卷子上只写一个斜体 `A`）
   //     ③ 字是无衬线小号（卷子上是 **Times 斜体**，而且比它大一圈）
@@ -1126,6 +1126,11 @@ SR.board = (function () {
     draw: draw, shoot: shoot, shootMarked: shootMarked,
     togglePlay: togglePlay, stopPlay: stopPlay,
     toPNG: toPNG, exportPNG: exportPNG,
+    // 署名那一下。★ 2026-10-02 露出来给思维导图用：导图是**自己开 canvas 画**的
+    //   （不走 getPNGBase64），也得烧同一行水印。抄一份到那边去的话，
+    //   字号、颜色、"要不要垫一层白描边"就有了两个真源，而这两张图
+    //   会**躺在同一个压缩包里**，长得不一样一眼就看得出来。
+    mark: mark,
     isReady: function () { return ready; },
     canPlay: function () { return !!playTarget; },
     isPlaying: function () { return playing; },

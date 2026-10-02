@@ -51,7 +51,7 @@ const CASES = [
 
   // ---- 要包的 ----
   {
-    name: '裸 \\frac 夹在中文里（她截图里那个形状）',
+    name: '裸 \\frac 夹在中文里（他截图里那个形状）',
     in: '他写的是 1\\frac{1}{2}，其实应该是 \\frac{3}{2}。',
     want: '他写的是 $1\\frac{1}{2}$，其实应该是 $\\frac{3}{2}$。'
   },
@@ -211,11 +211,11 @@ const closeTab = id => new Promise(res => http.get({ host: 'localhost', port: 92
 // ★ 「有没有渲出来」用的是**两个数**，不是一个：
 //     katex —— 页面上出现了几个 KaTeX 生成的元素（>0 才叫渲了）
 //     raw   —— 显示出来的文字里还剩几个反斜杠命令（必须 0）
-//   只看一个都会骗人：只看 katex，"整句话被塞进公式"也能让她变正；
+//   只看一个都会骗人：只看 katex，"整句话被塞进公式"也能让他变正；
 //   只看 raw，"什么都没渲但也没报错"看着也干净。
 const LIVE_CASES = [
   { name: '★自检：纯中文 → 一个 KaTeX 元素都不该有', in: '他把两个条件看反了，所以算出来是 3。', katex: 0, raw: 0 },
-  { name: '她自己截图里那个形状：裸 \\frac', in: '他写的是 1\\frac{1}{2}，其实应该是 \\frac{3}{2}。', katex: 2, raw: 0 },
+  { name: '他自己截图里那个形状：裸 \\frac', in: '他写的是 1\\frac{1}{2}，其实应该是 \\frac{3}{2}。', katex: 2, raw: 0 },
   { name: '裸 \\sqrt 夹在中文里', in: '答案是 \\sqrt{3} 厘米。', katex: 1, raw: 0 },
   { name: '★已经用 `$` 包好的（模型听话的那种）', in: '他写的是 $\\frac{1}{2}$。', katex: 1, raw: 0 },
   {
@@ -276,7 +276,7 @@ const LIVE_CASES = [
     if (!parts || !parts.sr || !parts.katex) {
       console.log('\n★★★ B 腿开不了，等了 20 秒还是缺东西 —— 下面每一条都别信：');
       console.log('    SR.render.renderInto  ' + (parts && parts.sr ? '在' : '★ 不在（js/render.js 没加载？serve 是不是 8138？）'));
-      console.log('    renderMathInElement   ' + (parts && parts.katex ? '在' : '★ 不在（katex 那个 CDN 没下来 —— 她平时用得到它，所以这不算小事）'));
+      console.log('    renderMathInElement   ' + (parts && parts.katex ? '在' : '★ 不在（katex 那个 CDN 没下来 —— 他平时用得到它，所以这不算小事）'));
       console.log('    document.readyState   ' + (parts ? parts.state : '读不到'));
       await closeTab(TAB); process.exit(3);
     }
@@ -288,7 +288,7 @@ const LIVE_CASES = [
     // ---- 如果 SR_RENDER 指的不是页面上那一份，就把那一份**注入**进来顶掉 SR.render ----
     // ★ 为什么非要有这一段：B 腿量的是**浏览器从磁盘加载的那份 render.js**，
     //   而"证明它会红"要求把代码改坏。就地改真文件能生效，可万一进程被强杀，
-    //   留在磁盘上的就是一份残废的 render.js（她照样打得开网页，只是公式全烂）。
+    //   留在磁盘上的就是一份残废的 render.js（他照样打得开网页，只是公式全烂）。
     //   改成把改坏的副本**送进页面**替换 `SR.render`——磁盘上的真文件全程没碰，
     //   而页面里跑的确实就是那份副本。注入完还要回读一句，证明换成功了。
     if (process.env.SR_RENDER) {
@@ -357,9 +357,9 @@ const LIVE_CASES = [
       console.log('      屏幕上：KaTeX ' + got.katex + ' 个（期望 ' + c.katex + '）　' +
         '公式与代码之外漏渲染的裸命令 ' + got.raw + ' 个（期望 ' + c.raw + '）' +
         (c.keeps ? '　原文「' + c.keeps + '」' + (keepOK ? '还在' : '★ 不见了') : ''));
-      console.log('      她说会看到这句话 →〔' + String(got.text).replace(/\s+/g, ' ').trim().slice(0, 120) + '〕');
+      console.log('      他说会看到这句话 →〔' + String(got.text).replace(/\s+/g, ' ').trim().slice(0, 120) + '〕');
       if (c.why) console.log('        ' + c.why);
-      if (!ok) console.log('      ★ 这一格和期望对不上，别急着改期望值——先看上面"她会看到什么"');
+      if (!ok) console.log('      ★ 这一格和期望对不上，别急着改期望值——先看上面"他会看到什么"');
     }
     await closeTab(TAB);
     console.log('');

@@ -1,0 +1,10 @@
+{
+  "name": "reslib",
+  "version": "1.0.0",
+  "description": "数根的资源库检索：从 PG 的 res_chunks 里捞最相关的几块。事件函数，用平台临时凭证读库，不读任何自建密钥。",
+  "main": "index.js",
+  "private": true,
+  "dependencies": {
+    "@cloudbase/manager-node": "^5.9.0"
+  }
+}

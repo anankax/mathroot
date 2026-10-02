@@ -205,6 +205,47 @@ body[data-work="vary"] .tick::after { border-color: rgba(95, 107, 18, .5); }
 /* 中文大字和拉丁小字挨着时，中间得留一口气，不然两串字糊成一串 */
 .overlay h2 em { margin-left: 12px; }
 
+/* ---------- 「这一份」那一行（见 js/memo.js） ---------- */
+/* ★ 它压在「对话」那行栏头下面，一条细带子。为什么值得占这一行高度：
+   六个工位**共用同一份东西**这件事，光靠代码是看不见的——老师说"我备课备到一半
+   去画个图"，屏幕上如果没有任何东西横跨那两处，那两件事看起来就是两件事。
+   这一行横着摆在那儿，就是那句话本身。
+   ★ 底色用 --brand-soft（跟"选中的工位"同一族），不用灰：灰看着像"系统状态"，
+   会读成一排不能碰的元数据；它是老师自己手上的东西，得有点"这是你的"的颜色。 */
+.onep {
+  flex: 0 0 auto;
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 7px 14px; font-size: 12.5px; line-height: 1.5;
+  color: var(--ink-2);
+  background: var(--brand-soft);
+  border-bottom: 1px solid var(--line);
+}
+.onep > b { font-weight: 600; color: var(--brand-deep); flex: 0 0 auto; }
+/* 三格可改的：默认没有框、没有下划线，只在**鼠标停上去**的时候露一道虚点线。
+   ★ 常驻下划线会跟正文里的链接抢读——三格都挂着线，看着像三个超链接，
+     而它们其实只是三个可以改的字段。 */
+.of {
+  flex: 0 0 auto; max-width: 15em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: text; border-bottom: 1px dashed transparent;
+  transition: border-color .18s ease, color .18s ease;
+}
+.of:hover { border-bottom-color: var(--brand-line); color: var(--ink); }
+/* 还没填的那几格：淡一号，但**仍然读得出来它是什么**（"哪个班"不是空字符串）——
+   空字符串在这一行里就是一小段空白，老师看不出那儿是在等他填。 */
+.of.empty { color: var(--ink-3); }
+.of.empty:hover { color: var(--ink-2); }
+.opedit {
+  font: inherit; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--brand-line); border-radius: 3px;
+  padding: 1px 5px; min-width: 7em; max-width: 15em;
+}
+.opedit:focus { outline: 2px solid var(--brand-line); outline-offset: -1px; }
+/* 口袋：推到最后面。它是**结果**，左边那三格是**条件**，
+   条件先读、结果后读；混在一起两头都读不清。 */
+.onep .bag { margin-left: auto; flex: 0 0 auto; color: var(--ink-3); }
+.onep .bag.has { color: var(--brand-deep); }
+
 /* ---------- 顶栏 ---------- */
 header {
   flex: 0 0 auto;
@@ -412,6 +453,27 @@ main {
    一道 3px 的竖条比再加粗字更省，也让人一眼看出"我现在在这一格"。 */
 .rail .workbtn.on { box-shadow: inset 3px 0 0 var(--brand); }
 
+/* 这一格**出过东西**（口袋里有它的产物）。2026-10-02 加，模拟稿第⑤张说的
+   「每一步都给下一步留了东西」——这是它看得见的那一半。
+   ★ 判据在 js/memo.js 的 paintWorks：**口袋里真有这个工位的产物**才亮，
+     不是"点过这个工位"。点一下不等于干过活，照点击亮，六格走一遍就全亮着，
+     而字上还写着"口袋空着"。
+   ★ 为什么用这么一颗小方块、跟上面 `.backbtn .dot` 一个样子（6×6、不带圆角，
+     它俩本来就是同一个形状）：这一栏里已经有"一颗小方块＝状态"
+     这套语言（通道那两格白＝在用、砖红＝走不通），再发明一套没人认得。
+   ★★ 为什么空着也要占地方（`::before` 常驻、只是透明）：不占的话，
+     口袋一满，六个字**整体往右挪 13px**——那一栏是竖排左对齐的，
+     挪一下读起来像"这一格跳了一下"。宁可一直留着这点空白。
+   ★ 讲评那一格**永远不会亮**，是对的：它是从口袋里**取**的，不往里放（见 memo.js 的 SAY）。 */
+.rail .workbtn::before {
+  content: ''; display: inline-block; width: 6px; height: 6px;
+  margin-right: 7px; vertical-align: 1px;
+  background: transparent;
+}
+.rail .workbtn.has::before { background: var(--brand); }
+/* 当前这一格底色是近黑的，墨绿那点在上面太暗，换成白的才读得出来 */
+.rail .workbtn.on.has::before { background: #fff; }
+
 /* 高亮那一格底下那句话。★ 顶栏那版是"跟在按钮右边的一道小字"（左边一条粗竖线），
    在左栏里它该是"这一组底下的注脚"——所以竖线换成横线、跟着整组走。 */
 .rail #badge {
@@ -485,6 +547,94 @@ main {
    一个工位不产东西，"产物"那栏就该消失——留着一个空框比没有更难看。 */
 body:not([data-work="material"]) .outbox { display: none; }
 
+/* ---------- 右栏：流水线（备课／讲评）----------
+   一道题走一遍的六步，一步一行，亮起来。数据与画法都在 js/flow.js。
+   ★ 显隐**不靠工位名字**，靠 body[data-flow]——那是 js/flow.js 的 setWork 根据
+     "这个工位身上有没有 retrieve 这个开关"写上去的。所以在 css 里看不到
+     `data-work="prep"` 这种写死的名字，加一个带检索的新工位不用回来改这里。
+   ★ 跟 .outbox 一样是**上下分**里的一块：max-height 管住它，别让一条长流水线
+     把画板挤没了。超过就自己滚。 */
+.flowbox { display: none; }
+body[data-flow="on"] .flowbox {
+  flex: 0 0 auto; display: flex; flex-direction: column;
+  max-height: 42%; min-height: 92px; border-bottom: 2px solid var(--rule);
+}
+.flowbox .colhead { display: flex; align-items: baseline; gap: 8px; }
+.flowbox .fhint { margin-left: auto; font-size: 11px; color: var(--ink-3); font-weight: 400; }
+#flowlist { flex: 1 1 auto; overflow-y: auto; padding: 9px 15px 12px; min-height: 0; }
+.flowempty { margin: 0; font-size: 12.5px; line-height: 1.85; color: var(--ink-3); }
+
+.fround { padding: 7px 0 9px; border-top: 1px solid var(--line); }
+.fround:first-child { border-top: 0; padding-top: 2px; }
+.fhead { display: flex; align-items: baseline; gap: 7px; margin-bottom: 5px; }
+.fhead .fn { flex: 0 0 auto; font-size: 11px; font-weight: 700; color: var(--brand); letter-spacing: .5px; }
+.fhead .ftopic {
+  flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: var(--ink-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fhead .fprog { flex: 0 0 auto; font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+.fstep { padding: 3px 0 3px 2px; }
+.fline { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.fglyph {
+  flex: 0 0 auto; width: 13px; text-align: center; font-size: 11px;
+  color: var(--ink-3); line-height: 1.7;
+}
+.fname { font-size: 12.5px; color: var(--ink); }
+.fms { font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.fword { font-size: 10.5px; color: var(--ink-3); }
+.fnote { margin: 2px 0 0 19px; font-size: 11px; line-height: 1.7; color: var(--ink-3); }
+
+/* 出处两颗小标：route（云上/本机/模型）+ src（苏科版/你写的/…）。
+   ★ 两颗**长得不一样**是要紧的：一颗说"在哪儿跑的"，一颗说"用的是谁的东西"，
+     云上退回本机时只有前一颗会变，混成一颗就看不出这回事了。 */
+.ftag {
+  flex: 0 0 auto; font-size: 10px; padding: 1px 6px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--ink-3); white-space: nowrap;
+}
+.ftag.t-route { border-color: var(--brand-line); color: var(--brand); }
+.ftag.t-src { border-style: dashed; }
+
+/* 五种状态。★ 用左边一道竖线着色、不改字色：字色一多就变成"满屏彩色小字"，
+   而这条流水线是要**竖着扫一眼**看哪一步没亮起来的。 */
+.fstep.st-done  .fglyph { color: var(--brand); }
+.fstep.st-run   .fname  { color: var(--brand); font-weight: 700; }
+.fstep.st-run   .fglyph { color: var(--brand); }
+.fstep.st-fail  .fglyph, .fstep.st-fail .fname { color: var(--warn); }
+.fstep.st-skip  .fname  { color: var(--ink-3); }
+.fstep.st-stale .fglyph, .fstep.st-stale .fname { color: var(--alt-dark); }
+.fstep.st-wait  .fname  { color: var(--ink-3); }
+
+.fbtn {
+  font: inherit; font-size: 10.5px; padding: 1px 7px; cursor: pointer;
+  background: var(--panel); color: var(--brand); border: 1px solid var(--brand-line);
+  border-radius: 999px;
+}
+.fbtn:hover { background: var(--brand-soft); }
+.flink { margin-left: 2px; }
+
+.ffoot {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 6px; padding: 5px 8px; border-radius: 5px;
+  background: var(--alt-soft); border: 1px solid var(--alt-line);
+}
+.ffoot .ftxt { font-size: 11px; color: var(--alt-dark); }
+
+/* 「这一步的产物」——原生 details，不用写开合的 JS，键盘也点得动。
+   ★ 正文是**模型自己生成的字和课本原文**，必须 textContent 塞进去（见 js/flow.js 的 el()）。 */
+.fout { margin: 3px 0 1px 19px; }
+.fout summary {
+  font-size: 10.5px; color: var(--ink-3); cursor: pointer; list-style: none;
+  border-bottom: 1px dashed var(--line); display: inline-block;
+}
+.fout summary::-webkit-details-marker { display: none; }
+.fout summary:hover { color: var(--brand); border-bottom-color: var(--brand-line); }
+.fout pre {
+  margin: 5px 0 0; padding: 7px 9px; max-height: 190px; overflow: auto;
+  background: var(--sunken); border-radius: 4px;
+  font: 11px/1.75 var(--sans); color: var(--ink-2); white-space: pre-wrap; word-break: break-word;
+}
+
 .boardbox { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
 
 /* 空对话区里的鬼影大字。★ 见 index.html 里那段说明。
@@ -505,6 +655,107 @@ body:not([data-work="material"]) .outbox { display: none; }
 }
 #msgs, #thumb, #chips, .composer { position: relative; z-index: 1; }
 
+/* ============================================================
+   首屏（一个框 + 五块 + 归完那一行）。见 js/landing.js 顶上那几段。
+   ★ 视觉上它**不新开一套语言**：面板还是 panel、凹槽还是 sunken、
+     色条还是 3px、字还是思源宋体打头——它只是"这一栏还没开始"的那一屏，
+     不是第二个产品。新开一套的话，老师从首屏走到工位会像换了个站。
+   ============================================================ */
+#landing { flex: 1 1 auto; overflow-y: auto; padding: 34px 22px 10px; }
+#landing[hidden] { display: none; }
+.lq {
+  margin: 0 0 22px; font-family: var(--song); font-size: 27px; font-weight: 700;
+  letter-spacing: 1px; line-height: 1.35; color: var(--ink);
+}
+/* ★ 五块**不写成一行五个**：那一行最窄的一档（约 100px）里放不下"组卷"两个字加那句小字，
+   而缩到 11px 就成了一条看不见的注脚。两列/三列随宽度走，窄屏两列、手机一列。 */
+.lblocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 10px; max-width: 640px; }
+.lblock {
+  display: block; text-align: left; cursor: pointer;
+  padding: 12px 13px 13px;
+  border: 1px solid var(--line); border-left: 3px solid var(--rule);
+  background: var(--panel); color: var(--ink);
+  font-family: inherit; font-size: 15px; line-height: 1.3;
+  transition: border-color .12s, background .12s;
+}
+/* 悬停/选中：左边那道色条走到主色，底子浮到最亮。★ 这套里"交互强调"一律是
+   **这根条子变色**，不是投影、不是缩放——那篇第六节讲的"光照变化"落在这儿，
+   就是"被照亮的是条子，不是整块"。 */
+.lblock:hover, .lblock:focus-visible { border-left-color: var(--brand); background: #fff; outline: none; }
+.lblock.on { border-left-color: var(--brand); background: var(--brand-soft); }
+.lblock b { display: block; font-size: 17px; font-weight: 700; color: var(--ink); }
+/* 那句小字直接取 config 的 badge（"套你学校的模板 · 打开就能印"）。
+   ★ 用 var(--ink-3) 不用 ink-2：对面板 ≈5.1:1，是"还能读清"的最后一档，
+     再浅一档就成装饰了——而这句话恰恰是"这五块分别给我什么"的正身。 */
+.lblock i { display: block; margin-top: 5px; font-style: normal; font-size: 12.5px; color: var(--ink-3); }
+.lblock em {
+  display: inline-block; margin-top: 7px; padding: 1px 6px;
+  font-style: normal; font-size: 11.5px; letter-spacing: .5px;
+  background: var(--brand); color: #fff;
+}
+.ltip { margin: 18px 0 0; max-width: 640px; font-size: 13px; color: var(--ink-3); }
+
+/* 首屏亮着的时候，对话那一栏**还没开始**：气泡、缩略图、链子条、选项全让开，
+   免得"开场白 + 一屏大字 + 五块"三样东西同屏抢话。
+   （`.ghost` 那一句 104px 的站名跟 `.lq` 撞在一起尤其难看，两句话谁也读不清。） */
+body[data-landing="1"] #msgs,
+body[data-landing="1"] #thumb,
+body[data-landing="1"] #steps,
+body[data-landing="1"] #chips,
+body[data-landing="1"] .ghost { display: none; }
+
+/* ---------- 归完那一行 ---------- */
+/* ★ 紧贴输入框上沿，凹槽底子（sunken）：它说的是"框里那句话去哪了"，
+   不是一条通知，是一条**仪表读数**。 */
+#routebar {
+  flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin: 0 18px; padding: 7px 10px;
+  background: var(--sunken); border-left: 3px solid var(--brand);
+  font-size: 12.5px; color: var(--ink-2);
+}
+#routebar[hidden] { display: none; }
+#routebar .rt { color: var(--ink); }
+#routebar .soft { color: var(--ink-3); }
+#routebar .rnote { color: var(--ink-3); }
+.rchg {
+  margin-left: auto; cursor: pointer;
+  padding: 2px 9px; font-family: inherit; font-size: 12.5px;
+  border: 1px solid var(--rule); background: var(--panel); color: var(--brand);
+}
+.rchg:hover { border-color: var(--brand); }
+.rpick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rpick[hidden] { display: none; }
+.rmini {
+  cursor: pointer; padding: 2px 9px; font-family: inherit; font-size: 12.5px;
+  border: 1px solid var(--rule); background: var(--panel); color: var(--ink-2);
+}
+.rmini:hover { border-color: var(--brand); color: var(--brand); }
+.rmini.cur { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-deep); }
+
+/* 窄屏：那五块两块一行、`.lq` 收一档。
+   ★ 断点取 **900px**，跟 chat.js 的 tipFor 和这个文件里别处那条取同一个数——
+     两边错开就会出现"CSS 已经按手机排了、提示语还是长的那句"。 */
+@media (max-width: 900px) {
+  #landing { padding: 22px 14px 8px; }
+  .lq { font-size: 22px; margin-bottom: 16px; }
+  .lblocks { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .lblock { padding: 10px 11px 11px; }
+  .lblock b { font-size: 16px; }
+  #routebar { margin: 0 10px; }
+  .rchg { margin-left: 0; }
+}
+/* 手机：**一块一行**，那句小字照样留着。
+   ★ 为什么不接着用两列 + 把 `i` 藏掉：藏掉之后首屏上就只剩"组卷／作图／备课／命题／讲评"
+     五个光秃秃的词——而那五块的全部用处恰恰是**说出它们分别给我什么**（那他说的
+     "把功能页面跳出来"才有内容）。一块一行最慢也就多滑一下，比丢掉半句话值。
+   ★ 620 这个数不是断点表里挑的：两列时每格最窄要到 ≈290px 才放得下最长那句 badge
+     （"套你学校的模板 · 打开就能印" 17 字 × 12.5px ≈ 213px + 左右各 11px 内边距 +
+     10px 间距），换算回视口就是这个数。 */
+@media (max-width: 620px) {
+  .lblocks { grid-template-columns: 1fr; }
+  .lq { font-size: 20px; }
+}
+
 /* ---------- 栏头 ---------- */
 /* ⚠ **这一套里没有编号。** 这个注释原来写的是「栏头铭牌（01 对话 / 02 画板）」，
    而且底下真有一条 `.colhead b, .boardbar b { margin-right: 9px }` 在给编号留位。
@@ -523,6 +774,21 @@ body:not([data-work="material"]) .outbox { display: none; }
 
 .msg { display: flex; margin-bottom: 14px; }
 .msg.user { justify-content: flex-end; }
+
+/* 「换到「作图」」——六道工序之间的那道接缝（见 js/chat.js 的 addDivider）。
+   ★ 它为什么必须画出来：这一场对话现在**跨工位连续**了（同一份记忆），
+     不画接缝的话，上面是备课的问句、下面是作图画的图，看着像同一道工序里
+     忽冷忽热；画出来才知道是"换了一道工序接着办这一份东西"。
+   ★ 它为什么是一条细线而不是一个气泡：它不是谁说的话——**模型没说过这句话**，
+     做成气泡就变成"数根 / MATHROOT"署名下的一句假话（那个铭牌是 ::before 自动挂的）。 */
+.wdiv {
+  display: flex; align-items: center; gap: 10px;
+  margin: 4px 0 14px;
+  font-size: 11.5px; color: var(--ink-3); letter-spacing: .04em;
+}
+.wdiv::before, .wdiv::after {
+  content: ''; flex: 1 1 auto; height: 1px; background: var(--line);
+}
 
 /* 气泡：没有圆角、没有阴影，靠左侧一道 3px 色条标"谁在说"，
    再配一枚说话人铭牌。那篇里讲扁平化的出发点是"减少与交互无关的细节"
@@ -737,6 +1003,49 @@ body[data-work="vary"] #send:hover { background: var(--alt-dark); }
   color: rgba(11, 107, 69, .18);
   pointer-events: none; user-select: none; -webkit-user-select: none;
 }
+
+/* ---------- 思维导图（见 js/mindmap.js） ----------
+   孔老师 2026-10-02 的原话：
+     「没有形成思维导图那样的思维链条，无法做到思维链条可视化。
+       实际上右边的画板应该要可以有思维导图的同步形成。」
+   这一层就是那句话。它和画板**共用右栏这一块地方**，靠上面那颗「导图」切。
+
+   ★★ 它是**盖在画板上**，不是把画板换掉：
+      把 `#ggb` 藏起来（display:none）它的盒子立刻塌成 0，
+      GeoGebra 那边量到 0 宽会重排一次，而**它自己不会知道发生过这件事**——
+      切回来时坐标范围、缩放全变了，老师只会觉得"看一眼导图回来，图怎么歪了"。
+      盖着就只是"上面多了一层"，下面那块一直好好地待着。
+   ★ 绝对定位 + inset:0：它不参与 flex 计算，`#ggb` 的 flex:1 一点不受影响。
+   ★ 层级（跟 .boardwrap 里几个兄弟对齐）：
+      ::after 那圈热点效应是 4、水印 .wm 是 5——都在**图上**，本来就该压着导图。
+      导图自己用 1，够压住 `#ggb`（applet 没有 z-index，在同一个层叠上下文里排最后）。 */
+.mmwrap {
+  display: none;
+  position: absolute; inset: 0; z-index: 1;
+  background: var(--paper);
+}
+.boardwrap.mmon .mmwrap {
+  display: block;
+  /* ★ 过场用 --mo（.24s）而不是 --mo-fast（.13s）：切视角是"换了一屏东西"，
+     .13s 那个数是给按下和悬停定的，用在这儿快得像闪一下。
+     ⚠ 起手 opacity:0、收尾 1，所以末尾那份 prefers-reduced-motion 里
+       必须把它拉回 opacity:1——只压时长不拉回来的话，靠 `both` 停在收尾态
+       虽然也对，但那块注释自己写着"凡是靠 animation 才显示出来的都要显式拉回来"，
+       这是那一条的执行，不是多余的。 */
+  animation: mmIn var(--mo) var(--ease-out) both;
+}
+@keyframes mmIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* 导图那一层自己也烧了一行署名（跟"存图"烧的是同一份，见 js/mindmap.js），
+   所以 mm 模式下要把画板那块水印收起来——不收就是同一行字在同一块地方出现两遍。 */
+.boardwrap.mmon .wm { display: none; }
+
+/* 画布。★ 宽高交给 CSS 的 100%，**别去写 `width` 属性**：
+   画布那块是 js 里按 devicePixelRatio 放大之后设的（见 mindmap.js 的 paint 那一段），
+   属性一旦被这里抢过去，屏幕上就变成一张放大的糊图。
+   ★ display:block 是必须的：行内元素底下会多出一条基线缝，
+   4px 左右，导图下面看着像掉了一块。 */
+.mmcanvas { display: block; width: 100%; height: 100%; }
 
 /* ---------- 右栏多页标签（见 js/tabs.js） ----------
    为什么在这儿：老版画板只有一块，模型画第二张图就把第一张盖掉了；一节课讲下来，
@@ -1523,12 +1832,27 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
        量过的账：360px 时 5 个孩子加间距要 333px、只有 331px 可用，
        现在收到 311px，留 20px 余量（不同机器字体宽一点窄一点都还放得下）。
        ⚠ 别改成"窄屏就把标题藏掉"——标题是这块面板里唯一说明"这是 GeoGebra"
-         的地方，而这次改名的理由正是它得说明白。 */
-  .boardbar { flex-wrap: wrap; row-gap: 6px; padding: 8px 10px; gap: 5px; }
+         的地方，而这次改名的理由正是它得说明白。
+
+     ★★★ 2026-10-02 再收一档（第三次，这次是因为多了「导图」）。
+       `.viewsw` 从两颗变三颗（见 index.html 那段注释：导图是第三个**视角**，
+       不是第七个工具按钮），实测 360px 上：
+         · 加完按钮没动内边距 → 需要 359 / 可用 331，**整行折成两行，栏高 50 → 88**
+         · 现在这一版 → 需要 319 / 可用 331，栏高 49，**还是一行**
+       余量 12px，比上面那次的 20px 紧。这是明知的取舍：不折行更重要，
+       而这一行折一次就是 38px——画板在 360px 上整块才 156px，那是它的四分之一。
+       ⚠ 12px 余量的前提是**按钮上的字全是汉字**（宽度不随字体浮动）。
+         唯一会浮的是标题那串 "GeoGebra"，实测各档都是 66px；
+         要是哪天标题变长了，先量 `test/_boardbarfit.cjs` 再动这儿，别凭感觉。
+       ⚠ 别顺手把 `.tool` 或 `.viewbtn` 再往 11px 收：12px 是这个高度上
+         还能读清的下限（多页标签那段写过同一条，两处是同一个数）。
+       ⚠ 402px 以上「导图」加进来是完全够的（402px 实测同样需要 319，
+         可用 373）——这档只为了 360px 那一台。 */
+  .boardbar { flex-wrap: wrap; row-gap: 6px; padding: 8px 10px; gap: 4px; }
   .boardbar .t { margin-right: auto; white-space: nowrap; }
   .boardbar .t span { margin-right: 6px; }
-  .boardbar .tool { font-size: 12.5px; padding: 5px 8px; }
-  .viewbtn { font-size: 12.5px; padding: 5px 8px; }
+  .boardbar .tool { font-size: 12px; padding: 5px 6px; }
+  .viewbtn { font-size: 12px; padding: 5px 5px; }
   .boardbar b, .boardbar em { display: none; }   /* 手机上标题只留那一串名字本身 */
 
   /* ★ 手机上让状态条**空着的时候别占地方**（2026-10-02）。
@@ -1568,7 +1892,8 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
     transition-duration: .001ms !important;
     scroll-behavior: auto !important;
   }
-  .msg, .chip, .kbhit, .resrow, .overlay .box { animation: none !important; opacity: 1 !important; }
+  .msg, .chip, .kbhit, .resrow, .overlay .box,
+  .mmwrap { animation: none !important; opacity: 1 !important; }
   .ghost { animation: none !important; opacity: .06 !important; }
   /* 多页标签上那个"还没画"的点也停（见上面 .tab .dot）。
      ⚠ 这里只要停，**不要**写 opacity——它的底色本来就在那儿，一关动效

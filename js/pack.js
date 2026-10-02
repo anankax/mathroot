@@ -197,10 +197,36 @@ SR.pack = (function () {
         return;
       }
       var files = r.res.files;
+
+      // ---- 思维导图（见 js/mindmap.js 的四点五）----
+      //
+      // ★ 孔老师 2026-10-02 的原话里，这一张和那些图是**并列**要的两件东西：
+      //   「生成一个包含了思维导图和需要的各种图形或者题目演示的图片的压缩包文件」。
+      //   链子的账在导图里，一节课的图在那几个 `01-` 里，两样都得能带走。
+      // ★ 排在**最前面**（unshift）：它是这一课的**总览**，不是第 1 步。
+      //   （解压软件多半按名字排，`01-` 那几个会排到它前面，那也没错——
+      //    数字打头的本来就该是讲的顺序。两种排法都说得通，不折腾。）
+      // ★★ 这一步**不碰画板**，所以放在 offscreenJob 外面：
+      //   导图是自己开一块 canvas 画的（跟"存图"同一套做法），
+      //   塞进去借画板反而多一层"等板子腾开"的风险。
+      // ★ 拿不到就当没有（toPNG 空场回空串，不抛）——**为了导图把整个包弄失败
+      //   是最差的结果**：老师和图都在，缺的只是一张总览。
+      var mm = false, mmUrl = '';
+      try { mmUrl = (SR.mm && SR.mm.toPNG) ? String(SR.mm.toPNG() || '') : ''; } catch (e) { mmUrl = ''; }
+      if (mmUrl) {
+        try {
+          files.unshift({ name: '思维导图.png', data: SR.figures.bytesOf(mmUrl) });
+          mm = true;
+        } catch (e) { mm = false; }
+      }
+
       files.push({ name: '备课全程.md', data: withBom(md) });
       cb({
         ok: true, name: fileName(), bytes: zip(files),
-        figs: files.length - 1, missed: r.res.missed,
+        // ★ figs 数是**图上**的张数（含导图）。真正装进包里的图片文件
+        //   = files.length - 1（那一个是 .md）。两句是同一个数，不是巧合：
+        //   → 唯一能进 files 的只有 "01-…png"、"思维导图.png" 和 "备课全程.md"。
+        figs: files.length - 1, mm: mm, missed: r.res.missed,
         // ★ 还回去了没有。没还回去（开场那份快照就没取到）时画板停在这一串的最后一张，
         //   跟改之前一样——但界面得**说出来**，不然老师会以为画板自己乱跳了。
         back: r.back !== false
@@ -219,6 +245,12 @@ SR.pack = (function () {
     fileName: fileName, shapeOf: shapeOf, figures: figures, markdown: markdown,
     withBom: withBom, make: make, save: save, isBusy: isBusy,
     count: function () { return turns.length; },
+    // ★ 2026-10-02 露给思维导图用（js/mindmap.js 的 refresh）。
+    //   导图画的**就是这一份账**——一个回合一条、带这一回合画出来的图。
+    //   导图那边另记一份的话，"打包里的图和导图上的图对不上"这种事
+    //   没有任何东西会报（它不会崩，只会慢慢地不对）。
+    turns: function () { return turns; },
+    topic: function () { return topic; },
     // 测试用：直接塞一批回复进去，不走界面（界面那条路见 js/chat.js 的 submit）
     __seed: function (list, t) { reset(); topic = t || ''; (list || []).forEach(function (x) { note(x.visible, x.ggb); }); }
   };

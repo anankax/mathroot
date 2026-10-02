@@ -9,7 +9,7 @@
 //
 // 产出两个东西：
 //   1. js/resource-index.js          —— 给网站读的（**被 .gitignore 挡住，不进仓库**）
-//   2. 24-知识库\06-本地素材总索引.md —— 给她备课翻的（按册、按节排好）
+//   2. 24-知识库\06-本地素材总索引.md —— 给他备课翻的（按册、按节排好）
 //
 // 用法:
 //   node test/build_resource_index.cjs            # 两个都生成
@@ -165,7 +165,7 @@ if (noBook.length) {
 if (process.argv.indexOf('--dry') >= 0) { console.log('\n--dry：没落盘。'); process.exit(0); }
 
 // ---- 1. 给网站读的 ----
-// ★ 这个文件被 .gitignore 挡着，只在她本机存在。公开站上没有它，
+// ★ 这个文件被 .gitignore 挡着，只在他本机存在。公开站上没有它，
 //   js/resources.js 加载失败就静静算了，界面上不会多出一个点了没反应的按钮。
 const js = [
   '// 本文件由 test/build_resource_index.cjs 生成，不要手改，也不要提交。',
@@ -183,7 +183,7 @@ const js = [
 fs.writeFileSync(OUT_JS, js, 'utf8');
 console.log('\n写好 ' + OUT_JS + '（' + (Buffer.byteLength(js) / 1024).toFixed(0) + ' KB，不进仓库）');
 
-// ---- 2. 给她备课翻的 ----
+// ---- 2. 给他备课翻的 ----
 const L = [];
 L.push('# 本地素材总索引（本机专用 · 不进仓库、不上站）');
 L.push('');

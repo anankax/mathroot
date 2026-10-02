@@ -13,7 +13,7 @@ SR.chat = (function () {
   var lastFail = null;       // 上一轮失败的提问，切完 Key 可以一键重发
 
   // 开场白。★ 每个工位**一句话**，就这么长。
-  //   2026-10-01 孔老师定了两回，第二回是骂醒的：她要的就是「告诉我你的问题」这一句。
+  //   2026-10-01 孔老师定了两回，第二回是骂醒的：他要的就是「告诉我你的问题」这一句。
   //   ★ 别再加第二句。加什么都算跑偏，试过两版都是这个下场：
   //     · 自述式（"我不判对错、不给答案、只顺着你的思路往下问…"）＝把工作方式念给学生听，像说明书
   //     · 补充式（"做错的、不会的都能发，整张卷子也行。先说说你想到哪一步了。"）
@@ -180,12 +180,95 @@ SR.chat = (function () {
   }
 
   // ---- 开场白重置 ----
-  function reset(newWork) {
+  // ============================================================
+  //  统一记忆（见 js/memo.js）——把这一场从浏览器里摆回屏幕上
+  // ============================================================
+  //
+  // ★ 这里跟 memo 是**一份数据的两个朝向**：memo 存的是原文（带围栏那个 raw），
+  //   重画照原文重画，喂给模型的 history 也照原文拼回来。
+  //   所以屏幕上恢复出来的一定就是发给它的那一条——不存在"看着对、发过去少了"。
+
+  function workLabel(id) {
+    var w = (SR.WORKS && SR.WORKS[id]) || {};
+    return w.label || id || '';
+  }
+
+  // 换了工位那一处插一条分界线。★ 它**不进 memo、不进 history**：
+  //   它只是给老师看的——"底下那些是另一道工序办的"。
+  //   塞进 history 的话，模型下一轮会看见一条它自己没说过的话，
+  //   而那句话在屏幕上看着完全正常，谁也不会往那儿想。
+  function addDivider(to) {
+    var el = document.createElement('div');
+    el.className = 'wdiv';
+    el.textContent = '换到「' + workLabel(to) + '」';
+    els.msgs.appendChild(el);
+  }
+
+  // 接着往下说的时候，也要把接缝补上。
+  //
+  // ★ 分界线有**两条路**要画，只做一条就会出这种事：
+  //   重画那条（repaintLog，刷新页面、切工位走它）里挨条比 w，
+  //   而**真说话的这条**（submit 里 addUser + assistant 气泡）根本不经过重画。
+  //   结果：当场说着话，两个工位的话**就这么连成一段**，中间什么也没有；
+  //   等刷新一下，那条线又冒出来了——**中间那段到底是不是同一个人说的，
+  //   屏幕给的答案前后不一致**（[[scanner-numbers-are-not-what-they-claim]] 那条：
+  //   同一个事实两处各算一遍，就得两处都算对）。
+  //   判据用**盘上最后一条的工位**，不是内存里的 work——切工位时内存已经换过去了。
+  function seamIfWorkChanged() {
+    if (!SR.memo) return;
+    var list = SR.memo.log();
+    if (!list.length) return;
+    var prev = list[list.length - 1].w;
+    if (prev && work && prev !== work) addDivider(work);
+  }
+
+  // 按记忆把这一场重画一遍。返回"到底摆回来了没有"——
+  //   空的那一场得退回开场白，不能留一块空白。
+  function repaintLog() {
+    if (!SR.memo) return false;
+    var list = SR.memo.log();
+    if (!list.length) return false;
+    els.msgs.innerHTML = '';
+    var prev = '';
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      // t.w = 说这句话的时候在哪个工位。变了就插一条分界线。
+      if (t.w && prev && t.w !== prev) addDivider(t.w);
+      if (t.w) prev = t.w;
+      if (t.r === 'u') addUser(t.t, []);
+      else addAssistantText(t.t);
+    }
+    scroll();
+    return true;
+  }
+
+  // 打包的账本（js/pack.js）照记忆重建一份。
+  // ★ 不重建的后果：刷新之后点「打包」，打出来的包里只有刷新之后那几轮——
+  //   而包看着是完整的，只有老师知道少了半场。
+  function seedPack() {
+    if (!SR.pack || !SR.pack.__seed) return;
+    var w = (SR.WORKS && SR.WORKS[work]) || {};
+    var list = SR.memo ? SR.memo.log() : [];
+    var rows = [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].r !== 'a') continue;
+      var p = SR.render.parseFences(list[i].t, { stripAssign: !!w.stripAssign });
+      rows.push({ visible: p.visible, ggb: p.ggb || [] });
+    }
+    SR.pack.__seed(rows, (SR.memo && SR.memo.pocket().topic) || '');
+  }
+
+  function reset(newWork, opts) {
     work = newWork || work;
-    history = [];
+    // ★★ 只有 ⟳ 走这一条（main.js 传 {wipe:true}）。
+    //   切工位、刷新页面**都不许清**——清空是一个动作，不是切工位的副作用。
+    //   （见 js/memo.js 顶上那三条。孔老师的原话：「除非我靠一个刷新按钮给他清了」。）
+    if (opts && opts.wipe && SR.memo) SR.memo.clear();
+    history = (SR.memo ? SR.memo.history() : []).slice();
     // ★ 打包的账本跟着这场对话一起清。不清的话，换了工位／点了 ⟳ 之后，
     //   新对话里点「打包」会打出一个**混着上一场图和文字**的包——
     //   而包里的东西看起来都正常，只有老师知道不对。
+    //   ⚠ 上面那句"清"跟这一句不矛盾：清了之后下面 seedPack() 又从记忆里重建一份。
     if (SR.pack) SR.pack.reset();
     els.msgs.innerHTML = '';
     clearChips();
@@ -194,7 +277,15 @@ SR.chat = (function () {
     //   反过来的话，那一页的存档记的是上一条链子最后那张图——老师点 ⟳ 换了工位，
     //   一开场就有一页带着上学期的图，而且他会以为是这一课画出来的。
     if (SR.tabs) SR.tabs.reset();
-    addAssistantText(OPENING[work] || OPENING.prep);
+    // 导图让开，回那块干净的画板。★ 换工位／点 ⟳ 之后开场就是"一张空画板"，
+    //   这时候导图上只剩「还没有东西」一句——留着它盖在画板上，
+    //   老师第一眼看到的是那块空白而不是开场白。
+    //   ⚠ 不用在这儿 refresh：关掉之后它的盒子是 0 宽，refresh 自己会返回；
+    //     真要看它，点开「导图」那一下 show() 会现算一次（数据也是现读 pack 的账）。
+    if (SR.mm) SR.mm.yieldToBoard();
+    // 这一场还有东西 → 摆回来；记忆是空的才拿开场白开张。
+    if (repaintLog()) seedPack();
+    else { history = []; addAssistantText(OPENING[work] || OPENING.prep); }
     // 输入框里的提示也跟着工位走。
     // ★ 原来那句"贴一道题，或者写一个课题，例如 3.1 代数式的值"是**写死在 index.html** 里的，
     //   于是切到「出材料」时它还挂在那儿——**提示的是一个这个工位不接的用法**。
@@ -206,6 +297,10 @@ SR.chat = (function () {
     //   一进来就摆出"复述／定位／追问"六格、第一格还点着，
     //   老师会以为现在就该按这个走，而那正是被改掉的那套固定五节。
     hideStepBar();
+    // ★ 摆回来的那一场，链子进度条得**按整段历史重推**（不然刷新一下条子就空了，
+    //   而链子还在对话里——老师会以为要重头再走一遍）。
+    //   repaintSteps 里量到没有节标题就自己把条子藏了，空场调它是安全的。
+    repaintSteps();
     setStatus('');
     els.input.focus();
   }
@@ -292,7 +387,7 @@ SR.chat = (function () {
     //   老师只能离开条子去点底下那句话。条子看得见却走不动，比不画还坏。
     //   现在：没报计划 → 一直有个「接着摆」；报了计划还没走完 → 点末尾那格灰的就行。
     // ★ 2026-10-02：这一格原来写的是「▶ 接着摆」。孔老师选的动词是「下一环节」
-    //   （原话「摆一节，这个摆是什么鬼意思」）——按钮上就直接用她那个词。
+    //   （原话「摆一节，这个摆是什么鬼意思」）——按钮上就直接用他那个词。
     if (stepSlots.length >= stepPlan) mk('▶ 下一环节', 'next', 'todo');
     // 「整条」永远在最后：它是这个工位的终点动作（链子的产物就是能拷走的一段文字）。
     mk('整条', 'close', '');
@@ -303,6 +398,25 @@ SR.chat = (function () {
     if (!say) return;
     clearChips();
     submit(say);
+  }
+
+  // 「老师说了这句话」——就是把一句话当老师打的字发出去。
+  //
+  // ★★ 2026-10-02 为思维导图开的口（js/mindmap.js 的 onClick：点一条淡下去的
+  //   岔路 = "换这条走"）。它和台阶条点一格（上面那个 stepGo）走的是**同一条路**：
+  //   一句人话丢进 submit，照常进 history、照常发给模型。
+  //   ⚠ 别再开一个"直接改状态"的口子（比如直接把 stepNow 拨过去）：那样这句话
+  //     就不在 history 里，下一轮模型看不见老师刚换了路，会接着按旧那条讲下去——
+  //     而且这种错**当场看不出来**，要等它讲到第二节才发现跟导图上选的路对不上。
+  //   ⚠ 名字没叫 `say`：上面 stepGo 里已经有个局部变量叫 `say`，同名会把它盖住
+  //     （JS 里变量声明优先于外层的函数声明），那边那句 `SR.stepJump(sd)` 还在，
+  //     但读的人会以为两处是同一个东西。对外仍然叫 `SR.chat.say`。
+  function teacherSays(text) {
+    var s = String(text || '').trim();
+    if (!s) return false;
+    clearChips();      // 换了路走，上一轮那几颗「接着问」就不作数了
+    submit(s);
+    return true;
   }
 
   // 换了工位之后把这一条重画一遍。★ 导出给 main.js 用：
@@ -470,7 +584,10 @@ SR.chat = (function () {
           pk.className = 'packbtn done';
           // ★ 少一张图必须**说出来**。悄悄给一个缺图的包，老师翻到那道题才发现，
           //   那时候他已经把包发给备课组了。（跟出材料那边"图没画出来要说明"同一条规矩。）
-          setStatus('已打包 ' + r.figs + ' 张图'
+          // ★ 「（含导图）」这四个字是给"数不上"准备的：老师数一下包里那几张
+          //   题目图，会觉得跟这句话里的数对不上（差的那一张是思维导图）。
+          //   不说明的话，他会以为包多装了什么，或者以为自己在什么地方点错了。
+          setStatus('已打包 ' + r.figs + ' 张图' + (r.mm ? '（含导图）' : '')
             + (r.missed ? '，有 ' + r.missed + ' 张没画出来、没进包' : '') + '。');
           setTimeout(function () {
             pk.textContent = '打包';
@@ -770,6 +887,11 @@ SR.chat = (function () {
       var hint = p.ggbInfo ? p.ggbInfo[msg.ggbDone] : '';
       if (SR.tabs) SR.tabs.drawHere(lines, hint);
       else if (!multi || msg.ggbDone === 0) SR.board.run(lines);   // 老路径（多页没装起来）
+      // 模型这一轮有图要画 → **把导图让开**，让老师看见它在画。
+      // ★ 跟 tabs.js 点标签、board 的 view 钩子走的是同一个动作（`SR.mm.yieldToBoard`），
+      //   一个名字三处调用——比让每处各自去猜"现在该不该切回画板"稳。
+      //   产品那条规矩：新东西出来了，直接切过去看，别抢了又不说。
+      if (SR.mm) SR.mm.yieldToBoard();
       // ★ 另外数一份"真画了东西的条数"：只有 #清空 的围栏不算画了图。
       //   实测带图那轮模型就爱发一个光秃秃的 ```ggb ⏎ #清空 ⏎ ```（它没东西可画）。
       //   要是拿 ggbDone 去判"它画没画"，就会以为它画了，本地补空数轴那条路会被顶掉。
@@ -800,6 +922,16 @@ SR.chat = (function () {
     if (!text && !parts.length) return;
     if (!SR.api.ready()) { SR.main.needKey(); return; }
 
+    // ---- 首屏拦一道（见 js/landing.js）----
+    // ★ 只在**这场对话的第一句话**上生效，而且只在这个框还是空场的时候：
+    //   它替老师把"这句话是五件里的哪一件"判出来、把工位按好，就放行——
+    //   所以大多数时候它**不改变发生的事**，只是顺便按了一颗按钮。
+    //   ⚠ 位置不能更早（`busy` 和"空话就别发"那两道闸之后），也不能更晚：
+    //     更早会连"没配 Key 该弹 Key 层"都抢走，更晚就已经把气泡画上去了。
+    //   ⚠ 也不能更晚到 `busy = true` 之后——它里面会调 applyWork，
+    //     那条路会 reset()，那就把刚画上去的气泡抹了。
+    if (SR.landing && SR.landing.intercept()) return;
+
     busy = true;
     els.send.disabled = true;
     if (forced == null) { els.input.value = ''; autoGrow(); }
@@ -808,6 +940,7 @@ SR.chat = (function () {
     pendingNote = '';
     renderStrip();
 
+    seamIfWorkChanged();
     addUser(text, parts);
     // 兜底按钮要判"这段对话走到哪儿了"，所以在推入这一轮之前先记两个东西
     var isFirstTurn = !history.some(function (m) { return m.role === 'assistant'; });
@@ -860,6 +993,18 @@ SR.chat = (function () {
         lastFail = null;
         history.push({ role: 'assistant', content: res.text });
         if (history.length > MAX_TURNS) history = history.slice(-MAX_TURNS);
+        // ★ 这一轮成了 → 记进浏览器里那份**统一记忆**（见 js/memo.js）。
+        //   **老师一条、模型一条，一起推**；而且只在这一支推——
+        //   失败那一支上面刚把 user 从 history 里 pop 掉了，只记模型那条的话
+        //   `SR.memo.history()` 就跟 `history` 对不上了，而"对不上"在屏幕上完全看不出来，
+        //   要等下一轮模型答得驴唇不对马嘴才会被人发觉，那时候已经查不到是这儿。
+        if (SR.memo) {
+          // ⚠ 这里一律写**长的那套词**（'user'/'assistant'），别写 'u'/'a'：
+          //   memo.js 两种都收（见那边 pushTurn 的注释），照抄上面 history.push 的措辞
+          //   读起来才对得上——这是"同一件事的两个朝向"该有的样子。
+          SR.memo.pushTurn('user', SR.api.userContent(text, parts), work);
+          SR.memo.pushTurn('assistant', res.text, work);
+        }
         paint(msg);
         // ★ 2026-10-01 砍掉了原来那段**空气泡兜底**（学生说"画不出来"时本地补一张空数轴、
         //   再代它招呼一句）。它是纯学生侧的东西，四个工位里一个都不需要：
@@ -883,6 +1028,22 @@ SR.chat = (function () {
         var nowAt = SR.inferStep({ prevAssistant: String(res.text || '') });
         if (nowAt) stepNow = nowAt;      // 读不出来 = 原地不动，绝不退回第 1 节
         renderSteps();
+        // 口袋里添了什么。★ 位置**必须压在 absorbChain 后面**：它记的「链」是
+        //   已经摆到第几节，而节号就是上面那一句刚吃进来的。放到前面去，
+        //   口袋里永远写着上一轮的节数——刚摆完第 5 节，那儿还写着 4。
+        // ★ 一律**照这一轮的原文数**，数不出来的一项就干脆不记：
+        //   宁可口袋里没有这一项，也不要写一个不是那么来的数进去
+        //   （这就是 [[scanner-numbers-are-not-what-they-claim]] 那条教训——
+        //    口袋上那个数，老师会当成事实读）。
+        if (SR.memo) {
+          var wp = SR.render.parseFences(res.text, { stripAssign: !!((SR.WORKS[work] || {}).stripAssign) });
+          SR.memo.produced(work, {
+            fig: (wp.ggb || []).length,                                  // 这一轮开了几个 ```ggb 围栏 = 几张图
+            prob: (res.text.match(/(^|\n)\s*#\d+/g) || []).length,        // 编号行 = 出了几道题
+            paper: (msg.matFed && msg.matFed.ok) ? 1 : (wp.mat || []).length,  // 这一轮排出了几份材料
+            chain: stepSlots.length                                      // 已经摆到第几节
+          });
+        }
         // 出材料：收完流了，**现在才画配图**（流式期间只摆文字，理由见 material.js 的 finish）。
         // ★ 放在这儿而不是 paint() 里：paint 每收到一截就调一次，
         //   在那儿画会让画板反复重画几十遍。
@@ -909,7 +1070,20 @@ SR.chat = (function () {
         //   空档，点下去少一段。
         var ti = SR.pack ? SR.pack.note(msg.lastVisible || res.text, msg.ggbAll || []) : null;
         if (SR.WORKS[work] && SR.WORKS[work].copy) attachCopy(b, msg.lastVisible || res.text, ti);
+        // 思维导图跟着这一轮长出来（js/mindmap.js 的 refresh）。
+        // ★★ 位置**必须在这一句 SR.pack.note 后面**：导图画的正是那份账本
+        //    （SR.mm.chainDoc 读的是 SR.pack.turns()）。放到前面去，导图就永远
+        //    **慢一轮**——刚摆完这一节，导图上还停在上一节，而下一轮一画又对上了，
+        //    于是这种错看着像"偶发的延迟"，没人会往顺序上想。
+        //    （孔老师原话：「右边的画板应该要可以有思维导图的同步形成」。）
+        // ★ 导图没开着的时候这条几乎不花时间：refresh 一量到它的盒子是 0 宽
+        //   （display:none）就直接返回，不会白画一张。
+        if (SR.mm) SR.mm.refresh();
         setStatus(SR.api.usageText());
+        // ★ 流水线的最后一步（「摆到屏幕上」）**收到这儿才算完**：
+        //   认链子、摆围栏、画配图、挂「复制这段」、刷导图——全都在这几行里发生。
+        //   让 api.js 去标它就会写成"模型说完的时刻"，那是另一个时刻（见 js/flow.js 的 paintDone）。
+        if (SR.flow) SR.flow.paintDone('链子、围栏、图、台阶都摆完了');
       }
     }).catch(function (e) {
       msg.streaming = false;
@@ -1006,10 +1180,22 @@ SR.chat = (function () {
   return {
     init: init, reset: reset, submit: submit,
     retryLast: retryLast,              // 切完 Key 重发上一轮（main.js 用它）
+    // ★ 2026-10-02：给思维导图用——点一条淡下去的岔路 = 老师说「先走第 N 条路。」
+    //   （见 js/mindmap.js 的 onClick 和上面 teacherSays 那段）。
+    //   点得动就回 true；空话回 false，导图那边据此什么也不做。
+    say: teacherSays,
     onPlayState: onPlayState,          // 交给 board.init 当回调
     setStatus: setStatus,
     setWork: function (w) { work = w; },
     getWork: function () { return work; },
+    // 「这一份」那三格改完名字要把焦点还给输入框（见 js/memo.js 的 edit）。
+    // ★ 不给回来的话：改完课题，光标落在一个刚被删掉的元素上，老师接着敲字
+    //   **一个字都进不去**——而屏幕上什么都正常，看着像键盘坏了。
+    focusInput: function () { if (els.input) els.input.focus(); },
+    // 这一场里老师**说过话**没有。首屏只看第一句话（见 js/landing.js 的 blocking）：
+    // 判据取"历史里有没有 user"，不取"屏幕上有没有气泡"——开场白也是一个气泡，
+    // 拿气泡数去判的话，一进来就被判成"已经开说了"，首屏永远不出现。
+    hasUser: function () { return history.some(function (m) { return m.role === 'user'; }); },
     // ★ 切工位一律走这个。备课↔讲评是**同一条链的两个阶段**，切过去不清历史，
     //   进度条就该**按整段历史重新推出来**，而不是被打回零。
     //   （原来这里还导出一个 paintStepBar，2026-10-02 删了：格数现在是动态的，

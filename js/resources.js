@@ -2,7 +2,7 @@
 //
 // ★ 这份索引**不进仓库、不上公开站**。它由 test/build_resource_index.cjs 在孔老师
 //   本机扫出来，写着"哪一节手上有哪些课件/教案"——学科网、出版社、别人的课程，
-//   著作权都不在她手上，一放上公开网页就等于再传播一份（详见
+//   著作权都不在他手上，一放上公开网页就等于再传播一份（详见
 //   24-知识库\05-后备资源（本地素材索引·不随站发布）.md）。
 //   所以：文件只在**本机跑起来的**页面上存在；公开站上它根本不存在，
 //   这个模块探测不到就什么都不做——不会多出一个点了没反应的按钮。
@@ -33,7 +33,7 @@ SR.resources = (function () {
     var s = document.createElement('script');
     s.src = SRC;
     s.onload = function () { state = window.SR.RESOURCES ? 'ready' : 'missing'; flush(); };
-    // 文件不在（公开站、或者她还没生成过）——静静算了，这不是错误。
+    // 文件不在（公开站、或者他还没生成过）——静静算了，这不是错误。
     s.onerror = function () { state = 'missing'; flush(); };
     document.head.appendChild(s);
   }
