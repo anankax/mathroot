@@ -251,9 +251,11 @@ SR.chat = (function () {
       b.className = 'stepbtn' + (cls ? ' ' + cls : '');
       b.setAttribute('data-step', sd);
       b.textContent = label;
+      // ★ 2026-10-02：title 跟 SR.stepJump 的措辞一起改（原来写的是「接着往下摆」「把链子摆到这一节」）。
+      //   老师对着一格上的名字点下去，看到的提示词得说"走到那个环节"，不能又说"摆第 N 节"。
       b.title = (sd === 'close') ? '把整条链子一次摆完，好整段拷走'
-        : (sd === 'next') ? '接着往下摆'
-          : '把链子摆到这一节';
+        : (sd === 'next') ? '接着往下走'
+          : '把链子走到这个环节';
       b.addEventListener('click', function () { if (!busy) stepGo(sd); });
       box.appendChild(b);
       return b;
@@ -268,13 +270,15 @@ SR.chat = (function () {
       if (s.n === stepNow) b.setAttribute('aria-current', 'step');
     }
     for (var k = stepSlots.length; k < stepPlan; k++) mk('待定', k + 1, 'todo');
-    // 「▶ 接着摆」兜着——**只要没走到计划尽头就一定有得点**。
+    // 「▶ 下一环节」兜着——**只要没走到计划尽头就一定有得点**。
     // ★ 判据是 `槽位 >= 预排`，不是原来那个 `!stepPlan`：
     //   旧写法下"摆了 2 节、当初没报计划"这种情况，预排被补齐成 2 = 槽位 2，
     //   于是灰格补 0 格、「接着摆」也不画 —— **条子上一个能往前走的格子都没有**，
     //   老师只能离开条子去点底下那句话。条子看得见却走不动，比不画还坏。
     //   现在：没报计划 → 一直有个「接着摆」；报了计划还没走完 → 点末尾那格灰的就行。
-    if (stepSlots.length >= stepPlan) mk('▶ 接着摆', 'next', 'todo');
+    // ★ 2026-10-02：这一格原来写的是「▶ 接着摆」。孔老师选的动词是「下一环节」
+    //   （原话「摆一节，这个摆是什么鬼意思」）——按钮上就直接用她那个词。
+    if (stepSlots.length >= stepPlan) mk('▶ 下一环节', 'next', 'todo');
     // 「整条」永远在最后：它是这个工位的终点动作（链子的产物就是能拷走的一段文字）。
     mk('整条', 'close', '');
   }

@@ -151,9 +151,36 @@ const CASES = [
   }
 ];
 
+// ★★ 2026-10-02 修：这里原来传的是 `{ student: ... }`，而产品的选项早就改名成
+//   `stripAssign`（见 js/render.js 规则三那段注释、`SR.WORKS[x].stripAssign`）。
+//   于是三条"赋值也删"的格子**一直在红**——而红的原因是**尺子喊错了参数名**，
+//   跟产品对不对毫无关系。这比一段没写的检查更坏：它红着，别的红就没人看得见了。
+//   ⚠ 用例名里那个「学生」是旧说法的残留（当年是"学生版删、演示版留"，
+//     现在是"备课／讲评删、画图／出题留"）。**语义没变**（一个开关的开与关），
+//     所以夹具一个字不动，只把递给产品的那个名字改对。
+// ★ 选项名只在这一个常量里写一次：下面既用它递参数，也拿它去产品源码里核。
+//   （这样"尺子喊错名字"这件事本身有一个断言盯着，而不是等它变成一片红。）
+const OPT_STRIP = 'stripAssign';
+
+// ---- 尺子自检：产品源码里真的要读这个名字吗 ----
+// ★ 这一格是为上面那次翻车写的：参数名被改掉之后**尺子不会自己知道**，
+//   它只会一直红，而红的样子跟"产品坏了"长得一模一样。所以直接去源码里找
+//   `opts.<名字>`。找不到 = 我们喊的名字产品根本没在听，**上面每一条都不算数**。
+const SRC = fs.readFileSync(path.join(__dirname, '..', 'js', 'render.js'), 'utf8');
+const nameOK = SRC.indexOf('opts.' + OPT_STRIP) >= 0;
+if (!nameOK) {
+  console.log('★★★ 尺子喊的选项名（opts.' + OPT_STRIP + '）在 js/render.js 里找不到 ——');
+  console.log('    说明产品改过参数名了。**下面那些红绿一条都别信**，先把名字对齐：');
+  console.log('    语法：grep -n "opts\\." js/render.js');
+  process.exit(3);
+}
+console.log('尺子自检：产品确实在读 opts.' + OPT_STRIP + '  ✓');
+console.log('');
+
 let bad = 0;
 for (const c of CASES) {
-  const p = R.parseFences(c.in, { student: c.mode === 'student' });
+  const opts = {}; opts[OPT_STRIP] = c.mode === 'student';
+  const p = R.parseFences(c.in, opts);
   const got = p.visible;
   const okV = got === c.want;
   const okG = c.ggb == null || p.ggb.length === c.ggb;

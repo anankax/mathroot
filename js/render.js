@@ -161,10 +161,98 @@ SR.render = (function () {
     } catch (e) {}
   }
 
+  // ---- 兜底：模型写裸 LaTeX 的时候，自己把 `$` 补上 ----
+  // ★★ 2026-10-02 新增。孔老师截图里那句话：「首先为什么数学公式显示不出来，frac 还在」
+  //   —— 屏幕上原样印着 `(1 \frac{1}{2})`。
+  //   根因在提示词那一头（备课那四份**从来没要求过用 `$` 包公式**，见 js/prompt-prep.js
+  //   新加的「数学式子怎么写」一节）。但**提示词是软的**：就算改了，模型这几轮多半还写裸的。
+  //   这一道是硬的——**认得出 `\frac` 这种命令，就自己给它包上 `$`**。
+  //
+  // ★ 为什么在**文本节点**上做，不在 markdown 源码上做：
+  //   在源码上插 `$...$` 得先绕开 markdown 的 `_`／`*`，还得挑一个净化前后都安全的时机
+  //   （塞早了会被 marked 当普通字符，塞晚了过不了 DOMPurify），一串占位符搬运，
+  //   能出错的地方多。在文本节点上做时**markdown 已经跑完了**，没有第二次解释，
+  //   也就没有第二轮误伤。
+  //   ⚠ 代价（**知道的边界，不是没想到**）：一段数学里要是 `x_1` 和 `x_2` 先被 marked
+  //     认成了斜体，到这一层就晚了，那一处会显示成斜体而不是公式。中文回复里这种形状很少，
+  //     真撞上也比整片乱码轻。要根治得改提示词那一头的写法，见 probe_math.cjs 的边角。
+  //
+  // ★ 只认**已知的 LaTeX 命令名**，不做"见到反斜杠就包"：
+  //   中文回复里 `\` 还会出现在路径、转义里，见一个包一个是自找假警报。
+  // ★ 名单末尾那个 `\^\{` 是**上标**（`x^{2}`）：它一个命令都不含，可屏幕上
+  //   "x^{2}" 跟 "\frac" 一样是没法看的样子，所以单独收一档。
+  //   ⚠ 下标 `_` **故意不收**：markdown 比我们先看到它（`x_1` 和 `x_2` 会被 marked
+  //     认成斜体并改写成 <em>），等轮到我们这一层，原文已经不在文本节点里了——
+  //     收了也是白收，反而会让"没包上"看起来像我们的 bug。要根治得改提示词的写法。
+  var RE_BARE = /(?:\\(?:frac|dfrac|tfrac|sqrt|times|div|cdot|pm|mp|le|leq|ge|geq|ne|neq|approx|equiv|angle|triangle|parallel|perp|circ|infty|pi|alpha|beta|gamma|theta|lambda|mu|sigma|omega|overline|underline|vec|left|right|begin|end|ldots|cdots|quad|qquad|text|mathrm|operatorname|log|sin|cos|tan)\b|\^\{)/;
+  // "长得像数学"的字符集。★ 中文字符**不在**里头 —— 这就是切段的边界：
+  //   「算得x=\frac{1}{2}再代回」里，"x=\frac{1}{2}" 成一段，"算得"和"再代回"各成一段。
+  var MATH_CH = /[A-Za-z0-9\\{}^_=+\-*\/.,;:|()\[\]<> \t]/;
+  var SKIP_TAG = { PRE: 1, CODE: 1, SCRIPT: 1, STYLE: 1, TEXTAREA: 1 };
+
+  // ★★ 这一段是**纯函数**，故意从 DOM 里剥出来：
+  //   仓库里所有"判得对不对"的东西都要能在 node 里量（见 test/probe_plan.cjs 顶上那段），
+  //   而 armLatex 要 document。剥出来之后 test/probe_math.cjs 能直接喂字符串量边角，
+  //   **不用开浏览器、不花额度**——只有"KaTeX 到底认不认它包出来的东西"那一层才留给浏览器。
+  //   返回 {text, changed}，不是就地改。
+  function armText(s) {
+    s = String(s == null ? '' : s);
+    // ★ 已经有 `$` 的**一个字都不动**：那一头归 renderMathInElement 管。
+    //   这道闸兼职防"重复包"——同一段被 arm 第二遍时，会因为看见 `$` 直接退出。
+    if (s.indexOf('$') >= 0) return { text: s, changed: false };
+    if (!RE_BARE.test(s)) return { text: s, changed: false };
+    var out = '', i = 0, changed = false;
+    while (i < s.length) {
+      if (!MATH_CH.test(s.charAt(i))) { out += s.charAt(i); i++; continue; }
+      var j = i;
+      while (j < s.length && MATH_CH.test(s.charAt(j))) j++;
+      var run = s.slice(i, j);
+      // ★ 首尾的空白要**留在公式外面**：切段是按"数学字符集"切的，而空格算数学字符，
+      //   所以 「答案是 \sqrt{3} 厘米」 切出来的那一段是 " \sqrt{3} "，两头各带一个空格。
+      //   直接包成 `$ \sqrt{3} $` 也能渲染，可导出的文字里会多两个空格，
+      //   以后对着屏幕和导出的文件查差异时会变成一处说不清的神秘不同。顺手夹掉。
+      var lead = run.match(/^[ \t]*/)[0];
+      var tailSp = run.match(/[ \t]*$/)[0];
+      var core = run.slice(lead.length, run.length - tailSp.length);
+      // ★ 这一整段里得**真有命令**才包。否则 "x = 3" 这种普通写法也会被裹进公式——
+      //   中文句子里等号到处都是，那就等于把整句话喂给 KaTeX 了。
+      //   （core 为空时 RE_BARE.test('') 为假，会原样吐回 run，不会包出 `$$`。）
+      if (RE_BARE.test(core)) { out += lead + '$' + core + '$' + tailSp; changed = true; }
+      else out += run;
+      i = j;
+    }
+    return { text: out, changed: changed };
+  }
+
+  function armNode(node) {
+    if (!node || !node.data) return;
+    var r = armText(node.data);
+    if (r.changed) node.data = r.text;
+  }
+
+  // 走一遍整棵子树的文本节点，跳过代码块（那儿的原文一个字都不许动）。
+  function armLatex(root) {
+    if (!root || !document.createTreeWalker) return;
+    var walker, node, hit = [];
+    try {
+      walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    } catch (e) { return; }
+    while ((node = walker.nextNode())) {
+      var p = node.parentNode;
+      if (p && SKIP_TAG[p.nodeName]) continue;
+      if (node.data.indexOf('```') >= 0) continue;
+      hit.push(node);
+    }
+    // ★ 先收齐再改：边走 walker 边改数据虽然合法，但收一遍更好查也更稳。
+    for (var i = 0; i < hit.length; i++) armNode(hit[i]);
+  }
+
   function renderInto(el, text) {
     el.innerHTML = md(text);
+    armLatex(el);              // ← must run **before** typeset：它负责把裸的 `$...$` 补出来
     typeset(el);
   }
 
-  return { esc: esc, parseFences: parseFences, md: md, typeset: typeset, renderInto: renderInto };
+  return { esc: esc, parseFences: parseFences, md: md, typeset: typeset,
+           armText: armText, armLatex: armLatex, renderInto: renderInto };
 })();
