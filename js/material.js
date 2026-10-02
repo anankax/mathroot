@@ -48,6 +48,17 @@ SR.material = (function () {
     el.className = kind === 'err' ? 'err' : (kind === 'ok' ? 'ok' : '');
   }
 
+  // ★ 规矩只有一条：**`cur` 一变就调这里**。
+  //   产物栏顶上那行「版式：正在用「XX」」是照着 `cur` 写的（SR.paintTpl）。
+  //   原来 `cur` 是个纯内存状态、界面上一个字都不说——老师传完模板、刷新一下，
+  //   restore 悄悄把它接回来了，而看板还是"通用格式"，他以为模板丢了。
+  //   加这一句之后，选／传／删／接回来四条路都会自己重画。
+  //   ⚠ 不要因为"某一条路上调用方也会重画"就把某处的 notify 省掉——
+  //     少一处，那一处的界面就永远是上一次的值，而没有任何东西会报。
+  function notify() {
+    if (typeof SR.paintTpl === 'function') SR.paintTpl();
+  }
+
   function paint() {
     if (!SR.tpl) return Promise.resolve();
     return SR.tpl.all().then(function (list) {
@@ -88,6 +99,7 @@ SR.material = (function () {
         .then(function (t) {
           cur = t;
           remember(t.id);
+          notify();
           say('读好了。下面这张卡是**它认出来的东西**——认错了可以改。', 'ok');
           card(t);
           return paint();
@@ -204,6 +216,7 @@ SR.material = (function () {
       if (!t) return null;
       cur = t;
       remember(t.id);
+      notify();
       say('好，接下来出材料就用「' + t.name + '」这份版式。', 'ok');
       return paint().then(function () { return t; });
     });
@@ -237,6 +250,7 @@ SR.material = (function () {
       if (!t) return null;
       cur = t;
       remember(t.id);
+      notify();
       return t;
     }).catch(function () { return null; });
   }
@@ -246,6 +260,7 @@ SR.material = (function () {
       if (cur && cur.id === id) {
         cur = null;
         try { localStorage.removeItem(LS_TPL); } catch (e) {}
+        notify();
       }
       return paint();
     });
@@ -362,7 +377,9 @@ SR.material = (function () {
     feed: feed, finish: finish,
     restore: restore,
     current: function () { return cur; },
-    setCurrent: function (t) { cur = t; }
+    // 目前没有调用方。留着它，但**也走 notify()**——绕过通知的口子只要开一条，
+    // 界面就会在"没人记得要走 notify"的那条路上停在旧值上。
+    setCurrent: function (t) { cur = t; notify(); }
   };
 })();
 

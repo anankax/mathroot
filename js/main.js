@@ -384,12 +384,30 @@ SR.main = (function () {
       if (e.key === 'Enter' && $('keyset').classList.contains('open')) saveKey();
     });
 
-    // ---- 左栏「我的」区 ----
+    // ---- 左栏下组 ----
     $('aboutbtn').addEventListener('click', function () { openOverlay('about'); });
 
-    // ---- 我的模板 ----
-    // ★ 出材料的地基。**模板是每个老师传自己的**，站里不预置任何一所学校的模板。
+    // ★ "这一趟是不是在本机"——左栏下组那三颗按钮**共用一个判据**，别各判各的。
+    //   2026-10-02 之前只有「知识库」在用（当时「备课卡片」是对访客公开的），
+    //   现在备课卡片也收进来了，所以提到外面算一次。
+    //   判据跟 js/kb.js 的 local() 是同一套：localhost／127.0.0.1／file://／空 host。
+    var isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1' ||
+                  location.protocol === 'file:' || location.hostname === '';
+
+    // ---- 模板库（住在「组卷」产物栏的「版式」那一行里）----
+    // ★ 组卷的地基。**模板是每个老师传自己的**，站里不预置任何一所学校的模板。
     //   列表、上传、解析、「我认出来的是」那张卡，都在 js/material.js 里。
+    // ★ 2026-10-02 从左栏「我的」区搬进「组卷」的产物栏（#tplbar）。搬完多了
+    //   一件事：它得**说出当前用的是哪一份**（#tplnow）。原来只有"选中了"这个
+    //   内存状态，开机 restore() 接回来的那份**界面上一个字都不说**。
+    SR.paintTpl = function () {
+      var el = $('tplnow');
+      if (!el) return;
+      var t = (SR.material && SR.material.current) ? SR.material.current() : null;
+      el.textContent = t ? ('正在用「' + t.name + '」') : '还没选模板 · 出的是通用格式';
+      el.classList.toggle('on', !!t);
+    };
+
     var tb = $('tplbtn');
     if (tb && SR.material) {
       tb.addEventListener('click', function () { openOverlay('tpl'); SR.material.open(); });
@@ -397,16 +415,25 @@ SR.main = (function () {
       //   不接的话，刷一次页面 `cur` 就空了——老师传完模板、刷新一下，
       //   再说"出第五周的周练卷"，模型手上没有格式号表，就会跟他正常聊天、什么都不出。
       //   他看到的只是"它坏了"。验收线是「打开就能直接印」，所以这一步不能省。
+      //   ★ 接回来之后那一行会自己重画：js/material.js 里定了一条规矩——
+      //     **cur 一变就调 SR.paintTpl()**（选／传／删／接回来四处都调）。
+      //     不重画的话，界面上一直写着"还没选模板"，而模型手上其实已经有版式表了；
+      //     "它自己知道、界面上不说"正是这一行要消灭的东西。
       SR.material.restore();
     }
+    SR.paintTpl();
 
-    // ---- 备课卡片（公开）----
-    // ★ 跟下面那个「知识库」面板**是两件事**，别往一处合：
-    //   这个公开，给老师备课时查（只列条目正文，没有分数）；
-    //   那个只在本机出现，给编目的人验召回（分数、阈值）。
+    // ---- 备课卡片 ----
+    // ★ 2026-10-02 改：**只在本机出现**了（原来对访客公开）。孔老师的原话是
+    //   "那个我的的内容也需要去掉……不要给使用的人看到了"。
+    //   它列的是那 118 条追问条目库——她自己写的，本来公开无妨；现在收成只给她
+    //   自己备课时查。门禁跟下面「知识库」同一套判法（判是不是本机）。
+    // ★ 跟「知识库」面板仍是两件事，别往一处合：
+    //   这个只列条目正文（没有分数）；那个显示分数和阈值，给编目的人验召回。
     //   渲染与装载都在 js/cards.js 里，那边只读 SR.ZHUAWEN，碰都不碰教材索引。
     var cb = $('cardbtn');
-    if (cb && SR.cards) {
+    if (cb && SR.cards && isLocal) {
+      cb.style.display = '';
       cb.addEventListener('click', function () { openOverlay('cards'); SR.cards.open(); });
     }
 
@@ -434,9 +461,7 @@ SR.main = (function () {
     //   这个面板显示分数和阈值，是给编目的人看的，门禁判的是"是不是本机"。
     var kb = $('kbbtn');
     if (kb && SR.kb) {
-      var local = location.hostname === 'localhost' || location.hostname === '127.0.0.1' ||
-                  location.protocol === 'file:' || location.hostname === '';
-      if (local) {
+      if (isLocal) {
         kb.style.display = '';
         kb.addEventListener('click', openKB);
         var kq = $('kbq');

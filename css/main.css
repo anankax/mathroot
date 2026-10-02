@@ -462,6 +462,25 @@ main {
 .outempty { margin: 0; font-size: 13px; line-height: 1.8; color: var(--ink-3); }
 .outempty strong { color: var(--brand); }
 
+/* 版式那一行（「组卷」独有）。★ 它住在 .outbox 里，于是**天然只在组卷这一格出现**
+   ——.outbox 本来就只在 material 工位显示，不用再写一条 `body[data-work]` 的显隐规则。
+   里面三样：标签「版式」／当前是哪一份（#tplnow）／进模板库的按钮。
+   ★ #tplnow 用省略号而不是折行：模板名是老师自己起的文件名，可能很长；
+     折行会把这一行撑成两行、把产物区顶下一截，而这一行只是**状态**，不是内容。 */
+.tplbar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 9px;
+  padding: 7px 15px; font-size: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.tplbar .k { flex: 0 0 auto; color: var(--ink-3); letter-spacing: 1.5px; }
+.tplbar .v {
+  flex: 1 1 auto; min-width: 0; color: var(--ink-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 有模板的时候给它一点分量——"用上了"和"还没选"得一眼分得开 */
+.tplbar .v.on { color: var(--brand); font-weight: 700; }
+.tplbar .tplbtn { font-size: 12px; padding: 4px 10px; }
+
 /* ★ 不在出材料工位时，产物栏整块收起，画板自动占满整栏。
    一个工位不产东西，"产物"那栏就该消失——留着一个空框比没有更难看。 */
 body:not([data-work="material"]) .outbox { display: none; }
