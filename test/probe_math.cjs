@@ -248,8 +248,16 @@ const LIVE_CASES = [
     };
     const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-    await send('Page.navigate', { url: 'http://localhost:8138/index.html' });
-    await sleep(1200); await send('Page.reload', { ignoreCache: true }); await sleep(3000);
+    // ★★ 量哪儿是可以指定的：`SITE=https://anankax.github.io/mathroot/index.html`。
+    //   孔老师的规矩是「UI 验收看线上，不看本地截图」——所以这条 B 腿最该量的地方
+    //   就是线上那一份。默认仍是本机 8138（快、改完立刻能验）。
+    const SITE = process.env.SITE || 'http://localhost:8138/index.html';
+    console.log('  （量的地方：' + SITE + '）');
+    await send('Page.navigate', { url: SITE });
+    await sleep(1200);
+    // ★ 硬重载：同域的普通导航会吃缓存，会把**已经生效的改动**误判成"没生效"。
+    await send('Page.reload', { ignoreCache: true });
+    await sleep(3000);
 
     // 尺子自检：页面里得有真的 renderInto 和真的 KaTeX，否则下面读到的 0 全是假的。
     // ★★ 这里必须**等条件成立**，不能睡死一个固定秒数。
