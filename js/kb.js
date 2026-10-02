@@ -1,9 +1,19 @@
-// 知识库：两份**自己写**的语料的按需装载口，外加一处早就该补的召回修正。
+// 知识库：两份语料的按需装载口，外加一处早就该补的召回修正。
 //
-// 语料是哪两份（都是孔老师自己整理的，所以在公开站上也放得下）：
-//   ① 教材索引   js/textbook.js  —— 苏科版四册的章节脉络 + 书上原话
+// 语料是哪两份：
+//   ① 教材索引   js/textbook.js  —— 苏科版四册的章节脉络，含 78 处【书上原话】
 //   ② 追问条目库 js/zhuawen.js   —— 六册 118 条，按"学生说到哪儿了"分五档的追问问法
-//   两份加起来 117 KB。原来它们挂在 index.html 的 <script defer> 上，
+//
+// ★★ 两份的**公开性不一样**，代码上也分开走，别当成一对：
+//   · js/zhuawen.js 是孔老师**自己写**的，公开站上放得下。
+//   · js/textbook.js 里是**课本定义和法则的原文**。按 .gitignore 里那条判据——
+//     "就算界面上不显示，文件本身也已经发出去了"——它一进仓库就等于公开了。
+//     所以它**不进仓库**：只在孔老师**本机**跑起来的页面上加载；公开站上
+//     连这一次请求都不发（见下面的 local()），控制台里不会多一行 404。
+//     本机拿不到（比如她还没跑过生成脚本）就退回"没检索到"那一档，
+//     跟这个模块加进来之前一模一样——**永远不许挡住对话**。
+//
+// 两份加起来 117 KB。原来它们挂在 index.html 的 <script defer> 上，
 //   **首屏就得下载、得解析**——可它们真正派上用场，是学生在输入框里敲下第一句话、
 //   点发送的那一刻。中间这段时间纯属白等。所以挪到这儿：第一次真要检索了才去拿。
 //
@@ -25,8 +35,10 @@ SR.kb = (function () {
   // 比如将来那批"给学生巩固用的同类题"，定好格式之后加：
   //   { key: 'TIMU', src: 'js/kb-timu.js', what: '同类题' }
   // ★ 别先添一行指向还不存在的文件——那会在控制台留一条 404，看着像本站坏了。
+  // ★ localOnly: true = **只在本机加载**，公开站上连请求都不发（见 local()）。
+  //   加这一条是因为教材索引是课本原文，不进仓库；另见本文件顶上那段。
   var FILES = [
-    { key: 'TEXTBOOK', src: 'js/textbook.js', what: '教材索引' },
+    { key: 'TEXTBOOK', src: 'js/textbook.js', what: '教材索引',   localOnly: true },
     { key: 'ZHUAWEN',  src: 'js/zhuawen.js',  what: '追问条目库' }
   ];
 
@@ -62,17 +74,33 @@ SR.kb = (function () {
   //   条目，模型会顺着它跑偏；**没给**就退回加知识库之前那一档，本来就是这个系统的默认样子。
   var CUT = { zhuawen: 10, textbook: 6 };
 
+  // ★ 只有**本机**才去拿 js/textbook.js——课本原文不进仓库，公开站上它根本不存在。
+  //   判法照抄 js/resources.js 的 local()：公开站上**连这一次请求都不发**，
+  //   控制台里不会多一行 404（本文件顶上那句"别让 FILES 指向不存在的文件"是同一个道理）。
+  //   判据全用 location，不依赖任何构建期的开关——本机和公开站跑的是同一份代码。
+  function local() {
+    var h = location.hostname;
+    return h === 'localhost' || h === '127.0.0.1' || h === '' || location.protocol === 'file:';
+  }
+
   var tried = false;
   var wakers = [];
+
+  // 这一台机器上**该拿**的语料。公开站上"该拿的"只有追问条目库那一份。
+  function applicable() {
+    var out = [];
+    for (var i = 0; i < FILES.length; i++) if (!FILES[i].localOnly || local()) out.push(FILES[i]);
+    return out;
+  }
 
   // 已经拿到了几份。★ 每次都现读 window.SR，不缓存——
   //   兜底放行之后脚本才姗姗来迟的话，下一轮问它，答案就该是"到了"。
   function got() {
-    var out = [];
-    for (var i = 0; i < FILES.length; i++) if (window.SR[FILES[i].key]) out.push(FILES[i].key);
+    var out = [], want = applicable();
+    for (var i = 0; i < want.length; i++) if (window.SR[want[i].key]) out.push(want[i].key);
     return out;
   }
-  function has() { return got().length === FILES.length; }
+  function has() { return got().length === applicable().length; }
 
   function flush() {
     var ws = wakers; wakers = [];
@@ -84,17 +112,20 @@ SR.kb = (function () {
     if (cb) wakers.push(cb);
     if (tried) { flush(); return; }        // 试过了，立刻按**现在**的状态回话
     tried = true;
-    var left = FILES.length, settled = false;
+    var want = applicable();
+    var left = want.length, settled = false;
     function settle() { if (settled) return; settled = true; flush(); }
     window.setTimeout(settle, KEEPALIVE);
-    for (var i = 0; i < FILES.length; i++) {
+    // 这一台上没有该拿的语料（理论上不会——追问条目库哪台都拿），别白等满 2 秒
+    if (!left) { settle(); return; }
+    for (var i = 0; i < want.length; i++) {
       (function (f) {
         var s = document.createElement('script');
         s.src = f.src;
         // 拿不到是正常情况（离线、被删、断网），不是错误——静静算了
         s.onload = s.onerror = function () { if (--left <= 0) settle(); };
         document.head.appendChild(s);
-      })(FILES[i]);
+      })(want[i]);
     }
   }
 

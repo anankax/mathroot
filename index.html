@@ -44,7 +44,9 @@
      ★ 这四份**全是手写的**，都在 js/ 下面，改提示词就改这四个文件。
        （2026-10-02 之前备课那三份是 test/build_prompt.py 从 05c 生成出来的，
          那份 05c 是扣子「数小问」学生版的翻面稿，主体反了——整份重写，已脱离生成链。
-         那个脚本还留着，它另外还生成 js/textbook.js 和 js/zhuawen.js 两份检索语料。） -->
+         那个脚本还留着，它另外还生成 js/textbook.js 和 js/zhuawen.js 两份检索语料。
+         ★ 但 textbook.js 那份**不进仓库**（课本原文，被 .gitignore 挡着），
+           仓库里那份只有 zhuawen.js——见 .gitignore 和 js/kb.js 顶上那段。） -->
 <script defer src="js/prompt-prep.js"></script>
 <script defer src="js/prompt-draw.js"></script>
 <script defer src="js/prompt-vary.js"></script>
@@ -136,7 +138,11 @@
        ★ 跟「知识库」不是一回事：这个只显示条目正文，按册别分组、能搜，
          不显示分数、不显示阈值。教材索引和任何教材原文都不在这儿出现。 -->
   <!-- 知识库（验货用）。跟「素材」一样只在本机露头：它拿的是 js/textbook.js 和
-       js/zhuawen.js，平时由 kb.js 在第一次提问时静静装进来，访客一个字都看不见。
+       js/zhuawen.js，平时由 kb.js 在第一次提问时静静装进来。
+       ★ 2026-10-02 改：原来这句写的是"访客一个字都看不见"，**那是错的**——按钮确实
+         只在本机出现，可 js/textbook.js 当时在仓库里，早随 Pages 公开发了。
+         现在那份是课本原文的语料像 js/resource-index.js 一样被 .gitignore 挡着、
+         不进仓库，公开站上由 kb.js 的 local() 拦住、连请求都不发。详见 js/kb.js 顶上那段。
        这个按钮是给孔老师查条目、验召回的——它会显示分数和阈值，所以**只在本机出现**。 -->
   <!-- ★ 上面这四个按钮 2026-10-01 一起搬去了左栏「我的」区。
        它们跟"工位"是同一类东西（都是换一件要干的事），挤在顶栏里反而
