@@ -123,7 +123,14 @@ SR.chat = (function () {
     var bp = $('btn-play'), br = $('btn-redraw'), bc = $('btn-clear'), bpng = $('btn-png');
     if (bp) bp.addEventListener('click', function () { SR.board.togglePlay(); });
     if (br) br.addEventListener('click', function () { SR.board.redraw(); });
-    if (bc) bc.addEventListener('click', function () { SR.board.clear(); });
+    // ★ 清空**必须连带把这一页的存档一起作废**（`SR.tabs.cleared`）。
+    //   不喊这一声的话：老师点清空 → 板上确实空了 → 但这一页存的还是那张图，
+    //   他一走再回来，图自己又长回来了。他会以为"清空没生效"，
+    //   然后连点三下——而那个 bug 长在别的地方，他怎么点都修不好。
+    if (bc) bc.addEventListener('click', function () {
+      SR.board.clear();
+      if (SR.tabs) SR.tabs.cleared();
+    });
     if (bpng) bpng.addEventListener('click', function () { saveBoardPNG(bpng); });
 
     // 画板的注入不在这里——那是 main.boot 的活。这里只把两个回调交出去。
@@ -183,6 +190,10 @@ SR.chat = (function () {
     els.msgs.innerHTML = '';
     clearChips();
     SR.board.clear();
+    // ★ 顺序不能反：**先把画板清干净，再让多页那边记下"开场那一页"**。
+    //   反过来的话，那一页的存档记的是上一条链子最后那张图——老师点 ⟳ 换了工位，
+    //   一开场就有一页带着上学期的图，而且他会以为是这一课画出来的。
+    if (SR.tabs) SR.tabs.reset();
     addAssistantText(OPENING[work] || OPENING.prep);
     // 输入框里的提示也跟着工位走。
     // ★ 原来那句"贴一道题，或者写一个课题，例如 3.1 代数式的值"是**写死在 index.html** 里的，
@@ -366,39 +377,18 @@ SR.chat = (function () {
 
   function scroll() { els.msgs.scrollTop = els.msgs.scrollHeight; }
 
-  // ---- 出题工位的「图 1 / 图 2 / 图 3」切换器 ----
-  // ★ 为什么要它：画板物理上只有一块，而这一轮会带三张图（每个变式一张）。
-  //   paint() 那边已经改成只自动画第一张（见那里的注释），剩下的得有个门能叫回来，
-  //   否则那两张图就永远看不见了——"每个变式都配图"这句话就成了空话。
+  // ---- 出题工位的「图 1 / 图 2 / 图 3」切换器：**2026-10-02 拿掉了** ----
   //
-  // ★ 挂在**气泡里面**，不挂画板上：切换的是"这一条回复里的第几张"，
-  //   它属于那条回复，不属于画板。画板上的「重画」按钮重画的也永远是当前这张。
-  function attachFigSwitch(bubble, blocks) {
-    if (!blocks || blocks.length < 2) return;
-    var bar = document.createElement('div');
-    bar.className = 'figsw';
-    var btns = [];
-    function pick(i) {
-      for (var k = 0; k < btns.length; k++) btns[k].className = (k === i ? 'figbtn on' : 'figbtn');
-      SR.board.run(String(blocks[i]).split('\n'));
-    }
-    for (var i = 0; i < blocks.length; i++) {
-      (function (i) {
-        var b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'figbtn';
-        b.textContent = '图 ' + (i + 1);
-        b.title = '把这一张画到 GeoGebra 上';
-        b.addEventListener('click', function () { pick(i); });
-        btns.push(b);
-        bar.appendChild(b);
-      })(i);
-    }
-    bubble.appendChild(bar);
-    // 第一张已经在 paint() 里自动画过了，这里只把高亮摆对，不重画——
-    // 重画一遍会白等 550ms × 十几条命令，而且画面会先闪一下。
-    btns[0].className = 'figbtn on';
-  }
+  // 它原来的作用是给"画板只有一块"打补丁：一轮三张图，只画第一张，其余靠点。
+  // 右栏多页上线之后这个补丁本身成了毛病：
+  //   · 不点就永远没画过——而老师不知道底下还压着两张（"每个变式都配图"成了空话）；
+  //   · 它长在**气泡里**，往回翻三屏才点得到，按钮上写"图 2"——
+  //     老师要的是"刚才那张数轴"，不是"第几条回复的第 2 张图"。
+  // 现在每个围栏直接进右栏自己的一页（`SR.tabs.drawHere`），顺序就是讲题顺序，
+  // 全部同时活着，点标签就回去。**别把这个切换器加回来**——两个门通同一件事，
+  // 早晚会一个画着 A、另一个高亮着 B。
+  // （`css/main.css` 里 `.figsw/.figbtn` 那段留着：右栏标签的形状是照它做的，
+  //   注释里写着为什么，删了那段注释就没地方挂了。）
 
   // ---- 备课／讲评：把这一段拷走 ----
   // ★ 「关于」里一直写着一句"备好的追问链可以「复制这段」带走"，
@@ -766,13 +756,20 @@ SR.chat = (function () {
     }
 
     // 画板：只派新闭合的那些块，别重复执行
-    // ★ multiFig 的工位（出题）只自动画**第一张**。理由见 config.js 的 SR.WORKS.vary：
-    //   画板只有一块，每个变式的围栏头一行都是 #清空，连着画等于前两张刚出来就被擦掉，
-    //   老师从头到尾只看得到最后一张。其余的收进下面的切换器，点哪张画哪张。
+    //
+    // ★★ 2026-10-02 改成**一块围栏 = 右栏一页**（`SR.tabs.drawHere`）。
+    //   原来这儿是"multiFig 的工位只自动画第一张，其余收进气泡下面那个
+    //   「图 1/图 2/图 3」切换器"。两件事因此一起没了：
+    //     · 一个变式都得自己点一下才看得见（不点就永远没画过，而老师不知道有它）；
+    //     · 切换器长在**气泡里**，往回翻三屏才能点，图上写着"图 2"——
+    //       老师要的是"刚才那张数轴"，不是"第几条回复的第 2 张"。
+    //   现在每个围栏进右栏自己的一页，顺序就是讲题顺序，全部同时活着。
     var multi = !!w.multiFig;
     while (msg.ggbDone < p.ggb.length) {
       var lines = p.ggb[msg.ggbDone].split('\n');
-      if (!multi || msg.ggbDone === 0) SR.board.run(lines);
+      var hint = p.ggbInfo ? p.ggbInfo[msg.ggbDone] : '';
+      if (SR.tabs) SR.tabs.drawHere(lines, hint);
+      else if (!multi || msg.ggbDone === 0) SR.board.run(lines);   // 老路径（多页没装起来）
       // ★ 另外数一份"真画了东西的条数"：只有 #清空 的围栏不算画了图。
       //   实测带图那轮模型就爱发一个光秃秃的 ```ggb ⏎ #清空 ⏎ ```（它没东西可画）。
       //   要是拿 ggbDone 去判"它画没画"，就会以为它画了，本地补空数轴那条路会被顶掉。
@@ -899,13 +896,8 @@ SR.chat = (function () {
             }
           });
         }
-        // 出题工位：这一轮带了几张图，就在气泡下面挂几个切换钮（见 attachFigSwitch）。
-        // ★ 收完流再挂，不在 paint() 里挂——流式当中围栏是一块一块闭合的，
-        //   在那儿挂会看着按钮一个个往外蹦。
-        if (SR.WORKS[work] && SR.WORKS[work].multiFig) {
-          var wp = SR.render.parseFences(String(res.text || ''), { stripAssign: !!(SR.WORKS[work].stripAssign) });
-          attachFigSwitch(b, wp.ggb);
-        }
+        // ⚠ 原来这儿挂的是出题工位那个「图 1 / 图 2 / 图 3」切换器，2026-10-02 拿掉了：
+        //   一圈三张图现在各进右栏自己的一页，不需要第二个门（见上面那段墓志铭）。
         // 备课／讲评：这一条回复底下挂「复制这段」。
         // ★ 拷的是 `msg.lastVisible`——**老师在气泡上看到的那一份**，不是原始输出。
         //   两者会差在 render.js 删掉的东西上（漏出来的 ```ggb 围栏和里面的画板命令、

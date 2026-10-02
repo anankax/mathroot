@@ -73,6 +73,13 @@
 <script defer src="js/resources.js"></script>
 <script defer src="js/files.js"></script>
 <script defer src="js/board.js"></script>
+<!-- 右栏多页：一块 GeoGebra，好几页（见 js/tabs.js）。
+     ★ 排在 board.js **后面**：它整条路都踩在 SR.board 的 snapshot/restore/
+       activatePage/openNew 上，board 没就位它什么也做不了。
+     ★ 排在 pack.js **前面**：pack.js 给图片起名要读 SR.tabs.shapeOf
+       （那份"从命令认内容"的表只有一份，在 tabs.js 里）。
+     ★ 排在 chat.js 前面：chat.js 画围栏走 SR.tabs.drawHere。 -->
+<script defer src="js/tabs.js"></script>
 <!-- 打包（把这一课的图和全程文字装成一个 .zip 带走）。
      ★ 排在 chat.js **前面**：chat.js 收完每一轮会调 SR.pack.note() 记账。
      ★ 排在 board.js / figures.js / docx.js **后面**：它自己那两件依赖
@@ -315,6 +322,12 @@
            截图二维码、贴进课件、发群里，图自己带着出处走。 -->
       <button type="button" class="tool" id="btn-png" title="把这张图存成图片">存图</button>
     </div>
+    <!-- 多页标签（见 js/tabs.js）。**另起一行**，不塞进上面那条 boardbar：
+         360px 的小屏上那一行 5 个孩子已经占掉 311/331px（见 css 里那段注释），
+         再加东西不是折行就是直接少一个按钮。自己一行还能横向滚。
+         ★ 一页的时候整行藏起来（tabs.js 的 render 里控制 display）——
+           一个标签的"标签条"不像话，而且那一行高度在手机上很贵。 -->
+    <div class="tabs" id="tabs" style="display:none"></div>
     <div class="boardwrap">
       <div id="ggb"></div>
       <!-- 署名第三处：画板水印。截图外传也带着出处，且不挡作图。

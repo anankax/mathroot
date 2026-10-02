@@ -40,7 +40,16 @@ const sha256 = u8 => crypto.createHash('sha256').update(Buffer.from(u8)).digest(
 global.window = global;                    // js/*.js 顶上摸 window，Node 里给它一个
 const docx = require('../js/docx.js');     // ← pack.js 的 zip 写入器就是它
 const figures = require('../js/figures.js');
+// ★ 必须排在 pack.js **前面**：pack.js 的 shapeOf 现在去读 SR.tabs.shapeOf
+//   （那份"从命令认内容"的表只有一份，在 js/tabs.js 里，见 pack.js 那段注释）。
+//   不 require 的话它拿不到那张表，图片名全退回兜底词「图」——下面那些形状断言
+//   会红，但红的样子很像"打包坏了"，容易往错的方向查。
+const tabs = require('../js/tabs.js');
 const pack = require('../js/pack.js');
+if (!tabs || typeof tabs.shapeOf !== 'function') {
+  selfBad.push('js/tabs.js 没加载起来（或者没导出 shapeOf）：pack.js 的图片名全靠它，' +
+    '下面那几条形状断言量到的是兜底词「图」，不是真结果');
+}
 
 const selfBad = [];
 if (!pack || typeof pack.make !== 'function') {

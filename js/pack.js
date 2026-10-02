@@ -70,21 +70,17 @@ SR.pack = (function () {
   // ★ 序号打头（`01-`、`02-`…）**不是装饰**：解压出来的默认排序就是链子的顺序，
   //   也就是课上讲的顺序。不编号的话，`数轴.png` 和 `动点.png` 谁先谁后看不出来。
   // ★ 名字从命令里认，认不出来就叫「图」——**绝不硬猜**。
-  //   把抛物线叫成「数轴」比叫「图 3」坏得多：老师会以为是自己存错了。
-  //   所以下面每一条的关键词都挑得**很窄**（整词、带括号、带井号），宁可认不出。
-  // ⚠ 这一段和阶段三的页名推断（`SR.tabs.titleFor`）是**同一件事**。
-  //   做那时候把这份合过去，别留两套"从命令认内容"的规则——两套就是两个真源。
-  var SHAPES = [
-    [/#三维/,              '立体图'],
-    [/Slider\s*\(/,        '动点'],
-    [/Circle\s*\(/,        '圆'],
-    [/Polygon\s*\(/,       '多边形'],
-    [/[xyf]\s*\(?\s*x\s*\)?\s*=|x\s*\^\s*2/, '函数图象']
-  ];
+  //   把抛物线叫成「数轴」比叫成「图 3」坏得多：老师会以为是自己存错了。
+  //
+  // ★★ 这份表已经**搬走了**（2026-10-02），现在只有一份，在 js/tabs.js 的
+  //   `SR.tabs.shapeOf`。原来这儿抄过一份、标签页那边又有一份——同一张图，
+  //   标签上叫「函数图象」、包里叫「抛物线」，老师会以为存错了。两套规则就是两个真源，
+  //   而**坏掉的那一套不会有任何人报**（图片名错一个字，没人会来告诉你）。
+  //   只差一个兜底词：那边认不出来回**空串**（它还要接着去试"图 N"），
+  //   这边回**「图」**（文件名里不能是空的）。就这一处差别，写在下面一行里。
   function shapeOf(cmds) {
-    var s = String(cmds || '');
-    for (var i = 0; i < SHAPES.length; i++) if (SHAPES[i][0].test(s)) return SHAPES[i][1];
-    return '图';
+    var t = (SR.tabs && SR.tabs.shapeOf) ? SR.tabs.shapeOf(cmds) : '';
+    return t || '图';
   }
 
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
@@ -137,10 +133,16 @@ SR.pack = (function () {
     return SR.docx.write(files);
   }
 
+  // 这一包正占着画板吗。board.js 的 `jobBusy()` 读它——打包要几十秒，
+  // 这期间老师点标签换页会被挡一下（挡的时候会说清是为什么），总好过两边在
+  // 同一块板上画，各画出一半。
+  var busy = false;
+  function isBusy() { return busy; }
+
   // ---- 打一个包 ----
   //   upto   到第几条回复为止（null = 全部）
   //   onStep(现在第几张, 一共几张)   进度，界面拿它写状态栏
-  //   cb({ ok, name, bytes, figs, missed, why })
+  //   cb({ ok, name, bytes, figs, missed, back, why })
   //
   // ★ 全程**不弹窗、不写库**，只有最后一步 save 会碰 DOM。
   //   所以探针可以先 make 拿到字节，自己拿去验，不惊动下载。
@@ -155,47 +157,55 @@ SR.pack = (function () {
       return;
     }
 
-    var files = [], i = 0, missed = 0;
-
-    function next() {
-      if (i >= list.length) return finish();
-      var n = i + 1, cmds = list[i];
-      if (onStep) onStep(n, list.length);
-      // ★ 一张张按顺序画，不是并行：画板只有一块，并行画 = 几张图互相覆盖，
-      //   每张截到的都是别人的半成品。
-      SR.board.draw(SR.figures.linesOf(cmds), function (ok) {
-        if (!ok) { missed++; i++; next(); return; }
-        SR.board.shootMarked(function (url) {
-          if (url) {
-            files.push({
-              name: pad2(n) + '-' + shapeOf(cmds) + '.png',
-              data: SR.figures.bytesOf(url)
-            });
-          } else {
-            missed++;
-          }
-          i++;
-          next();
+    // ★★ 借画板画，画完还回去（`SR.board.offscreenJob`）。
+    //
+    //   改之前是这样：这里一张张图**直接画在老师眼前那块板上**，画完再把
+    //   "最后一张图"重画一遍当作收场。两件事都坏：① 打一次包，老师看着画板
+    //   被洗了十几遍（他这时候多半正对着某张图讲）；② 那个收场只把**最后一张**
+    //   画回去，如果他点的是中间某一条的「打包」，画板就永远停在了那一串的最后一张。
+    //   ⚠ 也**不许**用 `SR.board.draw`：那是排队进串行链的公开口，而这条链现在
+    //     正握在自己手里——那就成了自己等自己，卡死。借来的 `draw` 是没上锁的那个。
+    busy = true;
+    SR.board.offscreenJob(function (draw, done) {
+      var files = [], i = 0, missed = 0;
+      (function next() {
+        if (i >= list.length) return done({ files: files, missed: missed });
+        var n = i + 1, cmds = list[i];
+        if (onStep) onStep(n, list.length);
+        // ★ 一张张按顺序画，不是并行：板只有一块，并行画 = 几张图互相覆盖，
+        //   每张截到的都是别人的半成品。
+        draw(SR.figures.linesOf(cmds), function (ok) {
+          if (!ok) { missed++; i++; next(); return; }
+          SR.board.shootMarked(function (url) {
+            if (url) {
+              files.push({
+                name: pad2(n) + '-' + shapeOf(cmds) + '.png',
+                data: SR.figures.bytesOf(url)
+              });
+            } else {
+              missed++;
+            }
+            i++;
+            next();
+          });
         });
-      });
-    }
-
-    function finish() {
-      files.push({ name: '备课全程.md', data: withBom(md) });
-      // ★ 画完这么多张，画板正停在**最后画的那一张**上。而老师点打包之前，
-      //   板上是这一场最后一张图。要是他点的是中间某一条的「打包」，
-      //   上面那一轮就会把画板换掉——所以这里补一次，把最后那张再画回来。
-      var last = turns.length ? (turns[turns.length - 1].ggb || []) : [];
-      if (last.length) {
-        try { SR.board.run(SR.figures.linesOf(last[last.length - 1])); } catch (e) {}
+      })();
+    }, function (r) {
+      busy = false;
+      if (!r.ok) {
+        cb({ ok: false, why: '没打成包：' + (r.why || '画板腾不开') });
+        return;
       }
+      var files = r.res.files;
+      files.push({ name: '备课全程.md', data: withBom(md) });
       cb({
         ok: true, name: fileName(), bytes: zip(files),
-        figs: files.length - 1, missed: missed
+        figs: files.length - 1, missed: r.res.missed,
+        // ★ 还回去了没有。没还回去（开场那份快照就没取到）时画板停在这一串的最后一张，
+        //   跟改之前一样——但界面得**说出来**，不然老师会以为画板自己乱跳了。
+        back: r.back !== false
       });
-    }
-
-    next();
+    });
   }
 
   // 存盘。★ MIME 换成 zip 的：浏览器照它决定"双击用什么打开"，
@@ -207,7 +217,7 @@ SR.pack = (function () {
   return {
     note: note, setTopic: setTopic, reset: reset,
     fileName: fileName, shapeOf: shapeOf, figures: figures, markdown: markdown,
-    withBom: withBom, make: make, save: save,
+    withBom: withBom, make: make, save: save, isBusy: isBusy,
     count: function () { return turns.length; },
     // 测试用：直接塞一批回复进去，不走界面（界面那条路见 js/chat.js 的 submit）
     __seed: function (list, t) { reset(); topic = t || ''; (list || []).forEach(function (x) { note(x.visible, x.ggb); }); }

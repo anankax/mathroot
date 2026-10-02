@@ -738,6 +738,57 @@ body[data-work="vary"] #send:hover { background: var(--alt-dark); }
   pointer-events: none; user-select: none; -webkit-user-select: none;
 }
 
+/* ---------- 右栏多页标签（见 js/tabs.js） ----------
+   为什么在这儿：老版画板只有一块，模型画第二张图就把第一张盖掉了；一节课讲下来，
+   老师回头想再看一眼"刚才那个动点怎么动的"——没了。这一行是那几张图的**门**。
+   ★ 摆的地方：夹在 `.boardbar` 和 `.boardwrap` 中间。
+     标签干的事是"选看哪一页"，跟上面那排「平面/三维」「重画/清空/存图」是同一类
+     （都是"对这块板做点什么"），而底下 `#status` 是读数条。夹在中间正好。
+   ★ 只占**一行**、横向滚、不换行：手机上画板那一块才 156px 高，
+     标签一折成两行就是它的四分之一，而"这一行的高度在小屏上很贵"这话
+     上面 `.boardbar` 那段已经写过一遍了。
+   ★ 一页的时候整行不显示（tabs.js 的 render 控制 display）。*/
+.tabs {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 6px;
+  padding: 6px 14px; background: var(--panel);
+  border-top: 1px solid var(--line);
+  overflow-x: auto; overflow-y: hidden;
+  /* 一条横向滚动条会把这行撑高 8px 左右，而小屏上这 8px 是从画板里抠的。
+     还能滚——只是不显示那条槽（触摸板和手机都是直接滑的）。 */
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { height: 0; }
+.tabs .tab { scroll-margin: 0 14px; }
+
+/* ★ 形状照抄上面那颗「图 1/图 2」。不是偷懒——**它俩干的是同一件事**
+   （`.figsw` 那段自己写着"画板只有一块，一轮出三张图就得有个门把它们叫回来"），
+   而且老师已经认识那个形状了。换个新样子等于让他重新学一次同一个意思。 */
+.tab {
+  flex: 0 0 auto; position: relative;
+  border: 1px solid var(--line); background: var(--sunken);
+  font-family: inherit; font-size: 12px; line-height: 1; color: var(--ink-2);
+  padding: 5px 11px; cursor: pointer; white-space: nowrap;
+  transition: color var(--mo-fast) var(--ease-out),
+              border-color var(--mo-fast) var(--ease-out),
+              background-color var(--mo-fast) var(--ease-out);
+}
+.tab:hover { border-color: var(--brand); color: var(--brand); }
+/* 当前这一页。★ 只有**这一处**是满色块（跟 .figbtn.on 同一档）：
+   满色块在满屏小框里是"最重"的那一个，一眼就找得到自己在哪一页。 */
+.tab.on { background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 700; }
+.tab.on:hover { color: #fff; }
+
+/* 还没画的那一页上那个点（模型在你翻旧图时又画了一张，见 tabs.js 的 pending）。
+   ★ 要它**会动**：不动的话它跟"这一页已经画好了"分不出来，而这两件事差得远——
+     一个点下去就看见图，一个点下去要等它画几秒。 */
+.tab .dot {
+  display: inline-block; width: 6px; height: 6px; margin-left: 6px;
+  border-radius: 50%; background: var(--brand); vertical-align: 1px;
+  animation: tabdot 1.5s var(--ease-out) infinite;
+}
+.tab.on .dot { background: #fff; }   /* 深底上绿点糊成一团，换白的 */
+@keyframes tabdot { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+
 /* 状态栏＝一块读数条。★ 等距字体 + 拉开字距，让它读起来像仪表的读数，
    而不是"页脚上的一句提示"。那篇里 Bender 那一段说的就是这个效果。 */
 #status {
@@ -1488,6 +1539,15 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
      ⚠ 只在这一档收：桌面（>900px）那块地方不值钱，不值得为它换来画板跳动。 */
   #status:empty { min-height: 0; padding: 0; border-top: 0; }
 
+  /* 多页标签条也收一档。★ 这一行只在**真有第二页**时才出现，
+     那时候它的高度是从画板里抠的：桌面上 6+5+边框 ≈ 30px，手机上收到 26px。
+     ⚠ 收内边距、**别把字缩小**：标签上写的是"数轴""立体图"，
+       12px 已经是这一排能读清的下限了（跟 .boardbar .tool 的 12.5 一档）。
+     ⚠ 也**别改成"手机上不显示标签条"**——多页是这一版最重要的一件事，
+       藏着等于没做。 */
+  .tabs { padding: 4px 10px; gap: 5px; }
+  .tab { padding: 4px 9px; }
+
   footer .r { display: none; }
   footer { padding: 2px 12px 7px; }
 }
@@ -1510,6 +1570,10 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
   }
   .msg, .chip, .kbhit, .resrow, .overlay .box { animation: none !important; opacity: 1 !important; }
   .ghost { animation: none !important; opacity: .06 !important; }
+  /* 多页标签上那个"还没画"的点也停（见上面 .tab .dot）。
+     ⚠ 这里只要停，**不要**写 opacity——它的底色本来就在那儿，一关动效
+       它就是个不闪的绿点，照样看得出"这一页还没画"。 */
+  .tab .dot { animation: none !important; }
   /* 指针光一起关：它虽然不"动"，但跟着手跑，同样属于会晃人的那一类 */
   .col { background-image: var(--hilt) !important; }
   .overlay .box { background-image: var(--grain-soft), var(--hilt) !important; }

@@ -371,6 +371,11 @@ SR.main = (function () {
         }
       }
     });
+    // 右栏多页（见 js/tabs.js）。★ 排在 board.init **后面**：
+    //   它整条路都踩在 SR.board 的 snapshot/restore/activatePage/openNew 上。
+    //   它自己会等画板就绪（GeoGebra 那一包要拉几秒），等不到就走老路——
+    //   所以这一句是"加一层"，不是"换一条路"，画板起不来时画图照旧。
+    if (SR.tabs) SR.tabs.init('tabs');
 
     // ---- 弹层的关闭：点按钮、点遮罩空白处、按 Esc ----
     document.addEventListener('click', function (e) {

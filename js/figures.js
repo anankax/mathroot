@@ -91,31 +91,61 @@ SR.figures = (function () {
     if (!SR.board) { cb({ ok: 0, bad: todo.length, total: todo.length }); return; }
 
     busy = true;
-    var i = 0, okN = 0, badN = 0;
-    function step() {
-      if (i >= todo.length) {
-        busy = false;
-        cb({ ok: okN, bad: badN, total: todo.length });
-        return;
-      }
-      var k = todo[i], n = i + 1;
-      SR.board.draw(linesOf(k), function (drawn) {
-        if (!drawn) { badN++; if (onOne) onOne(n, todo.length, k, false); i++; step(); return; }
-        SR.board.shoot(function (url, w, h) {
-          if (url) {
-            cache[k] = { url: url, w: w, h: h, png: bytesOf(url) };
-            okN++;
-            if (onOne) onOne(n, todo.length, k, true);
-          } else {
-            badN++;
-            if (onOne) onOne(n, todo.length, k, false);
-          }
-          i++;
-          step();
+    var okN = 0, badN = 0, ran = false;
+
+    // ★★ 借画板画（`SR.board.offscreenJob`），别画在老师眼前那块板上。
+    //
+    //   改之前是这样：这几张图**直接画到他眼前那块板上**，而 `linesOf()` 给每条
+    //   命令开头都补一句 `#清空`——所以出一次材料，老师看着画板被洗了三五遍，
+    //   画完停在最后一张，他刚才正在讲的那张图就没了。而他点「出材料」的那一刻，
+    //   屏幕上第一眼看到的是他的图被抹掉。
+    //   借一块后台板画，画完连视角带他手动拖过的位置一起原样还回去。
+    //
+    //   ⚠ 借来的 `draw` 是**没上锁**的那个。这里写 `SR.board.draw` 就成了
+    //     "自己等自己"——串行链此刻正握在这条路手里，表现是永远不动、也不报错。
+    function run(draw, done) {
+      ran = true;
+      var i = 0;
+      (function step() {
+        if (i >= todo.length) return done(null);
+        var k = todo[i], n = i + 1;
+        draw(linesOf(k), function (drawn) {
+          if (!drawn) { badN++; if (onOne) onOne(n, todo.length, k, false); i++; step(); return; }
+          SR.board.shoot(function (url, w, h) {
+            if (url) {
+              cache[k] = { url: url, w: w, h: h, png: bytesOf(url) };
+              okN++;
+              if (onOne) onOne(n, todo.length, k, true);
+            } else {
+              badN++;
+              if (onOne) onOne(n, todo.length, k, false);
+            }
+            i++;
+            step();
+          });
         });
-      });
+      })();
     }
-    step();
+
+    function finish(backOk) {
+      busy = false;
+      cb({ ok: okN, bad: badN, total: todo.length, back: backOk !== false });
+    }
+
+    if (SR.board.offscreenJob) {
+      SR.board.offscreenJob(run, function (r) {
+        // ★ 板没借到（老师正在打包／这一张还没画完）→ 这些图**一张都没画**，
+        //   得按"没画出来"报。出材料那边读的就是 bad 这个数，报成 0 的话
+        //   材料上会缺图而界面一声不响——"悄悄少一张"是最坏的那一种。
+        //   ⚠ 判据是 `ran`（借到板没有），不是 `r.ok`：`r.ok` 为假还有另一种情形
+        //     ——画完了但板没还回去。那时候图都画好了，报成全败是反过来的错。
+        if (!ran) badN = todo.length;
+        finish(r.back);
+      });
+    } else {
+      // 老画板（没有 offscreenJob）——退回原来的行为，至少图能出
+      run(function (lines, f) { SR.board.draw(lines, f); }, function () { finish(true); });
+    }
   }
 
   return {

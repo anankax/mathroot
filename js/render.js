@@ -21,7 +21,7 @@ SR.render = (function () {
   // opts.stripAssign —— 多删一档"整行就是一条画板赋值"的行（见规则三）。
   //   备课／讲评工位开、画图／出题工位关（SR.WORKS[x].stripAssign）。
   function parseFences(text, opts) {
-    var ggb = [], say = [], mat = [];
+    var ggb = [], ggbInfo = [], say = [], mat = [];
     var stripAssign = !!(opts && opts.stripAssign);
     var visible = String(text == null ? '' : text);
 
@@ -31,9 +31,22 @@ SR.render = (function () {
     //   材料  → 一整份卷子（出材料工位专用，一行一段，见 js/prompt-material.js）
     // ★ 三者都是"围栏里是给机器看的、围栏外是给人看的"。
     //   材料这一档尤其要摘干净：一份卷子两百来行，留在正文里会把对话刷没。
-    visible = visible.replace(/```[ \t]*(ggb|想说|材料)[ \t]*\r?\n([\s\S]*?)```/g,
-      function (all, tag, body) {
-        if (tag === 'ggb') ggb.push(body);
+    // ★ 标签后面**那一小截是页名**（```ggb 数轴）。原来这个正则只吃空白，
+    //   所以带名字的围栏整个匹配不上——围栏留在正文里，`数轴` 三个字直挺挺
+    //   挂在老师的回复里（实测确认过，不是猜的）。右栏多页要拿它当标签名
+    //   （js/tabs.js 的 titleFor 第①来源），顺手把这个显示 bug 一起修了。
+    //   ⚠ **只有长得像名字的才算名字。** 模型有时候把第一条命令写在标签那一行上
+    //     （```ggb A=(0,0)）：当页名吃掉 = 那条命令丢了，而且画板上什么都看不出来、
+    //     一声不响。所以带 `= ( ) [ ] # ,` 的一律退回命令、接回 body 里去。
+    var NAME = /^[^=()\[\]#,]{1,12}$/;
+    visible = visible.replace(/```[ \t]*(ggb|想说|材料)[ \t]*([^\r\n]*)\r?\n([\s\S]*?)```/g,
+      function (all, tag, info, body) {
+        info = String(info == null ? '' : info).trim();
+        if (!NAME.test(info)) {
+          if (info) body = info + '\n' + body;   // 不是名字 → 它是内容，还回去
+          info = '';
+        }
+        if (tag === 'ggb') { ggb.push(body); ggbInfo.push(info); }
         else if (tag === '想说') say.push(body);
         else mat.push(body);
         return '';
@@ -124,7 +137,11 @@ SR.render = (function () {
       return true;
     }).join('\n');
 
-    return { visible: visible.trim(), ggb: ggb, say: say, mat: mat, pending: pending };
+    return {
+      visible: visible.trim(), ggb: ggb, say: say, mat: mat, pending: pending,
+      // ggbInfo 跟 ggb 一一对应（没有名字的那一格是空串）。右栏多页拿它当标签名。
+      ggbInfo: ggbInfo
+    };
   }
 
   // ---- markdown → 干净 HTML ----

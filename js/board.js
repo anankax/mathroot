@@ -17,6 +17,33 @@ SR.board = (function () {
   var playing = false;
   var hooks = { ready: null, playState: null, log: null, view: null };
 
+  // ---- 世代号（2026-10-02，右栏多页那一版加的）----
+  //
+  // ★★ 为什么非有它不可：`run()` 一开头那句 `clearTimers()` 是**一脚全清**——
+  //   把队列清空、`queueLeft` 归零。对新图来说这是对的（新的盖旧的）。
+  //   但它对**别人**撒了一个谎：正等着"画完了没有"的 `draw()`，看到 `queueLeft`
+  //   变成 0、`ready` 又是真，就判成**画好了**，回调 `true`。
+  //   下一张图（或换页、或清空）把这条队列掐掉时，那边收到的是"这张图我画好了"——
+  //   而画板上那张图根本没画出来，等它去 `toPNG`／`getBase64`，拿到的是别人的图。
+  //   所以清队列这件事必须**带着世代号**走：只有当前这一代的活算数，
+  //   被作废的那一代，等它的人要听到 `false`。
+  //
+  // ★ 谁让世代号往前走：`run()`（有新的图要画）、`clear()`（老师点了清空）、
+  //   换页的 `activatePage()`。**没有别的入口**，别在别处偷偷 `gen++`。
+  var gen = 0;
+
+  // ★ 正在 `setBase64` 载入一份存档。**这段窗口里发出去的 evalCommand 会被吃掉**
+  //   （2026-10-02 实测：载入还没落地时发的命令返回 true，等存档落下来它连影子都没有）。
+  //   所以这期间来的 `run()` 一律排队，等载入收敛了再放——走下面 flushPending 那条老路。
+  var loading = false;
+
+  // ★ `refit` 是 `init()` 里定义的（它要闭着容器那个盒子），外面喊不着。
+  //   右栏多页那条标签条一冒出来／一收回去，画板那一块的高度就变了——
+  //   而 `ResizeObserver` 盯的是 `#ggb`，`#ggb` 的高度是 `inject()` 写死的，
+  //   父级变它不变，**那一守望不会醒**（这条 2026-10-02 就写在 init 里了）。
+  //   所以把 refit 挂在这儿，给外面一个"我动过布局了，你重新量一次"的口子。
+  var refitNow = null;
+
   function log(s) { if (hooks.log) hooks.log(s); }
 
   // ---- 中文命令名 → GeoGebra 的英文命令名 ----
@@ -153,26 +180,33 @@ SR.board = (function () {
     }
   }
 
+  // ★ 返回**这一批命令所属的世代号**（见上面 `gen` 那段）。等这张画完的人
+  //   （`draw`）拿它当身份证：世代号变了就说明它等的那批活已经被作废了。
   function run(rawLines) {
+    gen++;
+    var myGen = gen;
     clearTimers();
     var lines = [];
     for (var i = 0; i < rawLines.length; i++) {
       var exp = expand(rawLines[i]);
       for (var j = 0; j < exp.length; j++) lines.push(exp[j]);
     }
-    if (!lines.length) return;
+    if (!lines.length) return myGen;
     lastLines = rawLines.slice();          // 存原命令，"重画"重放这一份
-    if (!ready) { pendingLines = lines; return; }   // 画板还没就绪，等就绪了再放
+    // 画板还没就绪，或者正在载入一份存档 → 排队等着，等能画了再放
+    if (!ready || loading) { pendingLines = lines; return myGen; }
     queueLeft = lines.length;
     for (var k = 0; k < lines.length; k++) {
       (function (one, idx) {
         pending.push(setTimeout(function () {
+          if (myGen !== gen) return;   // ★ 属于旧世代的活：一条都不发出去
           exec(one);
           slimPoints();                // 新点子生出来就是小的，别等画完再集体缩一圈
           queueLeft--;                 // ★ 跑一条减一条，"在画"才收得住
         }, idx * SR.GGB_CMD_DELAY));
       })(lines[k], k);
     }
+    return myGen;
   }
 
   var pendingLines = null;
@@ -182,7 +216,9 @@ SR.board = (function () {
   //   ⚠ 2026-10-02 栽过一跤：draw() 里直接写了 `isBusy()`——这个名字在模块作用域里
   //     **根本不存在**（它只是返回对象上的一个属性），于是每一张图都在
   //     第一轮轮询就抛 ReferenceError。同一件事抄两遍迟早会分叉，索性只留一处。
-  function busyNow() { return queueLeft > 0 || !!pendingLines; }
+  //   ⚠ `loading` 也算"忙"：载入存档那段窗口里板上的东西是**过渡态**，
+  //     这时候取快照或者判"画完了"都是错的。
+  function busyNow() { return queueLeft > 0 || !!pendingLines || loading; }
 
   function flushPending() {
     if (pendingLines) { var p = pendingLines; pendingLines = null; run(p); }
@@ -194,7 +230,12 @@ SR.board = (function () {
     queueLeft = 0;
   }
 
-  function clear() { clearTimers(); if (api) { api.newConstruction(); } stopPlay(); }
+  function clear() {
+    gen++;                     // ★ 清空也是"新一代"：正等着画完的人要听到 false，别听到 true
+    clearTimers();
+    if (api) { api.newConstruction(); }
+    stopPlay();
+  }
   function redraw() { if (lastLines.length) run(lastLines); }
 
   // ---- 动点播放 ----
@@ -294,13 +335,23 @@ SR.board = (function () {
   //   画板要是卡住，不能让整份材料跟着一起卡死——超时就当这张画不出来，
   //   由调用方决定怎么办（出材料那边的做法是：这张图撤掉，并告诉老师）。
   var DRAW_MAX = 30000;
-  function draw(lines, cb) {
+
+  // ★★ `draw` = **排队 + 真画**。要它排队的是这条：画板只有一块，
+  //   两个"要等画完"的活儿同时上（出材料画一串图 / 换页存图 / 打包）会互相踩。
+  //   谁先拿到锁谁画完，后面的等——而不是两边各画一半、各自截到对方的半成品。
+  function draw(lines, cb) { lock(function (done) { drawNow(lines, done); }, cb); }
+
+  function drawNow(lines, cb) {
     var t0 = Date.now(), done = false, hard = null;
     function fin(ok) { if (done) return; done = true; clearTimeout(hard); cb(ok); }
     hard = setTimeout(function () { fin(false); }, DRAW_MAX);
-    run(lines);
+    var myGen = run(lines);          // ★ 这一批命令的身份证（run 里 gen++ 之后返回的）
     (function wait() {
       if (done) return;
+      // ★★ 世代号变了 = 我们等的那批活已经被作废了（来了新图／老师点了清空／换页）。
+      //   这时候必须报 **false**：原来那句 "queueLeft 变 0 就算画好了" 会在这里
+      //   回一个 **true**——调用方以为画好了，高高兴兴去截图，截到的是别人的图。
+      if (gen !== myGen) { fin(false); return; }
       // ★ 判"画完了"要问两件事：就绪了没有、队列里还有没有东西。
       //   只看 isBusy() 的话，画板还没就绪时队列是空的，会被判成"早就画完了"。
       if (ready && !busyNow()) {
@@ -311,6 +362,217 @@ SR.board = (function () {
       if (Date.now() - t0 > DRAW_MAX) { fin(false); return; }
       setTimeout(wait, 150);
     })();
+  }
+
+  // ============================================================
+  //  串行链：碰画板的"要等的活儿"排成一队
+  // ============================================================
+  //
+  // ★ 它管什么、**不管什么**，写清楚，免得看着它以为哪都护住了：
+  //   管：`draw`（一张图）和 `activatePage` / `offscreenJob`（换页、借画板）。
+  //   不管：`run`（模型流式里那一条，它是**活的**路径，插队是对的——
+  //         老师发一句话不该等出材料那二十张图画完）。`run` 会让 `gen++`，
+  //         于是正在等的活儿会**如实**收到 false，而不是收到一个假的好消息。
+  var lockQ = [], lockBusy = false;
+  function lock(fn, cb) {
+    lockQ.push({ fn: fn, cb: cb });
+    pump();
+  }
+  function pump() {
+    if (lockBusy || !lockQ.length) return;
+    var job = lockQ.shift();
+    lockBusy = true;
+    var freed = false;
+    job.fn(function (r) {                 // 每个 job 拿到一个 done()，干完必须喊一声
+      if (freed) return;                  // 喊两次不当两次算
+      freed = true;
+      lockBusy = false;
+      if (job.cb) job.cb(r);
+      pump();
+    });
+  }
+
+  // ============================================================
+  //  存档 / 读档 / 换页（右栏多页）
+  // ============================================================
+  //
+  // ★ 用的是 GeoGebra 自己的存档格式：`getBase64()` 回的是**一份 .ggb（zip）的 base64**，
+  //   `setBase64()` 把它读回来。2026-10-02 实测过四件事（test/probe_tabs.cjs）：
+  //     ① 两个 API 都在（`getUndoXML/setUndoXML/getPerspective/getCoordSystem` 都不在）；
+  //     ② 正方体 → 存 → 清空 → 载回：27 个对象逐字相同，**三维视角跟着回来了**
+  //        （可见视图 id 512 → 1 → 512，getPerspectiveXML 全文逐字相同）；
+  //     ③ `isBusy()` 为真时取快照 = **残的**（1 个 element，画完 5 个）；
+  //     ④ `setBase64` 是**异步**的：同一往返里立刻点名是空数组，约 0.4 秒才收敛，
+  //        而这段窗口里发的命令**返回 true 却会被吃掉**。
+  //   所以下面三条规矩都是从 ③④ 直接来的：忙的时候**不存**；存之前**先等画完**；
+  //   载入之后**轮询到收敛**再放人。
+  var RESTORE_MAX = 8000;      // 载入最多等多久（实测收敛约 0.4 秒，8 秒是给慢机器的余量）
+  var IDLE_MAX = 12000;        // 等"这一张画完"最多等多久
+
+  // 板上**现在**是几维——问 applet，不问我们自己那个 `is3D`。
+  //   判据跟 test/probe_tabs.cjs 量出来的同一条：`getPerspectiveXML()` 里
+  //   **哪个 view 的 visible 是 true**，平面 = `id="1"`、三维 = `id="512"`，两者此消彼长。
+  //   （那 2000 多字里一大半是工具栏按钮表，只有这一位会翻面。）
+  // ⚠ 判不了就**说判不了**（回 null），绝不按"应该几维"凑一个答案出来：返回值会被写进
+  //   `is3D`，而写错它的后果见 `applyView` 上面那段。并排显示时两个都真、认不出来时两个都不真，
+  //   这两种情况一律不下结论。
+  function perspIs3D() {
+    var s = '';
+    try { s = String(api.getPerspectiveXML()); } catch (e) { return null; }
+    if (!s || s === 'undefined' || s === 'null') return null;
+    var three = /<view id="512"[^>]*\svisible="true"/.test(s);
+    var plane = /<view id="1"[^>]*\svisible="true"/.test(s);
+    if (three === plane) return null;      // 都真（并排）或都不真（认不出）→ 不表态
+    return three;
+  }
+
+  // 把"我现在在几维"跟板子对齐，顺带点亮工具条那两个字。
+  //
+  // ★★ 为什么非有这一步（`setBase64` 明明连视角一起搬回来了，实测 ②）：
+  //   `setBase64` 搬的是 **applet 里的视角**，它**不会**回头改我们这个模块变量、
+  //   更不会去动工具条。于是从三维那页切回平面那页：画板上是平面的图，
+  //   工具条上「三维」还亮着，而 `is3D` 还是 true。
+  //   后果不是"按钮亮错"这么轻——下一次 `showNumLine()` 先喊 `to2D()`，
+  //   而那函数头一句是 `if (!api || !is3D) return`：它以为早就是平面了，一条命令都不发，
+  //   接着按平面发的 `setAxesVisible(true,false)` 就落进了三维视图里。
+  //   （这条是 test/probe_tabpage.cjs 的 ⑤b 逼出来的——它等 20 秒等不到视角切回来，
+  //    而那 20 秒里它一直在问 `SR.board.is3D()`：**板子早就是平面的了，撒的谎是我们自己那句**。）
+  //   也正因为撒谎的是我们自己的变量：判据只能**读回来**，不能在快照里存一份 `is3D` 带过来——
+  //   存的话，一个本来就已经偏了的 flag 会跟着每一次切页一路偏下去，永远回不来。
+  function applyView(d3) {
+    if (d3 === null || d3 === is3D) return;   // 判不了 → 不动；没变 → 不动（每次切页都喊会让工具条闪）
+    is3D = d3;
+    if (hooks.view) hooks.view(is3D);
+  }
+
+  // 取一张存档。★ 忙的时候**不给**（上面 ③ 是量出来的，不是猜的）——
+  //   给一张残的存档，等于把"这一页本来是什么样"永久地记错了。
+  function snapshot() {
+    if (!api || !ready || busyNow()) return null;
+    var d = '';
+    try { d = api.getBase64(); } catch (e) { d = ''; }
+    if (!d) return null;
+    var n = 0;
+    try { n = (api.getAllObjectNames() || []).length; } catch (e) { n = 0; }
+    return { data: d, n: n };
+  }
+
+  // 等板上没有活。★ 等不到就**如实说不等了**，绝不"等到超时然后照切"——
+  //   照切的话，存走的那张存档是残的，而它看着跟一张好存档一模一样。
+  function waitIdle(cb) {
+    var t0 = Date.now();
+    (function poll() {
+      if (ready && !busyNow()) return cb(true);
+      if (Date.now() - t0 > IDLE_MAX) return cb(false);
+      setTimeout(poll, 120);
+    })();
+  }
+
+  // 读一份存档，**轮询到收敛**才回话。
+  //   判据：板上对象数 ≥ 存档里记的个数，而且**连着两次读数一样**。
+  //   ⚠ 不能睡一个猜的数（比如 400ms）：机器快慢差得远，睡短了命令被吃掉，
+  //     睡长了每次切页都白等。
+  function restore(snap, cb) {
+    if (!api || !ready) { cb({ ok: false, why: '画板还没准备好' }); return; }
+    if (!snap || !snap.data) { cb({ ok: false, why: '这一页没有存档' }); return; }
+    var want = snap.n || 0, t0 = Date.now(), lastN = -1, stable = 0, seen = null;
+    loading = true;
+    try { api.setBase64(snap.data); }
+    catch (e) {
+      loading = false; flushPending();
+      cb({ ok: false, why: '载入失败：' + (e.message || e) });
+      return;
+    }
+    (function poll() {
+      var n = 0;
+      try { n = (api.getAllObjectNames() || []).length; } catch (e) { n = 0; }
+      // ★ 视角**跟对象一起等**：它俩是同一份存档载进来的，而"对象齐了"不等于"视角也换好了"
+      //   （上面 ④ 那条说的就是这段窗口：命令返回 true 却会被吃掉）。
+      //   每轮读一眼，认得出就记下最后那一次；认不出（null）**不覆盖**上一次读懂的读数。
+      //   不另起一轮再读，是为了让"收敛判据"和"视角读数"落在同一次采样上——
+      //   分开写就得回答"到底该在收敛前读还是收敛后读"，那个问题没有依据可依。
+      var d3 = perspIs3D();
+      if (d3 !== null) seen = d3;
+      if (n >= want && n === lastN) stable++; else stable = 0;
+      lastN = n;
+      if (stable >= 1) {
+        loading = false; flushPending();
+        applyView(seen);     // ★ 载回来之后把"我现在在几维"跟板子对齐（见 applyView 上面那段）
+        cb({ ok: true, n: n });
+        return;
+      }
+      if (Date.now() - t0 > RESTORE_MAX) {
+        loading = false; flushPending();
+        cb({ ok: false, why: '载入没收敛（这一页该有 ' + want + ' 个对象，只读到 ' + n + ' 个）' });
+        return;
+      }
+      setTimeout(poll, 60);
+    })();
+  }
+
+  // 换页：把现在这一页存走，把别人那一页载回来。
+  //   cb({ ok, out, why })   out = 换出去那一页的存档（存不下来时是 null）
+  function activatePage(snap, cb) {
+    lock(function (done) {
+      if (jobBusy()) return done({ ok: false, why: '正在出材料／打包，画板腾不开，等它画完再切' });
+      waitIdle(function (idle) {
+        if (!idle) return done({ ok: false, why: '这一张还没画完，没切过去（怕存半张）' });
+        var out = snapshot();          // ① 存走现在这一页（这时候板上是完整的）
+        gen++; clearTimers();          // ② 旧世代作废
+        restore(snap, function (r) {   // ③ 载回来，等它收敛
+          done({ ok: r.ok, out: out, why: r.why });
+        });
+      });
+    }, cb);
+  }
+
+  // 开新的一页：把现在这一页存走，**在同一个画板上**接着把你给的命令画上去。
+  //   cb({ ok, out, why })   out = 换出去那一页的存档
+  //
+  // ★ 跟 `activatePage` 只差最后一步：那个是"把别人的存档载回来"，这个是"往下画"。
+  //   两件事分开写，是因为**它们失败的后果不一样**：切页失败要留在原地（标签指着 A、
+  //   板子上是 B 最坏），重画失败只是"这一页没分出来"（退回去当同一页接着画就行）。
+  //   合成一个函数就得在里面传一个 boolean 决定失败怎么办，那种参数最难读对。
+  function openNew(lines, cb) {
+    lock(function (done) {
+      if (jobBusy()) return done({ ok: false, why: '正在出材料／打包，画板腾不开，等它画完再开新的' });
+      waitIdle(function (idle) {
+        if (!idle) return done({ ok: false, why: '这一张还没画完，没开新的（怕存半张）' });
+        var out = snapshot();
+        gen++; clearTimers();          // 旧世代作废：正等着画完的人要听到 false
+        run(lines);
+        done({ ok: true, out: out });
+      });
+    }, cb);
+  }
+
+  // 借画板：把现在这块板原样收走，跑完你那一串活儿，再原样还回来。
+  //   fn(draw, done)  draw = 在这块**借来的**板上画一串命令（它不走排队——
+  //                   板已经在手里了，再排一次就是自己等自己）
+  //   cb({ ok, back, res, why })   back = 有没有把板还回去
+  // ★ 这是"出材料当着老师的面把画板洗一遍"那个旧 bug 的正解：画到一张借来的板上，
+  //   画完把老师原来那一张**原样**放回去（连视角、连他手动拖过的位置一起）。
+  function offscreenJob(fn, cb) {
+    lock(function (done) {
+      waitIdle(function (idle) {
+        if (!idle) return done({ ok: false, back: false, why: '画板忙，没动它' });
+        var back = snapshot();
+        fn(drawNow, function (res) {
+          if (!back) return done({ ok: true, back: false, res: res });
+          restore(back, function (r) {
+            done({ ok: r.ok, back: true, res: res, why: r.why });
+          });
+        });
+      });
+    }, cb);
+  }
+
+  // 出材料／打包是不是正占着画板。★ 这两条**不在串行链里**（它们从头到尾要几十秒，
+  //   排进链里的话，老师点一下标签要等半分钟才切过去）。所以换页那条路自己来问一句。
+  function jobBusy() {
+    try { if (SR.figures && SR.figures.isBusy && SR.figures.isBusy()) return true; } catch (e) {}
+    try { if (SR.pack && SR.pack.isBusy && SR.pack.isBusy()) return true; } catch (e) {}
+    return false;
   }
 
   // ============================================================
@@ -824,6 +1086,7 @@ SR.board = (function () {
         syncHost(n);
       }, 220);
     }
+    refitNow = refit;             // 挂到模块上，给右栏多页那条路喊（见上面 refitNow 的注释）
     window.addEventListener('resize', refit);
     // ★ 光听 window.resize 不够（2026-10-01 手机实测）：顶栏在窄屏上会回卷成两行、
     //   字体后到会改行高——这些都会让盒子变矮，**但不触发 window.resize**。
@@ -874,6 +1137,14 @@ SR.board = (function () {
     },
     // 还有命令排着队没执行完吗（测试和"重画"按钮都用得上）
     isBusy: busyNow,
+    // ---- 右栏多页用 ----
+    snapshot: snapshot, restore: restore, activatePage: activatePage,
+    openNew: openNew, offscreenJob: offscreenJob, jobBusy: jobBusy,
+    // 外面动过布局（标签条冒出来／收回去）之后，喊一声让画板重新量自己。
+    // ⚠ init 之前它是个空壳，不报错也不做事——那时候画板还没起来，量什么都一样。
+    refit: function () { if (refitNow) refitNow(); },
+    gen: function () { return gen; },
+    hold: lock,                     // 排进串行链（探针拿它测"换页和作画会不会互相踩"）
     translate: translate,           // 给测试用：看中文命令翻成了什么
     // 给测试用：把 applet 本体交出去。
     // ★ 为什么非要露这个口子：GeoGebra 有哪些接口、那几个样式命令到底叫什么名字，
