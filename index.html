@@ -73,6 +73,11 @@
 <script defer src="js/resources.js"></script>
 <script defer src="js/files.js"></script>
 <script defer src="js/board.js"></script>
+<!-- 打包（把这一课的图和全程文字装成一个 .zip 带走）。
+     ★ 排在 chat.js **前面**：chat.js 收完每一轮会调 SR.pack.note() 记账。
+     ★ 排在 board.js / figures.js / docx.js **后面**：它自己那两件依赖
+     （SR.board.shootMarked 存带水印的图、SR.docx.write 当 zip 写入器）都在上面。 -->
+<script defer src="js/pack.js"></script>
 <script defer src="js/chat.js"></script>
 <!-- 指针光照。不依赖任何别的模块，也不给别的模块用——它做的事就是往元素上写
      --mx / --my，剩下的交给 main.css 的"动效与光照"那一节。放在 main.js

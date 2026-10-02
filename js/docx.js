@@ -228,10 +228,18 @@ SR.docx = (function () {
   }
 
   // ---- 浏览器里存盘（Node 下没有 document，别调）----
-  function save(u8, filename) {
-    var blob = new Blob([u8], {
-      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    });
+  //
+  // ★★ 2026-10-02：MIME 从写死改成参数（`saveBytes`），`save` 只是它的一个薄壳。
+  //   起因是这个写入器现在有**两个出口**：`.docx`（wordprocessingml）和 `.zip`
+  //   （打包带走，见 js/pack.js）。一个 zip 和一个 docx **本来就是同一个容器**，
+  //   差别只有扩展名和 MIME。要是照着这段再抄一份 `.zip` 版，
+  //   抄出来的不只是那三行 Blob——把 `setTimeout(revoke, 3000)` 那个坑
+  //   （见下面那段注释）也一起抄了，而两处早晚会漂。
+  //
+  // ⚠ `revokeObjectURL` 不能立刻调：`a.click()` 之后浏览器还要回头去读这个 URL，
+  //   当场撤掉会得到一个"点了没反应／下载失败"的空档。3 秒是留够的。
+  function saveBytes(u8, filename, mime) {
+    var blob = new Blob([u8], { type: mime || 'application/octet-stream' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = filename;
@@ -241,8 +249,13 @@ SR.docx = (function () {
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 3000);
   }
 
+  function save(u8, filename) {
+    saveBytes(u8, filename,
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  }
+
   return {
-    read: read, write: write, replace: replace, save: save,
+    read: read, write: write, replace: replace, save: save, saveBytes: saveBytes,
     str: str, bytes: bytes, crc32: crc32, inflateRaw: inflateRaw
   };
 })();

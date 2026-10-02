@@ -773,20 +773,33 @@ footer .r {
 .figbtn:hover { border-color: var(--brand); color: var(--brand); }
 .figbtn.on:hover { color: #fff; }
 
-/* ---------- 备课／讲评气泡下的「复制这段」（见 js/chat.js 的 attachCopy） ----------
+/* ---------- 备课／讲评气泡下的「复制这段」和「打包」（见 js/chat.js 的 attachCopy） ----------
    这两个工位的产物就是**一段文字**——老师要贴进教案、学案、备课组的共享文档。
    摆的位置和形状跟上面那排「图 N」是一对（都挂在气泡里、都比 .chip 小一档），
    因为它们干的是同一类事：**对"这一条回复"做点什么**，而不是发一句话出去。 */
 .copybar { display: flex; gap: 6px; margin-top: 9px; }
-.copybtn {
+.copybtn, .packbtn {
   border: 1px solid var(--line); background: var(--sunken); font: inherit;
   font-size: 11.5px; padding: 3px 10px; cursor: pointer;
   color: var(--ink-2); letter-spacing: .3px;
 }
-.copybtn:hover { border-color: var(--brand); color: var(--brand); }
+.copybtn:hover, .packbtn:hover { border-color: var(--brand); color: var(--brand); }
 /* 拷成的那一瞬间换个说法（"复制好了"）。★ 用 .done 而不是 :active——
    剪贴板这一下是异步回来的，:active 在手指抬起来的时候就没了，看不见反馈。 */
-.copybtn.done { border-color: var(--brand); color: var(--brand); font-weight: 700; }
+.copybtn.done, .packbtn.done { border-color: var(--brand); color: var(--brand); font-weight: 700; }
+
+/* ★★ 「打包」为什么落在这儿（三个别的落点都去看过，都被否掉了）：见 js/pack.js 顶上那段。
+   一句话版：画板工具条**量过**放不下（360px 时 5 个孩子要 311px、只剩 20px 余量，
+   第 6 个会把那一条折成两行；桌面端 .boardbar 是 nowrap + overflow:hidden，
+   多出来的那颗会**无声消失**）；产物栏是**组卷工位专属**的，备课工位根本看不见它。
+   而「复制这段」旁边时机对（"想把这些带走"这个念头就是在这儿冒出来的），
+   而且两个刻度天然成对：复制这段 = 这一段文字带走，打包 = 到这一段为止整包带走。 */
+/* 一眼能分出来它是**拿走**（图 + 全文，一整包），所以带一个向下的箭头。
+   ★ 形状沿用 .copybtn，不再多一档主色——每一轮回复都挂着它，
+   整条对话全是绿色的按钮会很吵，"主色"这个词也就废了。 */
+.packbtn::before { content: '↓'; color: var(--brand); font-weight: 700; margin-right: 4px; }
+.packbtn:disabled { cursor: default; opacity: .75; }
+.packbtn:disabled:hover { border-color: var(--line); color: var(--ink-2); }
 
 /* ---------- 进度条（#steps）：备课／讲评那两个工位的"链子摆到第几节" ----------
    这一条是这一版的核心可发现性：备课本来的样子是一条没有终点的对话，

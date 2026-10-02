@@ -176,6 +176,10 @@ SR.chat = (function () {
   function reset(newWork) {
     work = newWork || work;
     history = [];
+    // ★ 打包的账本跟着这场对话一起清。不清的话，换了工位／点了 ⟳ 之后，
+    //   新对话里点「打包」会打出一个**混着上一场图和文字**的包——
+    //   而包里的东西看起来都正常，只有老师知道不对。
+    if (SR.pack) SR.pack.reset();
     els.msgs.innerHTML = '';
     clearChips();
     SR.board.clear();
@@ -406,7 +410,7 @@ SR.chat = (function () {
   //   链子是**一节一节摆**出来的，他摆到第三节想先把这三节拷走也完全合理。
   //   挂的位置跟出题工位的「图 1 / 图 2 / 图 3」一样，都是挂在气泡里的
   //   （见上面 attachFigSwitch 那段）——切换的是"这一条回复"，它属于那条回复。
-  function attachCopy(bubble, text) {
+  function attachCopy(bubble, text, turn) {
     var t = String(text || '').trim();
     if (!t) return;
     var bar = document.createElement('div');
@@ -424,6 +428,70 @@ SR.chat = (function () {
       });
     });
     bar.appendChild(b);
+
+    // ---- 「打包」：连图带全文一起走 ----
+    //
+    // ★★ 为什么挂在这儿（2026-10-02 定，孔老师把这个问题交回给我："你自己看看
+    //   如何方便用户体验"）——四处比过，只有这一处经得起推敲：
+    //
+    //   ① **时机对。** 老师想"带走"这个念头，是在读链子那一段文字的时候冒出来的；
+    //      而条子上已经有一个「复制这段」，它是全站**唯一**的"带走"入口。
+    //      同一种念头不该有两个地方——他要先学会"带走在哪儿"才用得上的功能，
+    //      等于没做。
+    //   ② **两个刻度挨着放。** 「复制这段」＝这一段文字带走；
+    //      「打包」＝**到这一段为止**的图和全文一起带走。两者都长在这一条回复上，
+    //      范围一眼看得出，不用猜"它到底打了哪些东西"（见下面 pack.make 的 turn）。
+    //   ③ **画板工具条放不下（量过）。** 360px 的小屏上那一行 5 个孩子已经占
+    //      311 / 331px，只剩 20px 余量；再加一颗会折成两行，而"这一行的高度在小屏上
+    //      很贵"这句话 css 里写着（那一行改过两回）。桌面那头 .boardbar 是 nowrap、
+    //      父级 overflow:hidden，挤不下**不是出滚动条，是直接少一个按钮**。
+    //   ④ **产物栏在备课工位根本看不见。** .outbox 是组卷独有的
+    //      （css `body:not([data-work="material"]) .outbox{display:none}`），
+    //      放那儿等于在备课／讲评两格里没有这个功能——而那两格正是有链子要带走的。
+    //
+    // ★ 每一条回复都挂，是**故意**的，跟「复制这段」同一个理由：
+    //   链子是一节一节摆出来的，摆到第三节就想先拷走也完全合理。
+    //   点中间那一条拿到的是"到那一段为止"的包，点最后一条才是全程。
+    if (SR.pack && turn != null) {
+      var pk = document.createElement('button');
+      pk.type = 'button';
+      pk.className = 'packbtn';
+      pk.textContent = '打包';
+      pk.title = '把从开头到这一段为止的图和全文打成一个压缩包（.zip）';
+      pk.addEventListener('click', function () {
+        if (pk.disabled) return;                 // 打包要几秒到几十秒，中途别让他点第二下
+        pk.disabled = true;
+        pk.textContent = '打包中…';
+        setStatus('正在把这一课的图重新画一遍，收进压缩包…');
+        SR.pack.make(turn, function (n, all) {
+          if (all > 1) setStatus('正在收第 ' + n + ' 张图（一共 ' + all + ' 张）…');
+        }, function (r) {
+          // ★ 失败就把按钮还给老师（他多半是想再点一次）；成功则**一直按着**，
+          //   直到那四个字收回去为止——不然「打包好了」那两秒里按钮看着能点，
+          //   点下去又打一遍，他会以为刚才那次没成。
+          if (!r.ok) {
+            pk.disabled = false;
+            pk.textContent = '打包';
+            setStatus(r.why);
+            return;
+          }
+          SR.pack.save(r.name, r.bytes);
+          pk.textContent = '打包好了';
+          pk.className = 'packbtn done';
+          // ★ 少一张图必须**说出来**。悄悄给一个缺图的包，老师翻到那道题才发现，
+          //   那时候他已经把包发给备课组了。（跟出材料那边"图没画出来要说明"同一条规矩。）
+          setStatus('已打包 ' + r.figs + ' 张图'
+            + (r.missed ? '，有 ' + r.missed + ' 张没画出来、没进包' : '') + '。');
+          setTimeout(function () {
+            pk.textContent = '打包';
+            pk.className = 'packbtn';
+            pk.disabled = false;
+          }, 2200);
+        });
+      });
+      bar.appendChild(pk);
+    }
+
     bubble.appendChild(bar);
   }
 
@@ -641,6 +709,12 @@ SR.chat = (function () {
     var w = (SR.WORKS && SR.WORKS[work]) || {};
     var p = SR.render.parseFences(msg.raw, { stripAssign: !!w.stripAssign });
 
+    // ★ 2026-10-02：把这一轮围栏里的画板命令留在消息对象上，**给打包用**。
+    //   打包（js/pack.js）要的是"这一场从头到底一共画了哪几张图"，
+    //   而这份清单只有解过围栏才知道。在这儿顺手挂一份，收完流那边就不用
+    //   把同一段正文再解一遍——**解两遍就是两份规则，早晚会漂**。
+    msg.ggbAll = p.ggb;
+
     // 正文
     var v = p.visible;
 
@@ -740,6 +814,10 @@ SR.chat = (function () {
     addUser(text, parts);
     // 兜底按钮要判"这段对话走到哪儿了"，所以在推入这一轮之前先记两个东西
     var isFirstTurn = !history.some(function (m) { return m.role === 'assistant'; });
+    // 这一场的第一句话就是**课题**，拿去给压缩包起名（见 js/pack.js 的 fileName）。
+    // ★ 后面几轮的话不能拿——那会儿他说的是「接着往下。」「这句我说不出口」，
+    //   包名会变成"数根-接着往下。.zip"。
+    if (isFirstTurn && SR.pack) SR.pack.setTopic(text);
     var prevAssistant = '';
     for (var hi = history.length - 1; hi >= 0; hi--) {
       if (history[hi].role === 'assistant') { prevAssistant = String(history[hi].content || ''); break; }
@@ -834,7 +912,11 @@ SR.chat = (function () {
         //   整行的赋值、"想说"围栏）。那些东西要是跟着进了剪贴板，
         //   老师是把它们贴进教案里的，一贴就是一串 `A=(-2,0)`。
         //   链子那四行两份完全一样，所以拷"看得见的那份"只会少掉垃圾，不会少掉链子。
-        if (SR.WORKS[work] && SR.WORKS[work].copy) attachCopy(b, msg.lastVisible || res.text);
+        // ★ 2026-10-02：先把它记进打包的账本，再挂按钮——按钮拿的是这个**序号**
+        //   （"到这一段为止"）。顺序反了的话，按钮上写着的序号会带着这一条还没进账的
+        //   空档，点下去少一段。
+        var ti = SR.pack ? SR.pack.note(msg.lastVisible || res.text, msg.ggbAll || []) : null;
+        if (SR.WORKS[work] && SR.WORKS[work].copy) attachCopy(b, msg.lastVisible || res.text, ti);
         setStatus(SR.api.usageText());
       }
     }).catch(function (e) {

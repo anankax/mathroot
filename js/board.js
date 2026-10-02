@@ -231,6 +231,29 @@ SR.board = (function () {
   //   所以导出这一路自己再画一遍，压在右下角。
   //
   //   异步是因为要等位图 load 完才能往 canvas 上叠。回调传 dataURL，任一步失败给空串。
+  //
+  // ---- 署名那一下，只有一份 ----
+  // ★★ 2026-10-02 从下面 exportPNG 里抽出来的。抽的理由很实在：现在有**两种图**
+  //   要烧署名——「存图」（整块画板，走 exportPNG）和「打包带走」里那些图
+  //   （裁过边，走 shootMarked，见下面）。各写一份的话，"字号多大多粗、
+  //   要不要垫一层白边"这件事就有了两个真源；哪天只调了一处，
+  //   两种图上的字就长得不一样——而它们**摆在同一个压缩包里，一眼看得出**。
+  //   字照画板上那一处（index.html 的 `.wm`）取，不再抄一份常量：改名只改那一处。
+  function mark(g, w, h) {
+    var wm = document.querySelector('.wm');
+    var txt = (wm && wm.textContent.trim()) || 'KAX · 数根 mathroot';
+    var fs = Math.max(13, Math.round(w / 42));
+    var pad = Math.round(fs * 0.8);
+    g.font = fs + 'px "Microsoft YaHei", "PingFang SC", sans-serif';
+    g.textAlign = 'right';
+    g.textBaseline = 'bottom';
+    // 先垫一层浅色描边：白底上深绿看得清，深色底上这层也兜着
+    g.fillStyle = 'rgba(255,255,255,.8)';
+    g.fillText(txt, w - pad + 1, h - pad + 1);
+    g.fillStyle = 'rgba(39,122,86,.9)';
+    g.fillText(txt, w - pad, h - pad);
+  }
+
   function exportPNG(cb) {
     var raw = toPNG();
     if (!raw) { cb(''); return; }
@@ -251,20 +274,7 @@ SR.board = (function () {
         c.width = im.width; c.height = im.height;
         var g = c.getContext('2d');
         g.drawImage(im, 0, 0);
-        // 署名照**画板上那一处**的字取（index.html 的 `.wm`），不再抄一份常量：
-        // 改名字只改那一处，导出的图跟着走。取不到才退回写死的那串。
-        var wm = document.querySelector('.wm');
-        var txt = (wm && wm.textContent.trim()) || 'KAX · 数根 mathroot';
-        var fs = Math.max(13, Math.round(im.width / 42));
-        var pad = Math.round(fs * 0.8);
-        g.font = fs + 'px "Microsoft YaHei", "PingFang SC", sans-serif';
-        g.textAlign = 'right';
-        g.textBaseline = 'bottom';
-        // 先垫一层浅色描边：白底上深绿看得清，深色底上这层也兜着
-        g.fillStyle = 'rgba(255,255,255,.8)';
-        g.fillText(txt, im.width - pad + 1, im.height - pad + 1);
-        g.fillStyle = 'rgba(39,122,86,.9)';
-        g.fillText(txt, im.width - pad, im.height - pad);
+        mark(g, im.width, im.height);
         cb(c.toDataURL('image/png'));
       } catch (e) {
         if (window.console) window.console.warn('exportPNG 失败：', e);
@@ -581,6 +591,42 @@ SR.board = (function () {
     im.src = src;
   }
 
+  // ---- 裁过边 **并且烧了署名** 的一张（打包带走用）----
+  //
+  // ★ 为什么要在 shoot 和 exportPNG 中间再开一条，而不是二选一：
+  //   那两条的取舍**正好是反的**——
+  //     · exportPNG（工具条「存图」）：整块画板、有署名。老师要的是"画板现在这样子"。
+  //     · shoot（出材料配图）：裁过边、**不许有署名**。那张会印到每个学生手上，
+  //       右下角挂一行 KAX 是给全班看的广告。
+  //   而打包里那些图**两个要求同时成立**：要贴进教案（所以裁边，周围一大片空很难看），
+  //   又会被传出去（所以署名，跟"存图"一个道理）。缺哪一条都是错的，
+  //   所以只能合成一条——**署名那一下走上面那个共用的 mark()**。
+  //
+  // ⚠ 它连着调 shoot，所以**会动画板**（shoot 里 paperOn/paperOff 那一段）。
+  //   调用方（js/pack.js）必须按顺序一张张画、画完把最后一张留在板上，
+  //   理由写在那边。
+  function shootMarked(cb) {
+    shoot(function (url, w, h) {
+      if (!url) { cb('', 0, 0); return; }
+      var im = new Image();
+      im.onerror = function () { cb('', 0, 0); };
+      im.onload = function () {
+        try {
+          var c = document.createElement('canvas');
+          c.width = im.width; c.height = im.height;
+          var g = c.getContext('2d');
+          g.drawImage(im, 0, 0);
+          mark(g, im.width, im.height);
+          cb(c.toDataURL('image/png'), im.width, im.height);
+        } catch (e) {
+          if (window.console) window.console.warn('shootMarked 失败：', e);
+          cb('', 0, 0);
+        }
+      };
+      im.src = url;
+    });
+  }
+
   // ---- 装机 ----
   var hostId = null;
 
@@ -814,7 +860,7 @@ SR.board = (function () {
 
   return {
     init: init, run: run, clear: clear, redraw: redraw, giveBlank: giveBlank,
-    draw: draw, shoot: shoot,
+    draw: draw, shoot: shoot, shootMarked: shootMarked,
     togglePlay: togglePlay, stopPlay: stopPlay,
     toPNG: toPNG, exportPNG: exportPNG,
     isReady: function () { return ready; },

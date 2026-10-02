@@ -27,12 +27,24 @@ SR.figures = (function () {
     return String(cmds == null ? '' : cmds).replace(/\s+/g, ' ').trim();
   }
 
-  // 模型写的一行命令 → 画板认的那几行。
-  // 分隔符两种都收：`;` 和全角 `；`（中文输入法底下很容易打成后者）。
+  // 模型写的一份命令 → 画板认的那几行。
   // ★ 开头固定补一条 `#清空`：一张图一块画板，上一张的残留绝不能串到这一张里。
+  //
+  // ★★ 分隔符**三种都收：换行、`;`、全角 `；`**。这一条是 2026-10-02 补的，
+  //   不然打包出来的每一张图都是空的。原因：这个仓库里"一份命令"有**两种写法**，
+  //   而它们各从一个地方来——
+  //     · **多行**：模型写 ```ggb 围栏（js/render.js:34 的 body 原样收下，不碰换行），
+  //       于是 `A=(-2,0)\nB=(3,0)\nSegment(A,B)` 是**一份**命令、三行；
+  //     · **单行分号**：出材料的 `[图]` 标记（js/produce.js:259），一份命令挤在一行里。
+  //   原来只切分号，那 pack.js 拿到多行那一份时**一行都没切开**，
+  //   整块变成一个字符串送进 board.run → expand()（board.js:85 只认单条）
+  //   → 一条带 \n 的 evalCommand。画板要么报错、要么只认头一行，
+  //   而且**静默**：pack 那边只看到 shoot 出了张白图，照样收进包里。
+  //   既然这个函数的身份是"一份命令 = 哪几行"（见下面导出处那段"两个真源"的说明），
+  //   那两种写法就必须都在这儿收掉——不然它就不是那个真源。
   function linesOf(cmds) {
     return ['#清空'].concat(
-      String(cmds || '').split(/[;；]/).map(function (s) { return s.trim(); }).filter(Boolean)
+      String(cmds || '').split(/[\n;；]/).map(function (s) { return s.trim(); }).filter(Boolean)
     );
   }
 
@@ -108,6 +120,16 @@ SR.figures = (function () {
 
   return {
     key: key, get: get, stats: stats, drawAll: drawAll,
+    // ★★ 2026-10-02 导出：打包（js/pack.js）也要"一张图 = 先清空 + 那几行命令"这条规矩。
+    //   那边自己抄一份的话，「开头固定补 #清空」这件事就有两个真源——
+    //   哪天发现还得再补一条（比如要画的图可能落在三维视角上，得先 `#平面`），
+    //   只改了一处，另一种图上就会带着上一张的残留。
+    linesOf: linesOf,
+    // ★★ 同一个理由：dataURL → 字节也只有一份。
+    //   ⚠ 打包那边拿到图之后要算 CRC，而 **CRC 必须算在字节上、不是 base64 文本上**——
+    //     文本改一个字符（比如把 + 换成空格）字节其实没变，CRC 却会跟着变。
+    //     所以那边宁可绕一趟这里，也不能自己去 atob。
+    bytesOf: bytesOf,
     isBusy: function () { return busy; },
     // 测试用：清缓存（界面不调）
     __forget: function () { cache = {}; }
