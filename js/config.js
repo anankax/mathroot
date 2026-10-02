@@ -190,7 +190,7 @@ SR.WORKS = {
   //   对话只是流程里的一环。所以它不检索教材索引（跟 draw/vary 同理：
   //   提示词里没有对应章节，硬塞附注会把模型带跑，实测出图率 8/8→6/8）。
   material: {
-    id: 'material', label: '出材料', badge: '传你学校的模板 · 出来的卷子打开就能印',
+    id: 'material', label: '组卷', badge: '套你学校的模板 · 打开就能印',
     prompt: function () { return window.SR.PROMPT_MATERIAL; },
     // ★ extra：**每轮现拼**的一段 system（api.js 的 buildSystem 会接在提示词后面）。
     //   出材料挂的是"老师这份模板认出来的格式号表"——它随模板变，写不进常量提示词。
@@ -199,7 +199,7 @@ SR.WORKS = {
     retrieve: false, tail: false, listPaper: false, stripAssign: true, chain: 'role'
   },
   draw: {
-    id: 'draw', label: '画图', badge: '可画可讲 · 存图贴课件',
+    id: 'draw', label: '作图', badge: '平面立体同一块板 · 存图贴进课件',
     prompt: function () { return window.SR.PROMPT_DRAW; },
     retrieve: false, tail: false, listPaper: false, stripAssign: false, chain: 'board'
   },
@@ -212,14 +212,14 @@ SR.WORKS = {
   //     判据是"这整条对话还没出现过 `第 N 节 ·`"，不是"第 0 轮"——讲评第一轮是列题号，
   //     真正该给几路的是**老师挑定一道之后**那一轮（见 js/api.js buildSystem 里那段）。
   prep: {
-    id: 'prep', label: '备课', badge: '学生怎么答 · 你接哪句',
+    id: 'prep', label: '备课', badge: '学生怎么答 · 你接哪一句',
     prompt: function () { return window.SR.PROMPT_PREP; },
     lean: function () { return window.SR.PROMPT_PREP_LEAN; },
     retrieve: true, tail: true, chainStart: true, listPaper: false,
     stripAssign: true, chain: 'role', steps: true, copy: true
   },
   vary: {
-    id: 'vary', label: '出题', badge: '变式 · 每个都给图',
+    id: 'vary', label: '命题', badge: '换个数字改个条件 · 每道都配图',
     prompt: function () { return window.SR.PROMPT_VARY; },
     // ★ multiFig：这一轮会带**好几个** ```ggb（每个变式一张图），而画板只有一块。
     //   不标这个的话，chat.js 会把它们排队连着画——每个围栏头一行都是 #清空，
@@ -233,7 +233,7 @@ SR.WORKS = {
   //   两处不一样：① badge／开场白，② listPaper——老师一次发来一整份卷子时，
   //   先只列题号、等他挑一道再摆链子（附注在 api.js 里）。
   review: {
-    id: 'review', label: '讲评', badge: '先列题号 · 挑一道摆链子',
+    id: 'review', label: '讲评', badge: '先列题号 · 定一道再展开',
     prompt: function () { return window.SR.PROMPT_PREP; },
     lean: function () { return window.SR.PROMPT_PREP_LEAN; },
     retrieve: true, tail: true, chainStart: true, listPaper: true,

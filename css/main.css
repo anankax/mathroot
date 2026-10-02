@@ -379,23 +379,19 @@ main {
 .rail {
   background: var(--panel); border: 1px solid var(--line);
   min-height: 0; display: flex; flex-direction: column;
+  /* ★ 顶上留这 8px，是因为**原来撑在这儿的分组小标题没了**（见下）。
+     不留的话第一格「组卷」直接顶着外框那条线，像被裁掉了一截。 */
+  padding-top: 8px;
   overflow-y: auto; overflow-x: hidden;
 }
 
-/* 分组小标题。
-   ★ 2026-10-01 孔老师否掉了原先那版：**"01 工位 WORK"这种编号 + 拉丁小字她不要**
-     （原话"那个 02 03 的标签搞了干啥……搞什么英文在那干啥"）。
-     编号是我从面板铭牌那套抄过来的，可**左栏不是铭牌，是一列按钮**——
-     把导航项前面挂上"01/02"，等于给菜单编了号，读者要多认一层。
-     现在只剩一个安静的分组名：小、拉开字距、不上色、不加框。
-     下面那条线留着——它是"这一组到此为止"的分界，比字有用。 */
-.railhead {
-  flex: 0 0 auto; display: flex; align-items: baseline;
-  padding: 11px 14px 8px;
-}
-.railhead span {
-  font-size: 11.5px; font-weight: 700; color: var(--ink-3); letter-spacing: 2.6px;
-}
+/* 分组小标题（.railhead）的样式**2026-10-02 整块删掉了**：孔老师原话"不要小标题了吧"，
+   左栏那两块标题（工位／我的）连 DOM 一起撤了，上下两组改由各自的 border-bottom 分界。
+   ★ 下面这段话留着，是因为它挡的是**另一个**改法，跟标题在不在没有关系：
+     2026-10-01 孔老师否掉了**编号 + 拉丁小字**那版（原话"那个 02 03 的标签搞了干啥……
+     搞什么英文在那干啥"）。编号是我从面板铭牌那套抄过来的，可**左栏不是铭牌，
+     是一列按钮**——把导航项前面挂上"01/02"，等于给菜单编了号，读者要多认一层。
+     ⚠ 所以：别给这一列加编号，也别加拉丁小字；真要分组，用线分，别用字。 */
 
 /* 工位：**竖排**。顶栏那版是横排的，搬下来自然要改成竖列——
    竖列还有个好处：每一格占满整宽，点哪儿都是这一格。 */
@@ -1338,8 +1334,6 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
        行会被顶出去，而 body 是 overflow:hidden——顶出去的东西直接没了，比切一半更糟。 */
   main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr) minmax(0, 1.25fr); }
   .rail { flex-direction: row; flex-wrap: wrap; align-items: center; overflow: visible; padding: 6px 0; }
-  .railhead { border-bottom: 0; padding: 4px 10px; }
-  .railhead em { display: none; }            /* 拉丁小字这档留给面板，栏头不占位 */
   .rail .works {
     flex-direction: row; flex-wrap: wrap;
     background: var(--sunken); border: 1px solid var(--line);

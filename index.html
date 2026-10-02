@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>数根 mathroot · 初中数学备课台 · by KAX</title>
-<meta name="description" content="KAX 做的初中数学备课台：备课摆追问链、整卷讲评、出题变式、画图，带一块能画平面也能画三维的 GeoGebra。">
+<title>数根 mathroot · 初中数学工作台 · by KAX</title>
+<meta name="description" content="KAX 做的初中数学工作台：组卷、作图、备课、命题、讲评五件事，带一块能画平面也能画三维的 GeoGebra。">
 <meta name="author" content="KAX">
 <!-- 署名：把作者写进元数据，别人整页扒走也留着出处 -->
 <meta name="copyright" content="© 2026 KAX · 数根 mathroot">
@@ -103,10 +103,10 @@
     <span class="by" title="本站由 KAX 制作">BY KAX</span>
     <!-- 副标题要短到放得下：顶栏一横排全是按钮，长了会被裁成"…"，
          截图和展板上看着就像没做完。完整那句话在「关于」里说。 -->
-    <span class="sub">初中数学备课台</span>
+    <span class="sub">初中数学工作台</span>
   </div>
 
-  <!-- ★ 工位那一排（画图/备课/出题/讲评）2026-10-01 从顶栏**下到左栏**了。
+  <!-- ★ 工位那一排（组卷/作图/备课/命题/讲评）2026-10-01 从顶栏**下到左栏**了。
        理由：顶栏原来挤了十来个控件，"看着不像成熟产品"最直接的原因就在这儿。
        现在顶栏只剩三件事——**我是谁（品牌）／用哪条通道／关于**。
        按钮还是 `.workbtn`，main.js 照类名找，一行没改。 -->
@@ -144,35 +144,40 @@
          现在那份是课本原文的语料像 js/resource-index.js 一样被 .gitignore 挡着、
          不进仓库，公开站上由 kb.js 的 local() 拦住、连请求都不发。详见 js/kb.js 顶上那段。
        这个按钮是给孔老师查条目、验召回的——它会显示分数和阈值，所以**只在本机出现**。 -->
-  <!-- ★ 上面这四个按钮 2026-10-01 一起搬去了左栏「我的」区。
-       它们跟"工位"是同一类东西（都是换一件要干的事），挤在顶栏里反而
-       跟通道、关于混成一片；左栏按"工具／我的"分了两组之后，
+  <!-- ★ 上面这四个按钮 2026-10-01 一起搬去了左栏下组（当时那组叫「我的」，
+       2026-10-02 小标题去掉了）。它们跟工位是同一类东西（都是换一件要干的事），
+       挤在顶栏里反而跟通道、关于混成一片；搬下来之后，
        「素材」是查我手上有哪些文件、「知识库」是验召回，各归各位。 -->
 
   <button type="button" class="tool" id="aboutbtn">关于</button>
 </header>
 
 <main>
-  <!-- ── 左栏：工位导航 ──────────────────────────────────────────
+  <!-- ── 左栏：五个工位 + 工具 ───────────────────────────────────
        ★ 三栏（左导航／中对话／右产物）是照腾讯 WorkBuddy、扣子那类成熟产品排的。
          原来顶栏一横排十来个按钮，是"看着不像成熟产品"最直接的原因。
-       ★ 两组分开：上面是**工位**（换一件要干的事），下面是**我的**（我手上有哪些
-         东西、本机验货的口子）。工位按钮还是 `.workbtn` 这个类名——
-         main.js 照类名找、照 `data-work` 高亮，一行都没动。 -->
+       ★ 上下两组**靠线分开、不靠字**（2026-10-02 孔老师定）：上面五个是"换一件
+         要干的事"，下面那一列是"我手上有些什么"。原先是两块小标题（工位／我的），
+         她说不要小标题——去掉之后分界就落在 `.works` 和 `#badge` 各自那条
+         border-bottom 上，读得出来是哪一组，还省两行高度。
+         ⚠ 别把编号（01/02）加回来：2026-10-01 她否过一次，理由在 css 的 .railhead 那段。
+       ★ 工位按钮还是 `.workbtn` 这个类名——main.js 照类名找、照 `data-work` 高亮。
+       ★ 五个名字 2026-10-02 换成教师行话：组卷／作图／备课／命题／讲评
+         （原来是出材料／画图／出题，她说"奇怪、不够文雅"）。
+         源头在 js/config.js 的 SR.WORKS[].label，这里和那儿、以及「关于」里那串
+         必须一起改——**三处同名**，只改一处会出现两个名字。 -->
   <nav class="rail tick">
-    <div class="railhead"><span>工位</span></div>
     <div class="works">
-      <button type="button" class="workbtn" data-work="material">出材料</button>
-      <button type="button" class="workbtn" data-work="draw">画图</button>
+      <button type="button" class="workbtn" data-work="material">组卷</button>
+      <button type="button" class="workbtn" data-work="draw">作图</button>
       <button type="button" class="workbtn" data-work="prep">备课</button>
-      <button type="button" class="workbtn" data-work="vary">出题</button>
+      <button type="button" class="workbtn" data-work="vary">命题</button>
       <button type="button" class="workbtn" data-work="review">讲评</button>
     </div>
     <!-- 高亮那一格底下的那句话（#badge）。★ 五个按钮光看名字分不出
          「备课」和「讲评」差在哪儿，这一行是唯一说清的地方。 -->
     <div id="badge"></div>
 
-    <div class="railhead"><span>我的</span></div>
     <div class="railtools">
       <button type="button" class="railbtn" id="tplbtn" title="我上传过的学校模板">我的模板</button>
       <button type="button" class="railbtn" id="resbtn" style="display:none">本地素材</button>
@@ -302,23 +307,23 @@
 <div class="overlay" id="about">
   <div class="box tick">
     <h2>数根<em>MATHROOT</em></h2>
-    <p>一个<strong>初中数学备课台</strong>。备课那一段里，它<strong>演学生</strong>——把"学生大概会这么答、你接哪一句"一条一条摆出来，摆完你拷走就能用。</p>
+    <p>一个<strong>初中数学工作台</strong>。备课那一段里，它<strong>演学生</strong>——把"学生大概会这么答、你接哪一句"一条一条摆出来，摆完你拷走就能用。</p>
 
-    <h3>五个工位</h3>
+    <h3>五件事</h3>
     <ul>
-      <li><strong>出材料</strong>——传一份<strong>你学校自己的模板</strong>（周练卷、导学案、练习纸都行），说一句"第五周，考一元一次方程，选择 8 道、填空 6 道、解答 4 道"，它把内容编排好、套进你的模板，给你一份 <strong>.docx</strong>，打开就能印。手边有<strong>别人的卷子</strong>也能传上来——它拿那份当<strong>题源</strong>，沿用它的题型和难度、改成你要的范围，但<strong>不会把它的抬头和说明带过来</strong>。题目要图的时候它写一行画图命令，工作台自己把图渲出来印上去。</li>
-      <li><strong>画图</strong>——说一句"画个正方体，让它转起来"，右边 GeoGebra 就出来。题目里能画的东西它都画：坐标系、数轴、三角形、圆、函数图象；立体图形点一下<strong>「三维」</strong>切过去，还是这块 GeoGebra。画完点<strong>「存图」</strong>，右下角带着出处，直接贴进课件、卷子、学案。</li>
+      <li><strong>组卷</strong>——传一份<strong>你学校自己的模板</strong>（周练卷、导学案、练习纸都行），说一句"第五周，考一元一次方程，选择 8 道、填空 6 道、解答 4 道"，它把内容编排好、套进你的模板，给你一份 <strong>.docx</strong>，打开就能印。手边有<strong>别人的卷子</strong>也能传上来——它拿那份当<strong>题源</strong>，沿用它的题型和难度、改成你要的范围，但<strong>不会把它的抬头和说明带过来</strong>。题目要图的时候它写一行画图命令，工作台自己把图渲出来印上去。</li>
+      <li><strong>作图</strong>——说一句"画个正方体，让它转起来"，右边 GeoGebra 就出来。题目里能画的东西它都画：坐标系、数轴、三角形、圆、函数图象；立体图形点一下<strong>「三维」</strong>切过去，还是这块 GeoGebra。画完点<strong>「存图」</strong>，右下角带着出处，直接贴进课件、卷子、学案。</li>
       <li><strong>备课</strong>——把这一课要上的<strong>题</strong>贴进来，或者只写一个<strong>课题</strong>（例如"3.1 代数式的值"）都行。它先给你<strong>几路</strong>：这道题学生<strong>可能有哪几种不同的错法</strong>（两到四条，每条写他大概会怎么说），你挑一路，它再往下摆。之后<strong>一轮摆一节</strong>，每节四行——<code>第 1 节 · 把 x 塞回题目问的那件事</code>、"学生大概会说……"、"你接这句……"、"这么接的道理……"。<strong>摆几节、每节叫什么，它按这道题自己定</strong>（不难的题三节，坎多的多走两节），只守住三条：从学生真卡住的那处起、至少一节说破核心误解、最后一节把学生自己说出来的那句钉住。底下有<strong>台阶条</strong>，摆到第几节一目了然，也可以点一下把链子推到那一节。哪一节不对，直接跟它说<strong>"我们班孩子会说……"</strong>，它照你的话重摆。</li>
-      <li><strong>出题</strong>——给一道题，它出几个变式：换数字、改条件、反过来问、改成开放题，<strong>每个变式都配一张图</strong>，答案也给。</li>
+      <li><strong>命题</strong>——给一道题，它出几个变式：换数字、改条件、反过来问、改成开放题，<strong>每个变式都配一张图</strong>，答案也给。</li>
       <li><strong>讲评</strong>——把<strong>整份卷子</strong>发过来（拍照、PDF、.docx 都行，一次可以发好几张）。它先把卷子上有哪些题列一遍，你挑定一道，它再摆那一道的链子——<strong>从"学生大概错在哪"摆起</strong>，学生已经做过了，不用再复述题目。</li>
     </ul>
 
     <h3>怎么用</h3>
     <ul>
       <li>备课／讲评里，每一条回复底下都有一颗<strong>「复制这段」</strong>——链子是<strong>一节一节</strong>摆的，摆到哪儿想先拷走都行，贴进教案、学案、备课组的共享文档。</li>
-      <li>底下那三个按钮是<strong>你要跟它说的话</strong>，跟着工位换：备课／讲评里是<strong>"接着往下走"</strong>、<strong>"这句我说不出口，换个说法"</strong>、<strong>"整条链子给我，我拷走"</strong>；出材料里是题量、难度、范围那几句；画图里是"换成三维""切回平面"。想说什么直接打字也行。</li>
+      <li>底下那三个按钮是<strong>你要跟它说的话</strong>，跟着工位换：备课／讲评里是<strong>"接着往下走"</strong>、<strong>"这句我说不出口，换个说法"</strong>、<strong>"整条链子给我，我拷走"</strong>；组卷里是题量、难度、范围那几句；作图里是"换成三维""切回平面"。想说什么直接打字也行。</li>
       <li>备完一课，点左栏最下面那颗<strong>圆形箭头</strong>（鼠标停上去写着"清空，重新开始"）清空，接着备下一课。</li>
-      <li>顶栏<strong>「备课卡片」</strong>里是那 118 条追问条目，按册别分组、能搜，备课时随手查。
+      <li>左栏<strong>「备课卡片」</strong>里是那 118 条追问条目，按册别分组、能搜，备课时随手查。
 
     </ul>
 
