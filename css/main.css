@@ -1210,6 +1210,14 @@ footer .r {
      outline: none（id 选择器比这里的伪类权重高，轮不到这条生效）。
      别把它们的 id 改成 class——改了就同时出现两种焦点提示了。 */
 :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+/* ⚠ 这条在上面那条之外，是**上线之后量出来的**：GeoGebra 自己给自己那个 canvas
+   挂了 `tabindex="0"`（它本来就是个可聚焦的控件），可它同时又把自己的 outline
+   抹成 none。于是在线上，Tab 第二下就落进画板里，**屏幕上一点提示都没有**——
+   一个看不见的焦点目标。上面那条光杆 `:focus-visible` 压不过它（GeoGebra 注入的
+   规则更具体），得指名到 `#ggb canvas` 才赢（实测：加完 outline 就是 solid 2px）。
+   ★ `outline-offset: -2px` 是往里收的：画板占满整个面板，往外扩的框会被
+     `.col` 的 overflow 切掉一条边。往回收正好压在画面边线上，跟角标是一套形状。 */
+#ggb canvas:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 
 /* ---------- 出材料：模板库 + 产物栏 ---------- */
 /* 模板列表的一行。★ 排版跟 .kbrow / .resrow 一族保持同一套：直角、细分隔线、
