@@ -253,7 +253,7 @@ SR.chat = (function () {
       b.textContent = label;
       // ★ 2026-10-02：title 跟 SR.stepJump 的措辞一起改（原来写的是「接着往下摆」「把链子摆到这一节」）。
       //   老师对着一格上的名字点下去，看到的提示词得说"走到那个环节"，不能又说"摆第 N 节"。
-      b.title = (sd === 'close') ? '把整条链子一次摆完，好整段拷走'
+      b.title = (sd === 'close') ? '把整条链子一次给我，好整段拷走'
         : (sd === 'next') ? '接着往下走'
           : '把链子走到这个环节';
       b.addEventListener('click', function () { if (!busy) stepGo(sd); });

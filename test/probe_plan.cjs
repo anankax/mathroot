@@ -447,7 +447,10 @@ else console.log('✓ SR.inferStep（4 条契约）');
 //   ⚠ 这张表是**逐字**比对的，所以它同时也是一道闸：谁再顺手把措辞改回去，这里当场红。
 //     改措辞是**产品决定**，不是代码自由——改了就在这儿同步改，别绕过去。
 const SJ = [
-  ['close', '整条链子从头到尾摆一遍，我拷走。'],
+  // ★ close 那句要跟按钮（SR.CHIPS.chain 最后一条）逐字对上，也要能让提示词那张表认出来：
+  //   表里认的是「整条给我」／「整条给我，我拷走」。原来的「整条链子从头到尾摆一遍，我拷走。」
+  //   两头都不满足——它既带「摆」，又是这个动作的第三种说法。
+  ['close', '整条链子给我，我拷走。'],
   ['next', '接着往下。'],
   [1, '从第 1 个环节重来。'],
   ['1', '从第 1 个环节重来。'],          // ★ 真路径：data-step 从 DOM 里读出来**是字符串**
@@ -457,8 +460,51 @@ const SJ = [
 ];
 const sj = [];
 SJ.forEach(([n, want]) => { const got = SR.stepJump(n); if (got !== want) sj.push('stepJump(' + JSON.stringify(n) + ') 期望「' + want + '」，读到「' + got + '」'); });
+// ★ 逐字表管得住"上面这几条"，管不住"以后新加的一条"。所以再横着量一遍**这一类**：
+//   ① 不许出现「摆」；② 不许出现**「第 N 节」这个形状**。
+// ⚠ ② 不能写成"不许出现『节』这个字"——**「环节」里本来就有它**。
+//   第一版就是这么写的，四条当场全红，而红的是尺子：它把正确的「第 4 个环节」也拦了。
+//   这正是这个仓库反复踩的那一类：**量的形状必须对准你真正想禁的那件事**。
+//   禁的是"数字后面直接跟着一个光秃秃的『节』"，所以 `(?:个\s*)?节` 那个「个」是必需的：
+//   「第 4 个环节」里个后面是「环」，匹配不上；「第 4 节」里个没有、节顶上，匹配得上。
+const RE_BARE_JIE = /第\s*[0-9]+\s*(?:个\s*)?节/;
+SJ.forEach(([n]) => {
+  const got = SR.stepJump(n);
+  if (got.indexOf('摆') >= 0) sj.push('stepJump(' + JSON.stringify(n) + ') 里还有「摆」：' + got);
+  if (RE_BARE_JIE.test(got)) sj.push('stepJump(' + JSON.stringify(n) + ') 里写的是「第 N 节」这个形状（老师该看到「第 N 个环节」）：' + got);
+});
+// 尺子自检：那条形状必须**真的会咬**，否则上面 ② 是空的。
+if (!RE_BARE_JIE.test('走到第 4 节。')) { failed++; console.log('✗ 尺子：「第 N 节」那条形状连样例都咬不住\n'); }
+if (RE_BARE_JIE.test('走到第 4 个环节。')) { failed++; console.log('✗ 尺子：那条形状把正确的「第 4 个环节」也咬了\n'); }
 if (sj.length) { failed++; console.log('✗ SR.stepJump'); sj.forEach(x => console.log('    · ' + x)); console.log(''); }
-else console.log('✓ SR.stepJump（' + SJ.length + ' 条）');
+else console.log('✓ SR.stepJump（' + SJ.length + ' 条逐字 + 2 条"不许出现「摆」和「第 N 节」"）');
+
+// ★★ 老师看到的按钮文案，横着扫一遍：底下那三档（chain）是**他每轮都看见的**，
+//   只要有一句带着「摆」，孔老师那个问题就还在。
+//   ⚠ 只管 chain 这一档，不管上面几档——那些是"这道题该说什么"，跟链子无关。
+// ★★ 还有一处最容易漂的地方：**index.html 那份"怎么用"里，是把这三句话抄了一遍的**。
+//   改按钮不改说明，说明就在线上教老师说一句按钮上根本没有的话——
+//   2026-10-02 就是这么漏的（按钮改成「接着往下走」，说明里还写着「接着往下摆」）。
+//   这里拿 index.html 的**原文**去核，不靠人记得。
+try {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const miss = (SR.CHIPS && SR.CHIPS.chain || []).filter(s => html.indexOf(s) < 0);
+  if (miss.length) { failed++; console.log('✗ index.html 那份"怎么用"里对不上这几句按钮：' + miss.join(' | ') + '\n'); }
+  else console.log('✓ index.html 里引的三个按钮跟 SR.CHIPS.chain 逐字一样');
+} catch (e) {
+  failed++; console.log('✗ 读不到 index.html（' + e.message + '）—— 这条**没量到**\n');
+}
+
+// ⚠ 读不到就**明说没量到**，别让空数组冒充"扫过了、干净"——那正是这个仓库最怕的假绿。
+const CH = SR.CHIPS && SR.CHIPS.chain;
+if (!Array.isArray(CH) || !CH.length) {
+  failed++;
+  console.log('✗ 尺子：SR.CHIPS.chain 读不到（' + JSON.stringify(CH) + '）—— 这条**没量到**，不是过了\n');
+} else {
+  const chainBad = CH.filter(s => s.indexOf('摆') >= 0);
+  if (chainBad.length) { failed++; console.log('✗ 备课/讲评底下那三个按钮里还有「摆」：' + chainBad.join(' | ') + '\n'); }
+  else console.log('✓ 备课/讲评那 ' + CH.length + ' 个按钮里没有「摆」');
+}
 
 // ============================================================
 //  尺子自检 —— 上面所有判据都建立在"这把尺子本身是准的"上，先证明这一点
