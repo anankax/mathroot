@@ -15,7 +15,8 @@
       ⚠ 这一条**不包括"编号铭牌"**。原来写到这儿写着"两块面板各挂一个编号铭牌
         （01 对话 / 02 画板）"，可页面上从来没有过——2026-10-01 试过，
         孔老师当场否了（"那个 02 03 的标签搞了干啥……搞什么英文在那干啥"），
-        编号只留在左栏试了一版，理由写在下面 .railhead 那儿。
+        编号只在一列导航按钮上试了一版（那列 2026-10-02 也撤了），
+        理由写在下面 `.works.stretch` 那段注释里。
         那段注释从此就跟页面对不上了：照着它去找"01/02"找不着，还会有人
         （比如 2026-10-02 的我）以为"编号丢了"再给加回去。所以在这儿改成实话。
 
@@ -180,7 +181,7 @@ body[data-work="vary"] .tick::after { border-color: rgba(95, 107, 18, .5); }
 /* 铭牌：中文 +（可选的）拉丁小字。栏头和弹层标题共用这一套。
    ★ 中文走衬线（那篇第四节）。别改成无衬线，改了整块铭牌就塌成一行小字。
    ⚠ **这一套里没有编号**（原来写着"编号 + 中文 + 拉丁小字"，还配了条 `.colhead b`
-     的样式）——编号 2026-10-01 被孔老师否掉了，理由和经过写在 .railhead 那儿。
+     的样式）——编号 2026-10-01 被孔老师否掉了，理由和经过写在 `.works.stretch` 那段注释里。
      样式和注释一起清掉了，省得下一个人照着注释把"02 对话"加回来。 */
 /* ★ 基座一律给 --song（衬线）。**别写成 --sans**：弹层里的 h2 是
    `<h2>模型通道<em>CHANNEL</em></h2>`——中文是**裸文本节点**，外面没有 span 包着，
@@ -369,9 +370,21 @@ body[data-work="vary"] .workbtn.on { background: var(--alt); }
 /* 小号大写字距标签——那篇里说"中英结合总能够比较好看，多用于装饰"。
    ★ 字距 2.4px 是好几个字符的时候才好看；只有一两个字（比如"关于"）拉这么开
      就散了，所以按钮上的中文不动字距（见 .tool）。 */
+/* ★ 2026-10-02：这句话（"当前这一格是干什么的"）从左栏搬到了**中栏栏头**，
+   紧跟「对话」两字。它说的就是"这一栏在办哪件事"，贴着栏头比挂在左栏底下近得多——
+   左栏在的时候它离工位按钮近、离对话栏远，老师在中间栏打字，那句说明在屏幕另一头。
+   ★ 左边那道 2px 竖线留着（原来就靠它跟按钮分开）：现在它分开的是栏头这块铭牌
+     和这句注脚，同一个用途。 */
 #badge {
   font-family: var(--mono); font-size: 11px; color: var(--ink-3); flex: 0 0 auto;
   letter-spacing: 1.4px; border-left: 2px solid var(--rule); padding-left: 11px;
+}
+/* 栏头里的这句注脚：`.colhead span` 那条会给它 15px/右边距，字号由 #badge 的 ID 压住，
+   但**长句不能撑破栏头**——窄屏上 badge 有的句子不短（"套你学校的模板 · 打开就能印"），
+   给它一个省略号，宁可截断也不要挤掉「对话」或者换行把栏头顶高。 */
+.colhead .colhint {
+  margin-left: 0; margin-right: 0; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 /* 通用按钮。★ 悬停时右下角冒出一小段角线——那篇讲"交互时的强调方式"，
@@ -393,16 +406,23 @@ body[data-work="vary"] .workbtn.on { background: var(--alt); }
 .tool:disabled { opacity: .45; cursor: default; }
 .tool:disabled::after { content: none; }
 
-/* ---------- 主体：三栏（左工位 / 中对话 / 右产物＋画板） ---------- */
-/* ★ 2026-10-01 从两栏改成三栏。左栏是"工位 + 我的"，右栏是"上产物下画板"。
-   三栏是照腾讯 WorkBuddy／扣子那类成熟产品排的形——原来顶栏一横排十来个按钮，
-   是"看着不像成熟产品"最直接的原因（孔老师两次说"要和人家一样，有模有样"）。 */
+/* ---------- 主体：两栏（中对话 / 右产物＋画板） ---------- */
+/* ★ 2026-10-01 从两栏改成三栏（左工位 / 中对话 / 右产物）。理由照腾讯 WorkBuddy／
+   扣子那类成熟产品排的形——原来顶栏一横排十来个按钮，是"看着不像成熟产品"最直接的原因。
+   ★★ 2026-10-02：**左栏那 200px 撤掉了，退回两栏**。孔老师看着线上站问
+   "为什么还是保留了左侧栏"——左栏那五个工位和首屏那五张卡片本来就是同一件事画了两遍，
+   而"两遍"最实际的问题是两边各写死了一遍工位名（改一处、另一处不同步，屏幕上看着完全正常）。
+   工位那一行现在在**输入框底下**（`.works.stretch`），跟输入框同栏，
+   老师说一句话之后接着换一件，手不用来回跑。
+   ★ 当初要解决的那件事（顶栏挤了十来个控件）已经用别的办法解决了：顶栏只剩
+     品牌／通道／一排小图标／关于。 */
 main {
   flex: 1 1 auto;
   display: grid;
   /* ★ 右栏宽度 44% → 42%：1440 下原来产物栏 621 比对话栏 563 还宽，
-     一个"看结果"的栏目比"干活"的栏目宽，主次反了。收一档之后 610 / 514。 */
-  grid-template-columns: 200px minmax(320px, 1fr) minmax(348px, 42%);
+     一个"看结果"的栏目比"干活"的栏目宽，主次反了。收一档之后 610 / 514。
+     撤掉左栏那 200px 之后，省下来的宽度全归对话栏（它是干活的那一栏）。 */
+  grid-template-columns: minmax(320px, 1fr) minmax(348px, 42%);
   gap: 14px;
   padding: 14px;
   min-height: 0;
@@ -413,45 +433,35 @@ main {
   min-height: 0; display: flex; flex-direction: column; overflow: hidden;
 }
 
-/* ---------- 左栏：工位导航 ---------- */
-/* ★ 它跟 .col 是同一套面板语言（白底、1px 边、四角角标），只是窄、内容按组分。
-   没有复用 .col 的类名：.col 是"一栏一块面板"，左栏是"一列按钮"，
-   两者的 flex 行为不一样（左栏要能整列滚）。 */
-.rail {
-  background: var(--panel); border: 1px solid var(--line);
-  min-height: 0; display: flex; flex-direction: column;
-  /* ★ 顶上留这 8px，是因为**原来撑在这儿的分组小标题没了**（见下）。
-     不留的话第一格「组卷」直接顶着外框那条线，像被裁掉了一截。 */
-  padding-top: 8px;
-  overflow-y: auto; overflow-x: hidden;
+/* ---------- 工位那一行（输入框底下那六格） ---------- */
+/* ★★ 2026-10-02：原来这是左栏里**竖排**的一列（`.rail .works`），现在搬到
+   输入框底下、改成**横排平分整行**。左栏撤掉的理由写在 index.html 那段注释里。
+   ★ `.stretch` 这个名字说的是"铺满整行"：`flex:1 1 0` 让六格**一样宽**
+     （不看名字长短），字居中。六格等宽 + 平分 = 读起来是"一排并列的工序"；
+     左对齐、各按字数宽窄不一，读起来像一串菜单项。
+     ⚠ 别改成按内容宽度排（`flex:0 0 auto`）：六格名字长短差得多（"备课"两字、
+       "讲评"两字、"学情"两字，还好；可 `SR.WORKS[].label` 是能改的——
+       一旦有人把某一格改成四个字，那一格就会挤得比别人宽，行看着歪掉）。
+   ⚠ **别给这六格加编号，也别加拉丁小字**——2026-10-01 孔老师否过一次
+     （原话"那个 02 03 的标签搞了干啥……搞什么英文在那干啥"）。编号是我从面板铭牌
+     那套抄来的，可**这是一排按钮，不是铭牌**：菜单项前面挂"01/02"，
+     读者得多认一层，什么也没换到。真要分组，用线分，别用字。 */
+.works.stretch {
+  flex: 0 0 auto; margin: 8px 14px 12px;
+  border: 1px solid var(--line); background: var(--sunken);
 }
-
-/* 分组小标题（.railhead）的样式**2026-10-02 整块删掉了**：孔老师原话"不要小标题了吧"，
-   左栏那两块标题（工位／我的）连 DOM 一起撤了，上下两组改由各自的 border-bottom 分界。
-   ★ 下面这段话留着，是因为它挡的是**另一个**改法，跟标题在不在没有关系：
-     2026-10-01 孔老师否掉了**编号 + 拉丁小字**那版（原话"那个 02 03 的标签搞了干啥……
-     搞什么英文在那干啥"）。编号是我从面板铭牌那套抄过来的，可**左栏不是铭牌，
-     是一列按钮**——把导航项前面挂上"01/02"，等于给菜单编了号，读者要多认一层。
-     ⚠ 所以：别给这一列加编号，也别加拉丁小字；真要分组，用线分，别用字。 */
-
-/* 工位：**竖排**。顶栏那版是横排的，搬下来自然要改成竖列——
-   竖列还有个好处：每一格占满整宽，点哪儿都是这一格。 */
-.rail .works {
-  flex: 0 0 auto; flex-direction: column;
-  background: transparent; border: 0; border-bottom: 1px solid var(--line);
+.works.stretch .workbtn {
+  flex: 1 1 0; min-width: 0;
+  /* 居中：一颗 6×6 的状态点 + 名字，整个作为一格内容居中（见下面 ::before）。
+     六格构造完全一样，所以那点偏移是一致的小，看着齐。 */
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; padding: 7px 6px;
+  overflow: hidden; text-overflow: ellipsis;
 }
-/* ★ 行高和字号都往下收（2026-10-01 第二版）：原来 14.5px + 上下 11px 一格 47px，
-   五格 235px——半栏都是按钮，读起来像张表格。导航是"用来点的一列"，不是内容本身，
-   收到 13.5px / 38px 一格，整栏立刻松下来。 */
-.rail .workbtn { text-align: left; font-size: 13.5px; padding: 10px 14px; }
-/* ★ 覆盖掉横向那版的分隔线：横排靠竖线分格，竖排要靠横线。
-   不覆盖的话每一格左边会多出一道竖线，看着像每格都缺了一块。 */
-.rail .workbtn + .workbtn { border-left: 0; border-top: 1px solid var(--line); }
-/* 悬停：跟「我的」那组同一档反馈。导航如果点上去毫无动静，会让人怀疑没点上。 */
-.rail .workbtn:hover { background-color: var(--brand-soft); }
-/* 当前这一格：底色已经是近黑的一大块，再补一道墨绿左边线——
-   一道 3px 的竖条比再加粗字更省，也让人一眼看出"我现在在这一格"。 */
-.rail .workbtn.on { box-shadow: inset 3px 0 0 var(--brand); }
+/* 悬停：导航如果点上去毫无动静，会让人怀疑没点上。
+   ★ 只换底色，不用 background 简写——简写会连下面"动效与光照"那两层图一起清掉，
+     悬停的瞬间按钮反而变平了（`.tool` 那条注释里踩过同一个坑）。 */
+.works.stretch .workbtn:hover { background-color: var(--brand-soft); }
 
 /* 这一格**出过东西**（口袋里有它的产物）。2026-10-02 加，模拟稿第⑤张说的
    「每一步都给下一步留了东西」——这是它看得见的那一半。
@@ -459,57 +469,45 @@ main {
      不是"点过这个工位"。点一下不等于干过活，照点击亮，六格走一遍就全亮着，
      而字上还写着"口袋空着"。
    ★ 为什么用这么一颗小方块、跟上面 `.backbtn .dot` 一个样子（6×6、不带圆角，
-     它俩本来就是同一个形状）：这一栏里已经有"一颗小方块＝状态"
+     它俩本来就是同一个形状）：页面里已经有"一颗小方块＝状态"
      这套语言（通道那两格白＝在用、砖红＝走不通），再发明一套没人认得。
    ★★ 为什么空着也要占地方（`::before` 常驻、只是透明）：不占的话，
-     口袋一满，六个字**整体往右挪 13px**——那一栏是竖排左对齐的，
-     挪一下读起来像"这一格跳了一下"。宁可一直留着这点空白。
-   ★ 讲评那一格**永远不会亮**，是对的：它是从口袋里**取**的，不往里放（见 memo.js 的 SAY）。 */
-.rail .workbtn::before {
-  content: ''; display: inline-block; width: 6px; height: 6px;
-  margin-right: 7px; vertical-align: 1px;
+     口袋一满，那一格的**字会整体挪一下**——六格虽然宽度固定，
+     但格里的字一动，整行看着像抖了一下。宁可一直留着这点空白。
+   ★ 讲评那一格**永远不会亮**，是对的：它是从口袋里**取**的，不往里放（见 memo.js 的 SAY）。
+     学情同理——它也取不放。 */
+.works.stretch .workbtn::before {
+  content: ''; flex: 0 0 auto; width: 6px; height: 6px;
+  margin-right: 6px;
   background: transparent;
 }
-.rail .workbtn.has::before { background: var(--brand); }
+.works.stretch .workbtn.has::before { background: var(--brand); }
 /* 当前这一格底色是近黑的，墨绿那点在上面太暗，换成白的才读得出来 */
-.rail .workbtn.on.has::before { background: #fff; }
+.works.stretch .workbtn.on.has::before { background: #fff; }
 
-/* 高亮那一格底下那句话。★ 顶栏那版是"跟在按钮右边的一道小字"（左边一条粗竖线），
-   在左栏里它该是"这一组底下的注脚"——所以竖线换成横线、跟着整组走。 */
-.rail #badge {
-  flex: 0 0 auto; border-left: 0; border-bottom: 1px solid var(--line);
-  /* ★ 这一句是**注脚**，不是正文。原来 11.5px + 字距 .8px 在 200px 宽的栏里
-     要折两行、看着跟按钮一样重，喧宾夺主——它是解释上面那几格干什么的。
-     收到 10.5px、字距归零、颜色压到最浅的一档，读得到就行。 */
-  padding: 8px 14px 10px; font-size: 10.5px; letter-spacing: 0;
-  line-height: 1.7; color: var(--ink-3);
+/* ---------- 顶栏那一排小图标（原左栏「我的」那四个） ---------- */
+/* ★ 2026-10-02：左栏撤掉之后它们搬到顶栏。不写字、只放图标——
+   顶栏里写字会把「关于」和通道那两格推变形；说明话进 title。
+   图标一律**内联 SVG、不引字体**：图标字体的箭头在不同机器上胖瘦差得远，
+   缺字形还会吐一个豆腐块（这条 2026-10-02 在 ⟳ 上验过）。 */
+.headtools { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; }
+.headtool {
+  width: 30px; height: 30px; padding: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid transparent; background: transparent; color: var(--ink-2);
+  line-height: 0;
 }
-
-/* 「我的」那一组。★ 跟工位区分开：工位是"换一件要干的事"，这里是"我手上
-   有哪些东西"。**所以这组要明显小一号、淡一档**——两组一样重的话，
-   整栏读过去是九件平级的事，看不出哪几个是"换台"、哪几个是"开抽屉"。 */
-.railtools { flex: 0 0 auto; display: flex; flex-direction: column; }
-.railbtn {
-  font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
-  border: 0; border-bottom: 1px solid var(--line); background: transparent;
-  color: var(--ink-3); padding: 8px 14px 8px 16px; white-space: nowrap;
-}
-.railbtn:last-child { border-bottom: 0; }   /* 最后一条后面是栏底，那条线是多余的 */
-.railbtn:hover { background-color: var(--brand-soft); color: var(--brand); }
-
-/* 清空重开那一条（⟳）。★ 上面四条都是**名词**——"我手上有些什么"，
-   左对齐、像清单里的一行；这一条是**动作**（清空重来），
-   摆在一列名词里怎么起名都像个"东西"（原来叫「新的一件」，"件"字尤其怪）。
-   所以**不写字、不左对齐**：居中一颗圆形箭头，一眼看出它是颗按钮、不是一档内容。
-   图标是 main.js 塞进来的内联 SVG（不引字体：图标的箭头在不同机器上胖瘦差得远，
-   缺字形还会吐豆腐块），颜色走 currentColor，hover 变色照旧重用它上面那条。 */
-.railbtn.railicon { text-align: center; padding: 9px 0; line-height: 0; }
-.railbtn.railicon svg {
-  width: 16px; height: 16px; vertical-align: middle;
+.headtool:hover { border-color: var(--brand); color: var(--brand); background-color: var(--brand-soft); }
+.headtool svg {
+  width: 16px; height: 16px;
   transition: transform .18s ease;   /* 时长归零那条兜底在文件末尾的 reduced-motion 里 */
 }
-/* hover 时箭头往回拧一点——"要转了"这个暗示，比把说明字写出来省地方 */
-.railbtn.railicon:hover svg { transform: rotate(-40deg); }
+/* ⟳ 这一颗 hover 时箭头往回拧一点——"要转了"这个暗示，比把说明字写出来省地方 */
+#newbtn:hover svg { transform: rotate(-40deg); }
+/* 三道细竖缝里只有 ⟳ 前面那道是**真起作用**的：把清空跟前面三个名词隔开
+   （前面三个是"点开看一眼东西"，最后一个是"清空重来"——一个动作混在名词堆里
+   最容易误点，一次误点等于整场对话没了）。另外两道只是分组的呼吸缝。 */
+.thinrule { width: 1px; height: 18px; background: var(--line); margin: 0 6px; flex: 0 0 auto; }
 
 /* ---------- 右栏：上产物、下画板 ---------- */
 /* ★ 为什么合成一栏而不是再开第三栏：出材料的时候这两样是**同屏要用**的——
@@ -667,15 +665,26 @@ body[data-flow="on"] .flowbox {
   margin: 0 0 22px; font-family: var(--song); font-size: 27px; font-weight: 700;
   letter-spacing: 1px; line-height: 1.35; color: var(--ink);
 }
-/* ★ 五块**不写成一行五个**：那一行最窄的一档（约 100px）里放不下"组卷"两个字加那句小字，
-   而缩到 11px 就成了一条看不见的注脚。两列/三列随宽度走，窄屏两列、手机一列。 */
-.lblocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 10px; max-width: 640px; }
+/* ★★ 2026-10-03（第一步）：**一列**。
+   孔老师原话：「我上次说了六个板块排一列的，为啥没做到」。
+   物证在我自己写的目标稿里——test/_mock/mock.html 那一格：
+     `.frame main.one .lblocks { max-width: none; grid-template-columns: 1fr; gap: 8px }`
+   我搬布局时把那两行当成"模拟稿自己的框"跳过去了，产品里一直是
+   `auto-fit minmax(158px, 1fr)`（宽屏三列、窄屏两列）。**这是"没照 mock 做"第二次发作。**
+   ★ 为什么一列：mock 的注释写着理由——六个块点开时"上面那行、下面那行都被顶一下，
+     看着跳"；一列之后只是下面几行往下让，没有横向重排。
+   ★ 名字和说明**并排**（下半句落在名字右边），读着像一份菜单；六行加起来约 300px，
+     首屏放得下。这是 mock 那一格 `.lblock` 的写法（grid 4.6em / 1fr）。
+   ⚠ 按宽度改列数的那两条 media query（900px 两列 / 620px 一列）**一起删了**：
+     一列就是一列，跟宽度无关；留着它们只会在窄屏把这条规则悄悄改回去。 */
+.lblocks { display: grid; grid-template-columns: 1fr; gap: 8px; max-width: none; }
 .lblock {
-  display: block; text-align: left; cursor: pointer;
-  padding: 12px 13px 13px;
+  display: grid; grid-template-columns: 4.6em 1fr; align-items: baseline; column-gap: 12px;
+  text-align: left; cursor: pointer;
+  padding: 12px 15px; line-height: 1.4;
   border: 1px solid var(--line); border-left: 3px solid var(--rule);
   background: var(--panel); color: var(--ink);
-  font-family: inherit; font-size: 15px; line-height: 1.3;
+  font-family: inherit; font-size: 15px;
   transition: border-color .12s, background .12s;
 }
 /* 悬停/选中：左边那道色条走到主色，底子浮到最亮。★ 这套里"交互强调"一律是
@@ -687,22 +696,59 @@ body[data-flow="on"] .flowbox {
 /* 那句小字直接取 config 的 badge（"套你学校的模板 · 打开就能印"）。
    ★ 用 var(--ink-3) 不用 ink-2：对面板 ≈5.1:1，是"还能读清"的最后一档，
      再浅一档就成装饰了——而这句话恰恰是"这五块分别给我什么"的正身。 */
-.lblock i { display: block; margin-top: 5px; font-style: normal; font-size: 12.5px; color: var(--ink-3); }
+/* 说明落在名字**右边**（grid 第二列），不在底下——六行一列之后每行宽约 900px，
+   名字占 4.6em，说明跟在同一行读着像菜单里的一行。
+   ★ `margin-top` 由 5px 改成 0：`align-items: baseline` 已经把它跟名字那条基线对齐了，
+     再留 5px 只会把它往下拽半行，六行看着参差。 */
+.lblock i { display: block; font-style: normal; font-size: 12.5px; color: var(--ink-3); }
+/* 「最像这个」那一小标签（归不出唯一一件时才出现，见 landing.js 的 paintBlocks）。
+   ★ `grid-column: 2` 让它落在**说明底下**那一行——名字那一列只有 4.6em，
+     标签挤进去会把名字顶变形。`justify-self: start` 是 grid 给的默认拉伸要挡住：
+     不写它这块底色会横着拉满整列，看着像一条横幅而不是一个标签。 */
 .lblock em {
-  display: inline-block; margin-top: 7px; padding: 1px 6px;
+  grid-column: 2; justify-self: start; margin-top: 5px; padding: 1px 6px;
   font-style: normal; font-size: 11.5px; letter-spacing: .5px;
   background: var(--brand); color: #fff;
 }
 .ltip { margin: 18px 0 0; max-width: 640px; font-size: 13px; color: var(--ink-3); }
 
 /* 首屏亮着的时候，对话那一栏**还没开始**：气泡、缩略图、链子条、选项全让开，
-   免得"开场白 + 一屏大字 + 五块"三样东西同屏抢话。
-   （`.ghost` 那一句 104px 的站名跟 `.lq` 撞在一起尤其难看，两句话谁也读不清。） */
+   免得"开场白 + 一屏大字 + 六块"三样东西同屏抢话。
+   （`.ghost` 那一句 104px 的站名跟 `.lq` 撞在一起尤其难看，两句话谁也读不清。）
+   ★ 2026-10-02：**工位那一行也跟着让开**。首屏那六张卡片点一下就等于选工位，
+     底下再横着一排同样六个名字，是同一件事画了两遍——左栏当初被撤掉，
+     病根就是这个"画两遍"。等老师说第一句话（首屏收起来）它才出来。
+     ⚠ 别改成"首屏时把工位列变灰"：灰的按钮看着是"暂时不能点"，可它不是不能点，
+       是**这会儿不该点**（卡片那一屏本身就是更清楚的入口）。收起来才对。 */
 body[data-landing="1"] #msgs,
 body[data-landing="1"] #thumb,
 body[data-landing="1"] #steps,
 body[data-landing="1"] #chips,
+body[data-landing="1"] .works,
 body[data-landing="1"] .ghost { display: none; }
+
+/* ---------- 首屏：一栏 + 居中 ---------- */
+/* ★★ 2026-10-03 孔老师原话："页面也太偏左了，我觉得就应该对话框居中"。
+   病根是**右栏（画板）这会儿还立着**：`main` 是两栏网格，画板占掉右边 42%，
+   对话栏被挤在左边那 1fr 里，而 #landing 自己贴着它左边缘——所以看着"偏左"。
+   模拟稿里刚进来那一屏（`test/_mock/mock.html` 的 `main.one`）就是**一栏**：
+   没有右栏、对话栏居中封顶 900px。这张纸是正本，照它做。
+
+   ⚠ 只在 `data-landing="1"` 时这样。老师说了第一句话，landing 收起来，
+     画板就该自己长出来——那会儿要走回上面 `main` 那条两栏规则。
+     **别把 `.side` 在别处也隐藏**：`landing.js` 的 `.ghost`/`#msgs` 那套是
+     "首屏亮着才让开"，同一条命，跟着这个属性走。
+   ⚠ `.side{display:none}` 会不会把已经注入的 GeoGebra 弄坏：applet 是在
+     `js/main.js` 里**先**注入的（那会儿 `.side` 还看得见，有尺寸），
+     之后才 init landing。`board.js` 的 ResizeObserver 盯着 `#ggb`，
+     隐藏→显示时尺寸变回非零会再 refit 一次。这条**得用探针量**，不能想当然——
+     见 test/probe_landing_ui.cjs 那段"说了第一句话之后画板还在不在"。
+   ⚠ `minmax(0,1fr)` 跟模拟稿的 `minmax(320px,1fr)` 差一个数：模拟稿是固定宽的
+     画框，320 永远不会撑破；真机在 320px 手机上减去左右各 14px 内边距只剩 292px，
+     写 320 会横着溢出。**这是有意的偏差，不是抄漏**。 */
+body[data-landing="1"] main { grid-template-columns: minmax(0, 1fr); }
+body[data-landing="1"] .side { display: none; }
+body[data-landing="1"] .col:not(.side) { max-width: 900px; margin: 0 auto; width: 100%; }
 
 /* ---------- 归完那一行 ---------- */
 /* ★ 紧贴输入框上沿，凹槽底子（sunken）：它说的是"框里那句话去哪了"，
@@ -732,27 +778,25 @@ body[data-landing="1"] .ghost { display: none; }
 .rmini:hover { border-color: var(--brand); color: var(--brand); }
 .rmini.cur { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-deep); }
 
-/* 窄屏：那五块两块一行、`.lq` 收一档。
+/* 窄屏：`.lq` 收一档、六行收窄一点。
    ★ 断点取 **900px**，跟 chat.js 的 tipFor 和这个文件里别处那条取同一个数——
-     两边错开就会出现"CSS 已经按手机排了、提示语还是长的那句"。 */
+     两边错开就会出现"CSS 已经按手机排了、提示语还是长的那句"。
+   ⚠ **`@media (max-width:900px)` 那条 `.lblocks{repeat(2,1fr)}` 和
+     `@media (max-width:620px)` 那条 `.lblocks{1fr}` 都删了**（2026-10-03）：
+     一列之后它们没有意义，留着只会在窄屏把列数悄悄改回去。
+     原来那条 620 的注释（"两列时每格最窄 ≈290px"）就是为这个算的，一并作废。 */
 @media (max-width: 900px) {
   #landing { padding: 22px 14px 8px; }
   .lq { font-size: 22px; margin-bottom: 16px; }
-  .lblocks { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .lblock { padding: 10px 11px 11px; }
   .lblock b { font-size: 16px; }
   #routebar { margin: 0 10px; }
   .rchg { margin-left: 0; }
 }
-/* 手机：**一块一行**，那句小字照样留着。
-   ★ 为什么不接着用两列 + 把 `i` 藏掉：藏掉之后首屏上就只剩"组卷／作图／备课／命题／讲评"
-     五个光秃秃的词——而那五块的全部用处恰恰是**说出它们分别给我什么**（那他说的
-     "把功能页面跳出来"才有内容）。一块一行最慢也就多滑一下，比丢掉半句话值。
-   ★ 620 这个数不是断点表里挑的：两列时每格最窄要到 ≈290px 才放得下最长那句 badge
-     （"套你学校的模板 · 打开就能印" 17 字 × 12.5px ≈ 213px + 左右各 11px 内边距 +
-     10px 间距），换算回视口就是这个数。 */
+/* 手机：`.lq` 再小一档。★ 六行**照样一块一行、说明照样留着**——
+   藏掉 `i` 之后就只剩"备课／作图／命题／组卷／学情／讲评"六个光秃秃的词，
+   而这六块的全部用处恰恰是**说出它们分别给我什么**。多滑一下比丢掉半句话值。 */
 @media (max-width: 620px) {
-  .lblocks { grid-template-columns: 1fr; }
   .lq { font-size: 20px; }
 }
 
@@ -956,7 +1000,31 @@ body[data-work="vary"] #send:hover { background: var(--alt-dark); }
 #thumb .meta { font-family: var(--mono); font-size: 12px; color: var(--ink-3); margin: 7px 0 0; }
 
 /* ---------- 右：画板 ---------- */
-.boardbar { gap: 9px; }
+/* ★★ 2026-10-03 补 `flex-wrap: wrap`：**桌面中间那一段原来漏了。**
+   窄屏那一档（见文件末尾 @media 里那条"手机上原来「存图」被挤出右边框外"）
+   早就修过同一个病，可那时候只想到"手机太窄"，**901–1140px 这一段没人量过**——
+   双栏还开着、右栏已经不够宽，同一条 nowrap 顶着同一把 `.side{overflow:hidden}` 的刀。
+
+   实测（test/_barfit.cjs，把这一行的内部账摊开）：6 个孩子要 **403px**，
+   加 4 个 9px 间距 = **439px**；条子的内容盒只有 `条宽 − 28`（padding 14×2）。
+   也就是**条子要 ≥467px 才放得下一行**，而条宽 ≈ 窗宽 × 0.41：
+     窗宽 1152 → 条 471，装得下（**余量只剩 4px**）
+     窗宽 1100 → 条 449，孩子们捅出去 5px（还在窗内，看着没事）
+     窗宽 1060 → 条 432，捅 22px →「存图」右边缘超出窗宽 7px
+     窗宽 1024 → 条 417，捅 37px → 超出 22px，`elementFromPoint` 抓不到，**点不着**
+     窗宽  940 → 条 382，捅 70px →「存图」整个跑到窗外
+   ⚠ 裁它的**不是** `.boardbar`（它实算是 `overflow: visible`，下面 1196 行附近
+     那条注释写成 "nowrap + overflow:hidden" 是错的），真正的刀是 `.side{overflow:hidden}`。
+     所以超出部分是**直接没了**、不出现滚动条——`documentElement.scrollWidth` 永远等于窗宽，
+     光看"有没有横向滚动条"根本看不出这个病（这也是它躲到今天的原因）。
+   ⚠ 为什么用 `wrap` 而不是写死一个断点：它是**自适应**的——宽的时候装得下、回卷不生效，
+     桌面端（≥1152）实测逐字节没变（条 471×56、画布 550）；窄了自己折两行，
+     不用去猜"到多少像素该改"。那个数会随文案长短漂（末尾窄屏那段
+     "量过的账：360px 时…311px / 331px"就是被漂过一次的记录）。
+   ⚠ 代价照实说，不粉饰：窗宽掉到 **约 1140 以下这一行折成两行**，
+     画布从 550 掉到 502（−48px）。**两行的工具条 > 一颗点不着的「存图」**——
+     存图是老师把图贴进课件的唯一一条路。 */
+.boardbar { gap: 9px; flex-wrap: wrap; }
 .boardbar .t { margin-right: auto; display: flex; align-items: center; }
 .boardbar .t span { margin-right: 10px; }
 
@@ -1150,8 +1218,13 @@ footer .r {
 
 /* ★★ 「打包」为什么落在这儿（三个别的落点都去看过，都被否掉了）：见 js/pack.js 顶上那段。
    一句话版：画板工具条**量过**放不下（360px 时 5 个孩子要 311px、只剩 20px 余量，
-   第 6 个会把那一条折成两行；桌面端 .boardbar 是 nowrap + overflow:hidden，
-   多出来的那颗会**无声消失**）；产物栏是**组卷工位专属**的，备课工位根本看不见它。
+   第 6 个会把那一条折成两行；桌面端 .boardbar 是 nowrap，
+   多出来的那颗会**无声消失**——★ 2026-10-03 更正：这里原来写的是
+   "nowrap + overflow:hidden"，**overflow:hidden 是错的**，`.boardbar` 实算是 visible；
+   裁它的是 `.side{overflow:hidden}`。"无声消失"这个结论对、归因错了，
+   而这条错归因今天真把量的人带沟里过一次（照它算会以为"看不到滚动条就是没病"）。
+   同日桌面中间那段也补上了 `flex-wrap: wrap`，见 `.boardbar` 那条注释）；
+   产物栏是**组卷工位专属**的，备课工位根本看不见它。
    而「复制这段」旁边时机对（"想把这些带走"这个念头就是在这儿冒出来的），
    而且两个刻度天然成对：复制这段 = 这一段文字带走，打包 = 到这一段为止整包带走。 */
 /* 一眼能分出来它是**拿走**（图 + 全文，一整包），所以带一个向下的箭头。
@@ -1713,9 +1786,12 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
   .brand .sub { display: none; }
 }
 @media (max-width: 900px) {
-  /* ★ 三栏在手机上变**三行**：左栏先横过来占满一整行，对话和右栏各占一行。
-     不这么做的话左栏只有 200px 宽却要占一整行高度，中间那栏会窄到没法读。 */
-  /* ★ 第三行（右栏＝画板）比第二行（对话）多分一点：1.25 : 1。
+  /* ★ 两栏在手机上变**两行**：对话一行、右栏（画板）一行。
+     ★ 2026-10-02：左栏撤掉之后，原来那三行（左栏横过来占一整行 + 对话 + 右栏）
+       只剩两行。⚠ `grid-template-rows` 的条数必须跟着改——
+       多留一条会在底下挂出一行**空的轨道**，把两栏一起往上挤，
+       而"下面白了一块"看着像页面没排满，不像网格多写了一行。 */
+  /* ★ 下面那行（右栏＝画板）比上面（对话）多分一点：1.25 : 1。
      为什么不是平分（2026-10-02 实测）：手机上一行高度很贵，而画板那一栏里
      boardbar 自己要占掉 80px（标题+三个工具+平面/三维，手机上还会折成两行）。
      平分 758px 的可分配高度时，画板盒子只剩 170px，去掉 boardbar 就只有 90px 给画布——
@@ -1724,22 +1800,20 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
      ⚠ 两边都保 minmax(0, …)：**下限写 0，任何一栏都能被压小**。
        要是给这一行写死下限（minmax(260px,1fr)），短横屏的手机上总高不够，
        行会被顶出去，而 body 是 overflow:hidden——顶出去的东西直接没了，比切一半更糟。 */
-  main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr) minmax(0, 1.25fr); }
-  .rail { flex-direction: row; flex-wrap: wrap; align-items: center; overflow: visible; padding: 6px 0; }
-  .rail .works {
-    flex-direction: row; flex-wrap: wrap;
-    background: var(--sunken); border: 1px solid var(--line);
-  }
-  .rail .workbtn { padding: 7px 12px; font-size: 13px; }
-  /* 横回去：竖排那版靠横线分格，横排要靠竖线，跟顶栏那版一致 */
-  .rail .workbtn + .workbtn { border-top: 0; border-left: 1px solid var(--line); }
-  .rail #badge { display: none; }             /* 手机上一行高都很贵，这句留到横屏 */
-  .railtools { flex-direction: row; flex-wrap: wrap; }
-  .railbtn { border-bottom: 0; border-right: 1px solid var(--line); padding: 7px 12px; font-size: 13px; }
-  /* ★ ⟳ 那条在竖排里是"撑满整宽、图标居中"，横排回去就没宽度可撑了：
-     上面 `.railbtn.railicon` 的 `padding: 9px 0` 会比这条 `.railbtn` 更specific，
-     不在这儿补一句，它会窄成 16px 一条——手指按不住。 */
-  .railbtn.railicon { padding: 7px 14px; }
+  main { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1.25fr); }
+  /* ★ 工位那一行手机上更要紧（桌面上它还有「关于」里那句说明，手机上没有别的入口）。
+     六格一行、每格更窄一点，但**不换行**：换行会把这行顶成两行，
+     而它正贴着输入框，多一行就是多占一块打字的地方。
+     ⚠ 别再往下压字号：360px 上六格每格约 55px，两字名 13px 正好；
+       压到 11px 那点状态方块（6px）就比字还显眼了，读起来像一行污点。 */
+  .works.stretch { margin: 7px 10px 10px; }
+  .works.stretch .workbtn { font-size: 13px; padding: 7px 2px; }
+  /* ★ 顶栏那四个小图标在手机上按不动：30px 的方块留给手指太窄了
+     （那篇里说的"能按的东西别小于手指"）。**加内边距、不加图标尺寸**——
+     图标放大在这几个里没有意义（16px 认得出是书是文件夹），
+     要的是那一圈能按住的空白。 */
+  .headtool { width: 34px; height: 34px; }
+  .thinrule { margin: 0 3px; }
   /* ★ 手机上顶栏原来排成了**三行**（2026-10-01 402px 实测截图）：
      第一行 logo+站名+BY KAX，第二行 模式+通道+素材，第三行只剩一个「关于」。
      最后那行孤零零一个按钮，看着像没做完，还白吃掉一整行的高度。
@@ -1783,7 +1857,11 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
   .backbtn .dot { width: 7px; height: 7px; margin-right: 5px; }
   header .tool { font-size: 13px; padding: 6px 10px; }
   header .vrule { display: none; }   /* 手机上换行位置本来就变了，竖线会对不齐 */
-  .works { margin-right: auto; }     /* 后面那些按钮往右推，跟桌面一个观感 */
+  /* ★ 这里原来有一条 `.works { margin-right: auto }`——"后面那些按钮往右推"，
+     说的是**以前顶栏里那一排工位**。2026-10-01 工位搬进左栏之后它就没对象了，
+     2026-10-02 左栏也撤了、顶栏只剩四个小图标，**这条彻底是句空话**，删掉。
+     （删之前确认过：它选中的 `.works` 现在只有输入框底下那一行，
+       而那一行的外边距由 900px 档的 `.works.stretch` 定，轮不到这一条。） */
   /* ★ 手机上通道切换**不能藏**（2026-10-01 改）。
      原来这里写的是 `.backs { display: none }`，理由写的是"设置面板里照样能切"——
      可那时候手机上一个通往设置面板的入口都没有，等于学生在手机上

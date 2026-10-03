@@ -155,6 +155,9 @@ function makePNG(w, h, rgb) {
   await new Promise(r => ws.on('open', r));
   await send('Runtime.enable', {}); await send('Log.enable', {});
   await send('Page.enable', {}); await send('DOM.enable', {});
+  // ★ 视口钉死。不钉的话量的是"他随手拉的那扇窗"，读数会挂在他的窗口尺寸上——
+  //   probe_flow_panel 就是这么过期的（见那份文件顶上的记录）。
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: URL_ });
 
   const q = async e => {
@@ -280,6 +283,36 @@ function makePNG(w, h, rgb) {
 
   // ===============================================================
   console.log('\n===== ④ 出站请求体 =====');
+  // ★★ 2026-10-03 修：这一段原来是 **9 条全红**（`__sent` 恒为 null），
+  //   病因跟 probe_flow_panel 是同一个家族——**尺子过期，不是产品坏了**。
+  //   这条路的闸有三道（js/chat.js 的 submit）：① `!SR.api.ready()` ② `SR.landing.intercept()` ③ 空话不发。
+  //   这道探针从来没跑过首屏，`body[data-landing]` 一直是 1，于是：
+  //     第一句"老师，这是昨天的卷子" → landing 判不出这是六件里的哪一件 →
+  //     `held` 住、弹那六块问"这是哪一件"、`intercept()` 返回 true → submit 提前 return。
+  //   `window.fetch` 压根没被调到，`__sent` 当然是 null，9 条一起红。
+  //   （顺带核过：这一拦**不丢东西**——intercept 是在 `pendingParts=[]` 之前返回的，
+  //     老师挂的图还在；`rework()` 拿 `held` 重发时把 parts 带走。产品那边没病。）
+  //   所以这里发之前先把首屏收了，并且**判一下它真收了**——不判的话，
+  //   哪天首屏的规矩变了，这 9 条又会变成一片假红，而我还会以为是产品坏了。
+  await q('(function(){ if (SR.landing && SR.landing.hide) SR.landing.hide(); })()');
+  await new Promise(r => setTimeout(r, 400));
+  const landingDown = await q('(function(){var l=document.getElementById("landing");'
+    + 'return !!(document.body.getAttribute("data-landing")!=="1" && l && l.getClientRects().length===0);})()');
+  ok('★ 对照：首屏真收了（没收的话下面 9 条"出站请求体"全量不到，会一片假红）', landingDown === true, landingDown);
+
+  // ★★ 2026-10-03 第二处修：「整卷那条附注」现在**只挂讲评工位**了。
+  //   源码 js/api.js:344 就写着这件事：`if (w.listPaper && ...)`，而 config 里
+  //   只有 review 那一档 `listPaper: true`（prep 是 false）。注释里给了理由——
+  //   原来这条挂在所有工位上，粗条件（≥2 图 或 >800 字）会**误伤**：
+  //   老师在备课工位贴一道长应用题，也会被要求"先列题号"。
+  //   这道探针原来跑在**默认工位（material／组卷）**上，所以那 4 条必然挂。
+  //   → 先把工位切到**讲评**（整卷附注的东家），再挂文件。
+  //   ⚠ 顺序不能反：applyWork 换了体系会 `SR.chat.reset()`，先把文件挂上去就被清掉了。
+  await q('SR.main.applyWork("review")');
+  await new Promise(r => setTimeout(r, 500));
+  const seat = await q('JSON.stringify({work:SR.chat.getWork(), listPaper:!!(SR.WORKS[SR.chat.getWork()]||{}).listPaper})');
+  ok('★ 对照：站在讲评工位上，而且这一档确实挂着「整卷」那条附注', JSON.parse(seat).work === 'review' && JSON.parse(seat).listPaper === true, seat);
+
   await send('DOM.setFileInputFiles', { files: [IMGS[0], IMGS[1], DOCX], nodeId: inpNode });
   const n3 = await waitParts(3);
   ok('（重发前先摆好 2 图 + 1 docx）', n3 === 3, n3);
@@ -303,15 +336,30 @@ function makePNG(w, h, rgb) {
 
   const sys = (sent.msg[0] || {}).content || '';
   ok('system 里带了"整份题"那条附注', /一整份（或好几道）题/.test(sys), sys.length);
-  ok('附注里点了"先别追问，先把题列一遍"', /先别追问/.test(sys));
-  ok('附注里重申了铁律第 7 条', /铁律第 7 条/.test(sys));
-  ok('PROMPT_TAIL 仍在最末尾', /想说/.test(sys.slice(-1200)), sys.slice(-300));
+  // ---- 下面三条 2026-10-03 重写过。原因不是产品坏了，是**搜索词过期**：
+  //   原来写的三个串（`先别追问`／`铁律第 7 条`／`想说`）在**今天的提示词正文里
+  //   一个都不存在**（`grep -rn` 全 js/ 核过）。留着它们 = 三条恒红，
+  //   红的样子跟产品坏了长得一模一样，最坏的结果是**以后没人再看这三行**。
+  //   按纪律：不发明替代代理，每条改成量它名字宣称的那件事、用当下真实的文本。
+  ok('附注里点了"先别摆链子、先把题列一遍"（这句是这条附注的要点）',
+    /先别摆链子/.test(sys) && /列一遍/.test(sys));
+  ok('附注把三步都写清了：列题 → 问先讲哪一道 → 他挑定后再摆链子',
+    /列完再问一句/.test(sys) && /先讲哪一道/.test(sys) && /再按你平常那套摆那一道的链子/.test(sys));
+  // ★★ 这一条量的是**位置**，所以就拿收尾块自己的结尾去比 sys 的结尾——
+  //   以前拿「想说」当路标是量错了东西：那是**围栏协议**的名字，而围栏协议
+  //   现在是**本地兜底为主力、模型写不写都行**（见 js/chips.js:15-22 与 js/config.js:60），
+  //   提示词早就不教它了。位置本身才是承重的（小模型只认最后读到的东西）。
+  const tailEnd = await q('(function(){var t=SR.PROMPT_PREP_TAIL||"";return t.replace(/\\s+$/,"").slice(-40);})()');
+  ok('★ 收尾块（PROMPT_PREP_TAIL）仍然压在 sys 的最末尾——位置是承重的',
+    tailEnd.length > 10 && sys.replace(/\s+$/, '').endsWith(tailEnd),
+    { 结尾对得上: sys.replace(/\s+$/, '').endsWith(tailEnd), 收尾块末40字: tailEnd, sys末40字: sys.replace(/\s+$/, '').slice(-40) });
 
   console.log('\n===== 控制台报错 =====');
   console.log(errs.length ? errs.slice(0, 10).map(e => '  ' + e).join('\n') : '  （无）');
   ok('无未捕获异常', errs.length === 0, errs.slice(0, 3));
 
   await q('window.fetch=window.__realFetch;');
+  await send('Emulation.clearDeviceMetricsOverride', {});
   console.log('\n结果：' + PASS + ' 通过, ' + FAIL + ' 失败');
   ws.close();
   process.exit(FAIL ? 1 : 0);

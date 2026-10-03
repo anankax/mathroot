@@ -33,6 +33,11 @@ SR.chat = (function () {
     //   现在这句把两件事都说出来：给的是题/课题，拿回去的是**学生怎么答**。
     prep: '给我一道题或者一个课题，我把学生怎么答摆给你看。',
     vary: '把题目发过来，我给你出几个变式。',
+    // ★ 学情这一句同样要说清**进来什么、出去什么**（跟上面备课那条一个道理）：
+    //   进来的是一张表，拿回去的是"先讲哪三道"。只说"把成绩表传上来"的话，
+    //   老师会以为这儿能给他一堆图表，传完发现只有几句排好序的题号。
+    //   ⚠ 别写成"我给你分析分析"——他缺的不是数据，是**先讲哪个**。
+    grade: '把成绩表传上来，我只看你出的那几道，告诉你先讲哪三道。',
     review: '把卷子发过来，我先列一遍题，你挑哪一道讲。'
   };
 
@@ -43,6 +48,8 @@ SR.chat = (function () {
     draw: '说说要画什么，例如 数轴上表示 -2 和 3',
     prep: '贴一道题，或者写一个课题，例如 3.1 代数式的值',
     vary: '贴一道题，我给你出几个变式',
+    // 举的例子得是**他真的会拿到的那种表**：智学网导出的成绩表。
+    grade: '把成绩表发过来，例如 智学网导出的那张表',
     // ★ 原来后半句是"也可以先说说这次考得怎么样"——那是**学生**的口吻
     //   （考完回来说自己考得怎么样）。老师发卷子是来讲评的，不是来报分数的。
     review: '把卷子发过来，拍照、PDF、Word 都行，一次可以发好几张'
@@ -63,6 +70,7 @@ SR.chat = (function () {
     draw: '说说要画什么',
     prep: '贴一道题或写课题',
     vary: '贴一道题试试',
+    grade: '发成绩表进来',          // 6 字，一行的上限是 10
     review: '把卷子发过来'
   };
   // 用哪一版：窄屏用短的。**900px 跟 css 那条断点取同一个数**——
@@ -230,16 +238,64 @@ SR.chat = (function () {
     if (!list.length) return false;
     els.msgs.innerHTML = '';
     var prev = '';
+    var ai = 0;   // 第几条**助手回复**——「打包」那颗按钮拿它当序号（见下面那段注释）
     for (var i = 0; i < list.length; i++) {
       var t = list[i];
       // t.w = 说这句话的时候在哪个工位。变了就插一条分界线。
       if (t.w && prev && t.w !== prev) addDivider(t.w);
       if (t.w) prev = t.w;
-      if (t.r === 'u') addUser(t.t, []);
-      else addAssistantText(t.t);
+      if (t.r === 'u') { addUser(t.t, []); continue; }
+      var v = restoreText(t.t, t.w);
+      var b = addAssistantText(v);
+      // ---- 「复制这段」/「打包」也要跟着摆回来 ----
+      //
+      // ★ 原来只有当场收流那条路（submit 的收尾，见 attachCopy 那边）会挂这两颗。
+      //   于是刷新之后：链子摆回来了、字一条不少，可**两颗带走用的按钮一条都没有**，
+      //   而「关于」里明写着「备好的追问链可以「复制这段」带走」（那段话还标着
+      //   "2026-10-02 才补上"）。更硬的一条：「打包」**只长在这同一条 bar 上**，
+      //   bar 没了它就没有第二个入口——可 seedPack 那边明明把账本从记忆里重建好了，
+      //   重建出来却没有一颗按钮去点它。
+      //   跟 restoreText 是同一个毛病、同一条规矩：同一个事实两处各算一遍，
+      //   就得两处都算对（见上面 seamIfWorkChanged 那段，"刷新前后屏幕给的答案不一致"）。
+      //
+      // ⚠ 序号 ai 必须跟 seedPack 数出来的**同一个顺序**：那边也是按 memo 顺序、
+      //   只取助手回复（`if (list[i].r !== 'a') continue;`）。两处错开一位，
+      //   老师点「打包」拿到的是"到另一条为止"的包，而包看着是完整的。
+      //   ⚠ ai 要数**每一条**助手回复，不受下面 copy 那道闸影响。
+      var cfg = (SR.WORKS && SR.WORKS[t.w]) || {};
+      if (cfg.copy) attachCopy(b, v, (SR.pack && SR.pack.__seed) ? ai : null);
+      ai++;
     }
     scroll();
     return true;
+  }
+
+  // 重画一条**模型说过的话**：必须走跟当场那一轮**同一个**解析（render.js 的 parseFences）。
+  //
+  // ★ 不走会怎么样——2026-10-03 在页面上量到的：**同一段原文，刷新前后两个样子**。
+  //   当场渲染走 p.visible（围栏被摘掉：命令进画板、气泡里只剩正话），
+  //   重画这条路却把原文直接倒进气泡里，于是老师看见的是
+  //     「#清空 / 数轴 / 点(-2,"-2") / 点(3,"3")」
+  //   ——机器话。render.js 顶上写着 visible 才是"能给人看的正文"。
+  //   更难看的是**只有命令、没有正话**的那种回复：当场渲染气泡是空的，
+  //   刷新一下，气泡里就剩这一串光秃秃的命令。
+  //   这违反的是本文件上面 seamIfWorkChanged 那条立过的规矩：
+  //   同一个事实两处各算一遍，就得两处都算对（"刷新前后屏幕给的答案不一致"）。
+  //
+  // ⚠ 两处都得跟当场那条取**同一个来源**：
+  //   · stripAssign —— 按**说这句话时**的工位（t.w）取，不是按现在的工位；
+  //   · 出材料那份编号行 —— 交给 produce.pickSource，跟当场同一条规则。
+  //     它自己保着一条底线："收都不收就别抹"（见 produce.js），
+  //     所以这儿不会把气泡抹空——那句注释就是为这个边界写的。
+  function restoreText(raw, tw) {
+    if (!SR.render || !SR.render.parseFences) return raw;
+    var w = (SR.WORKS && SR.WORKS[tw]) || {};
+    var p = SR.render.parseFences(raw, { stripAssign: !!w.stripAssign });
+    var v = p.visible;
+    if (tw === 'material' && SR.produce && SR.produce.pickSource) {
+      v = SR.produce.pickSource(v, p.mat && p.mat.length ? p.mat[p.mat.length - 1] : '').rest;
+    }
+    return v;
   }
 
   // 打包的账本（js/pack.js）照记忆重建一份。
@@ -932,6 +988,18 @@ SR.chat = (function () {
     //     那条路会 reset()，那就把刚画上去的气泡抹了。
     if (SR.landing && SR.landing.intercept()) return;
 
+    // ---- 首屏还亮着就收起来（见 js/landing.js 底线③：首屏是个入口，不是一道闸）----
+    // ★ 走到这儿 = 这一句**真要发**了。多数情况下首屏早收了（上面 intercept() 一
+    //   归出工位就 pick()，pick 里自己 hide()），所以这一句是个空操作。
+    // ⚠ 治的是**刷新回来**那条路：memo 把上一场对话接回来之后，landing.js 的
+    //   blocking() 一见 hasUser() 就放行——那一步是故意写的，不能让首屏把老用户
+    //   的话吞了；可"收首屏"这件事当年**只有 pick() 会做**，于是首屏一直亮着盖在
+    //   对话上：老师打完字点发送，消息照发、画板照画、口袋照涨，
+    //   **屏幕上一点变化都没有**。2026-10-03 在页面上亲眼见的就是这一屏。
+    //   收起来之后 `#works` 那一行就露出来了（css `body[data-landing="1"] .works`），
+    //   换工位照旧跳得过去——所以这不是把入口弄丢，是把它让开。
+    if (SR.landing && SR.landing.hide) SR.landing.hide();
+
     busy = true;
     els.send.disabled = true;
     if (forced == null) { els.input.value = ''; autoGrow(); }
@@ -1039,7 +1107,10 @@ SR.chat = (function () {
           var wp = SR.render.parseFences(res.text, { stripAssign: !!((SR.WORKS[work] || {}).stripAssign) });
           SR.memo.produced(work, {
             fig: (wp.ggb || []).length,                                  // 这一轮开了几个 ```ggb 围栏 = 几张图
-            prob: (res.text.match(/(^|\n)\s*#\d+/g) || []).length,        // 编号行 = 出了几道题
+            // ★ 数法在 js/memo.js 的 countProbs 里，跟口袋里的题号共用同一对正则——
+            //   两种形状（组卷的题号行 / 命题的「变式一」小标题）认的是同一个格式契约，
+            //   分开放就会有一份忘了改，而忘了改的那一份只是数不准：屏幕上照旧什么都看不出来。
+            prob: (SR.memo.countProbs ? SR.memo.countProbs(res.text) : 0),
             paper: (msg.matFed && msg.matFed.ok) ? 1 : (wp.mat || []).length,  // 这一轮排出了几份材料
             chain: stepSlots.length                                      // 已经摆到第几节
           });
@@ -1092,6 +1163,24 @@ SR.chat = (function () {
       busy = false;
       els.send.disabled = false;
       els.input.focus();
+      // ---- 收工之后再补最后一次贴底 ----
+      //
+      // ★★ 2026-10-03 在页面上量出来的：上面那些 scroll() **全在收流过程中**调的，
+      //   而这一轮收工之后对话区还会变一次——「想说」那三颗建议是这时候才冒出来的。
+      //   它们顶在输入框上面，把对话区**从底下压掉 53px**：
+      //     实测（1440×900，一条带「想说」的回复）
+      //       发之前    可滚 1083 / 看得见 541 / 差多少到底 0
+      //       收工那一刻 可滚 1330 / 看得见 488 / 差多少到底 **53**，末条被切 33px
+      //       再等 1.5 秒 还是 53 —— 没有任何东西会把它补回来
+      //   （`可滚` 涨的是新那一轮，`看得见` 掉的就是那三颗建议占走的。）
+      //   后果：老师刚收到的那条回复，末尾正好停在屏幕外面，得自己往下滚一下才看得见结尾。
+      //   ★ 这不是偶尔：**「想说」是核心协议**，一多半的回复都带它；而且每次
+      //     建议从"没有"变成"三颗"（或三颗折成两行）都会来这么一次。
+      //
+      // ⚠ 位置必须在这个 .then 里，不能在收流那几行里：这儿才是"全都摆完了"的时刻
+      //   （挂 bar、刷导图、写状态栏、paintDone 都在它前头），出错那条路也一并照顾到。
+      //   跟本文件别处一样**无条件贴底**——每一段新字都是这么滚的，不另立一套规矩。
+      scroll();
     });
   }
 

@@ -1,8 +1,8 @@
-// 首屏（一个框 + 五块 + 归完那一行）——判两件事，各占一半：
+// 首屏（一个框 + 底下几块 + 归完那一行）——判两件事，各占一半：
 //
-//   一半是 **route()**：一句话进来，五件里认得出哪一件？
+//   一半是 **route()**：一句话进来，几件里认得出哪一件？
 //     ★ 这一半的料全是从**产品自己的字**上抄的：chat.js 的 OPENING / TIP 那十句原文、
-//       config.js 里那五个 label、还有几种"老师真会打"的形状。所以它验的不是
+//       config.js 里那几个 label、还有几种"老师真会打"的形状。所以它验的不是
 //       "我编的词表准不准"，而是**产品自己写在屏幕上的那些例子，进去之后回不回得来**。
 //     ★★ 另一半同样重要，而且更容易被忽略：**对不上的时候它有没有硬塞一件**。
 //       "判成 X"和"承认判不出来"在屏幕上是两种完全不同的东西，可在这份数据里
@@ -17,16 +17,18 @@
 //         「归好类那一趟必须放行，而且放行的时候工位真的换了」。
 //
 // ★ 先跑红（跑法见文件末尾）：四种改法都得真红过，不然不知道它判得了什么。
-//   2026-10-02 实测过一遍，红的就是该红的那几条、也只有那几条：
-//     ① route() 咬得紧时随手挑头名（不再回空）→ ② 的那条红
-//     ② intercept() 归得出来那趟回 true（吞掉那句话）→ ⑤ 的那条红
-//     ③ 把 ['命题',4] 从词表里拿掉 → ④ 的两条红
-//     ④ rework 不再把原话带过去 → ⑥⑧ 里"同一句话重发"那两条红
-//   造这几份改坏的副本用 _red/mk.cjs（一次造四份，都是**只改一处**）。
+//   2026-10-02 实测过一遍，2026-10-03 又照着重跑了一遍（共 47 条），红的就是该红的那几条、也只有那几条：
+//     ① route() 咬得紧时随手挑头名（不再回空）→ ② 的那条红          红 1 条
+//     ② intercept() 归得出来那趟回 true（吞掉那句话）→ ⑤ 的那条红    红 1 条
+//     ③ 把 ['命题',4] 从词表里拿掉 → ④ 的两条红                      红 2 条
+//     ④ rework 不再把原话带过去 → ⑥⑧ 里"同一句话重发"那两条红       红 2 条
+//   造这几份改坏的副本用 **test/mutate_landing.cjs**（一次造四份，都是**只改一处**）。
+//   ⚠ 文件里原来写的是 `_red/mk.cjs`——**那个文件不存在**，照着跑会直接失败。
+//     真名一直是 test/mutate_landing.cjs，产物才落在 test/_red/ 底下。2026-10-03 改正。
 //
 // 跑法：node test/probe_landing.cjs
-//       node _red/mk.cjs && LANDING_FILE=_red/m_swallow.js node test/probe_landing.cjs  （红验用；
-//       ★ 别写 /tmp —— 这是 Windows，node 会把 /tmp 当 C:\tmp，直接 ENOENT）
+//       node test/mutate_landing.cjs && LANDING_FILE=test/_red/m_swallow.js node test/probe_landing.cjs
+//       （红验用；★ 别写 /tmp —— 这是 Windows，node 会把 /tmp 当 C:\tmp，直接 ENOENT）
 
 const fs = require('fs');
 const path = require('path');
@@ -56,7 +58,7 @@ function judge(what, cond, got) {
 //
 // 假 DOM：只做到 landing.js 真正用到的那几样。不引 jsdom。
 //   ⚠ 它**不是**一个浏览器。它只回答一个问题："这份代码有没有按约定跟外面说话"。
-//     首屏画出来好不好看、五块排不排得下，那是浏览器那一趟的事（人看）。
+//     首屏画出来好不好看、几块排不排得下，那是浏览器那一趟的事（人看）。
 const W = { SR: {} };
 const els = {};
 function mkEl(id) {
@@ -75,9 +77,9 @@ function mkEl(id) {
     setAttribute(k, v) { e[k] = v; },
     getAttribute(k) { return e[k] == null ? null : e[k]; },
     querySelector() { return null; },
-    // 五块、还有"换一件"展开的那五颗小按钮，都是从 innerHTML 里现画出来的，
+    // 底下那几块、还有"换一件"展开的那几颗小按钮，都是从 innerHTML 里现画出来的，
     // 所以要从那段 html 上把 data-work 读回来——
-    // ★ 不能在这儿"假装有五个"，那样 focusBlock 点错灯也看不出来。
+    // ★ 不能在这儿"假装有那么多个"，那样 focusBlock 点错灯也看不出来。
     //
     // ★★ 还有一件真 DOM 才有的事：**同一个元素，问两次得是同一个人**。
     //   strip() 是这么写的：自己 querySelectorAll('.rmini') 拿到一批、往上面挂监听；
@@ -270,9 +272,11 @@ console.log('④ 词表本身的形状（改表改坏了这儿会先说）');
     else if (!S.WORKS[w].label) noLabel.push(w);
   }
   judge('SR.WORK_ORDER 里每一件都在 SR.WORKS 里有正身', empty.length === 0, empty);
-  judge('每一件都有 label（五块上的名字就是它，见 landing.js paintBlocks）', noLabel.length === 0, noLabel);
-  // ★ "五块"这个数不是抄来的，是照着 SR.WORK_ORDER 数出来的
-  judge('首屏那五块正好是 SR.WORK_ORDER 那五件（一块不多一块不少）',
+  judge('每一件都有 label（底下那几块上的名字就是它，见 landing.js paintBlocks）', noLabel.length === 0, noLabel);
+  // ★ 件数**一个字都不写死**：写死了 2026-10-03 加「学情」那天（5→6），
+  //   这几条会照绿——它们本来照的就是 SR.WORK_ORDER 现算的——可**印出来的话**会变成假的。
+  //   （同族：数字本身没错，错的是它量的那件事。这条是反过来的：断言没错，话错了。）
+  judge('首屏那几块正好是 SR.WORK_ORDER 那几件（一件不多一件不少）',
     L.BLOCKS().join(',') === S.WORK_ORDER.join(','), { got: L.BLOCKS(), want: S.WORK_ORDER });
   // 每一件都得有自己的话头，否则那一件在首屏上永远进不去
   const dead = S.WORK_ORDER.filter(function (w) {
@@ -280,7 +284,7 @@ console.log('④ 词表本身的形状（改表改坏了这儿会先说）');
     const r = L.route(labelOf(w));
     return r.work !== w;
   });
-  judge('五件的名字打进去都回得来（有哪一件进不去，说明它的话头被别的件抢了）', dead.length === 0, dead);
+  judge('每一件的名字打进去都回得来（有哪一件进不去，说明它的话头被别的件抢了）', dead.length === 0, dead);
   // 反过来的那条：一个工位的名字不许被算到**别的**工位头上。
   // ★★ 这条是这一组里唯一抓到过**真东西**的：跑第一遍时它报「命题 → 组卷」，
   //   而组卷那边一分都不该有（'命题'两个字里没有任何一条组卷的词）——
@@ -295,7 +299,7 @@ console.log('④ 词表本身的形状（改表改坏了这儿会先说）');
     const top = S.WORK_ORDER.slice().sort((a, b) => (sc[b] - sc[a]) || (S.WORK_ORDER.indexOf(a) - S.WORK_ORDER.indexOf(b)))[0];
     if (top !== w) stolen.push(labelOf(w) + ' → 被算到' + labelOf(top) + '头上');
   }
-  judge('五件的名字各自归各自（没被算到别人头上、也没有哪一件一个字都不认）', stolen.length === 0, stolen);
+  judge('每一件的名字各自归各自（没被算到别人头上、也没有哪一件一个字都不认）', stolen.length === 0, stolen);
 }
 
 // ============================================================
@@ -334,7 +338,7 @@ reload();                              // ⑤ 把 picked 立起来了，这儿�
   judge('★ 对不上时回 true（这一句我接走了，不许发出去）', took === true, { got: took });
   judge('没动工位（工位是老师自己点才换的）', calls.applyWork.length === 0, { got: calls.applyWork });
   judge('没发出去', calls.submit.length === 0, { got: calls.submit });
-  judge('屏幕上说了"不像五件里的哪一件"', String(els['lq'].textContent).indexOf('不像') >= 0, { got: els['lq'].textContent });
+  judge('屏幕上说了"不像底下这几件里的哪一件"', String(els['lq'].textContent).indexOf('不像') >= 0, { got: els['lq'].textContent });
 
   // 点一块 = 用刚才那句话办（这就是"一下就能改"）
   const block = els['lblocks'].querySelectorAll('.lblock').find(b => b.getAttribute('data-work') === 'prep');
@@ -363,9 +367,9 @@ reload();
   L.intercept();
   const chg = els['routechg'];
   judge('有一行字、有一个「换一件」', !!chg, { got: els['routebar'].innerHTML });
-  chg.fire('click', {});               // 展开五颗小按钮
+  chg.fire('click', {});               // 展开那几颗小按钮
   const minis = els['routepick'].querySelectorAll('.rmini');
-  judge('展开之后是五颗（照 SR.WORK_ORDER 数的）', minis.length === S.WORK_ORDER.length, { got: minis.length });
+  judge('展开之后是那几颗（照 SR.WORK_ORDER 数的）', minis.length === S.WORK_ORDER.length, { got: minis.length });
   // 点「备课」：换一件重办，用的是同一句话
   calls.submit.length = 0; calls.applyWork.length = 0;
   const target = minis.find(b => b.getAttribute('data-work') === 'prep');

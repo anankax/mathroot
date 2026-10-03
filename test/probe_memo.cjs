@@ -214,7 +214,16 @@ const ok = (name, cond, got) => {
   //   "上一场／下一场"的接缝还没产生。分界线画在**下一轮的第一条**前面。
   eq('还没在新工位说话，就还不该有分界线', await ev(`document.querySelectorAll('#msgs .wdiv').length`), 0);
 
-  await send1('出两道题', '好的。\n#0 第一题\n#1 第二题\n', beforeSwitch + 2, 4);
+  // ⚠ 这份假回复**必须是命题那一格的形状**（「变式一（改条件）」这种中文小标题），
+  //   不能是组卷那种裸的 `#0 第一题`：
+  //   memo.js 的 countProbs 2026-10-03 改严了——只认两种**产品自己的格式契约**
+  //   （```材料 围栏里的题号行 / 一行「变式N」小标题），围栏外面裸着的 `#N` 一个字都不认。
+  //   还在喂旧形状的话，prob 数出来是 0，produced() 照「是 0 的一个都不记」把这一笔丢掉，
+  //   口袋就空着——**红的是这份假数据，不是产品**（旧契约下它确实数得出 2）。
+  //   这一格是 vary（命题），所以喂命题的形状才是对的（顺带也把新契约量上了）。
+  const R2 = '好的。\n变式一（改条件）\n把它改成从大到小排。\n变式二（反过来问）\n'
+    + '给了答案，问原来的数可能是几。\n';
+  await send1('出两道题', R2, beforeSwitch + 2, 4);
   eq('★ 新工位说了话，接缝这就出来了', await ev(`document.querySelectorAll('#msgs .wdiv').length`), 1);
   ok('分界线上写的是换到哪一件',
     /命题/.test(await ev(`document.querySelector('#msgs .wdiv').textContent`)),

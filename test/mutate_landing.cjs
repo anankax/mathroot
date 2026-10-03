@@ -21,9 +21,15 @@ const MUTS = {
     "return { work: rank[0], sure: 1, why: '话头', ranked: rank, score: top };"
   ],
   // ② 归得出来那趟不放行，把老师那句话吞掉 —— 探针 ⑤ 的那条应该红
+  // ⚠ 2026-10-03：原来匹配的是 `strip(...)\n    return false;` 两行连着，
+  //   landing.js 后来在 `return false;` 后面**补了一句注释**，于是匹配不着了，
+  //   脚本只印一行「改法过时了」接着造后面的——**红验会少一份而看着像正常**。
+  //   现在只咬 `strip(...)` 那一行（它是唯一的），在后面挂个 `return true;`
+  //   抢先返回，`return false;` 变成到不了的死代码——效果跟原来一模一样。
+  //   这么写以后那行注释再改也不影响。
   swallow: [
-    "    strip(r.work, r.sure, r.why);\n    return false;",
-    "    strip(r.work, r.sure, r.why);\n    return true;"
+    "    strip(r.work, r.sure, r.why);",
+    "    strip(r.work, r.sure, r.why); return true;"
   ],
   // ③ 词表里就少一个词条（"命题"这两个字认不出来）—— 探针 ④ 的两条应该红
   no_mingti: ["['命题', 4], ['出题', 4],", ""],

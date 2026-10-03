@@ -1,4 +1,7 @@
-// 「版式」那一行（#tplbar）和左栏那颗「备课卡片」（#cardbtn）。
+// 「版式」那一行（#tplbar）和顶栏那颗「备课卡片」（#cardbtn）。
+//
+// ★ 2026-10-03：左栏撤了，`#cardbtn` 跟本地素材/知识库/⟳ 一起搬到**顶栏那排小图标**
+//   （`#headtools`）。下面凡提到"左栏"的地方都是**当时那件事的历史**，不是现在的布局。
 //
 // ★★ 这把尺子守的是 2026-10-02 那两件搬家动作，两件都**只改动了几个字符**，
 //   坏了不报错、页面上还看得见，只是看得见的不是那句真话：
@@ -89,20 +92,29 @@ function closeTab(tid) {
   // ---- 前置：仪器在不在 ----
   const has = await q('({bar:!!document.querySelector(".tplbar"),now:!!document.getElementById("tplnow"),'
                     + 'btn:!!document.getElementById("tplbtn"),card:!!document.getElementById("cardbtn"),'
+                    + 'works:!!document.getElementById("works"),'
                     + 'paint:typeof SR.paintTpl})');
-  if (!has || !has.bar || !has.now || !has.btn || !has.card || has.paint !== 'function') {
+  if (!has || !has.bar || !has.now || !has.btn || !has.card || !has.works || has.paint !== 'function') {
     console.log('★ 仪器不对，先别往下判：' + JSON.stringify(has));
-    console.log('  这五个都该在（bar/now/btn/card 四个元素 + SR.paintTpl 一个函数）。');
+    console.log('  bar/now/btn/card/works 五个元素 + SR.paintTpl 一个函数，都该在。');
     console.log('  缺一大堆的话多半是页面根本没起来（服务在 8138 吗？Chrome 9222 是这个 profile 吗？）。');
     await closeTab(t.id); ws.close(); process.exit(3);
   }
 
-  // ---- A. 搬家：入口现在住在产物栏里，不在左栏 ----
+  // ---- A. 搬家：入口现在住在产物栏里 ----
+  //
+  // ★ 2026-10-03：左栏（`.rail`）整块撤了（工位搬到输入框底下那一行）。
+  //   原来这两条查的是"不在 .rail 里"——`closest(".rail")` 现在**永远**返回 null，
+  //   于是 A2 会**恒绿**：产品要是真把模板库塞进工位那一行，它照样报绿。
+  //   （这就是这一仓库吃过的那一族：断言写的形状让它在世上任何状态都成立。）
+  //   改成查现在还存在的两个"不该住的地方"：工位那一行（#works）、顶栏那排图标（#headtools）。
+  //   顺带：`#works` 在不在也列进上面的仪器自检——不然页面没起来时这两条也是白绿。
   const where = await q('(function(){var b=document.getElementById("tplbtn");'
-                      + 'return {inOutbox:!!b.closest(".outbox"), inRail:!!b.closest(".rail"),'
-                      + 'barInRail:!!document.querySelector(".rail .tplbar")};})()');
-  ok('A1：模板库这颗按钮在 .outbox 里（搬到了产物栏）', where.inOutbox, where);
-  ok('A2：它**不在** .rail 里（左栏那组抽屉彻底不留它）', !where.inRail && !where.barInRail, where);
+                      + 'return {inOutbox:!!b.closest(".outbox"), inWorks:!!b.closest("#works"),'
+                      + 'inHead:!!b.closest("#headtools"), barInWorks:!!document.querySelector("#works .tplbar")};})()');
+  ok('A1：模板库这颗按钮在 .outbox 里（住在产物栏）', where.inOutbox, where);
+  ok('A2：它**不在**工位那一行里、也不在顶栏那排图标里',
+     !where.inWorks && !where.inHead && !where.barInWorks, where);
 
   // ---- B. 它只在组卷那一格出现，而且这是 CSS 说了算的 ----
   // 直接改 body 的 data-work 再改回去——纯读 CSS，不动别的状态。
@@ -116,6 +128,31 @@ function closeTab(tid) {
   //   改量 `getClientRects().length`：那数的是**它到底生成了几个盒子**，
   //   祖先不显示就是 0。这个坑跟"数 textContent 里的反斜杠"是同一族——
   //   量到的是**关于这个元素的一件事**，不是**它在屏幕上的样子**。
+  // ★★ 2026-10-03：B 这一组**先得把首屏关掉**才算数。
+  //   上面那些话（"藏的是爹"）全都还成立，可是这趟多出来**第二个爹**：
+  //   首屏那句 `body[data-landing="1"] .side{display:none}` 把**整条右栏**收起来了，
+  //   而 `.tplbar` 正住在右栏里（index.html 的 section.col.tick.side）。
+  //   于是不先关首屏的话：
+  //     · B1 变红——在首屏上"组卷"那一格就是看不见的。这**不是产品坏了**：
+  //       它照的是模拟稿 test/_mock/mock.html 的 `main.one`（刚进来那一屏就是一栏、没右栏），
+  //       孔老师点的那一条也正是"页面偏左、要对话框居中"。
+  //     · B2 **变弱**——它本来量的是"靠 .outbox 那条 CSS 收起来"。现在右栏一收，
+  //       不管 `.outbox` 那条在不在，rects 都是 0——**它照样绿，可它量的已经不是那件事了**。
+  //   两条都靠"先真的进到组卷里"来救：`SR.landing.hide()` 走的是**产品自己那条路**
+  //   （老师点一块、或者说一句话，landing 调的就是它）。
+  //   ⚠ 别图省事自己 `removeAttribute('data-landing')` 冒充过去——那等于绕开产品的手，
+  //     hide() 哪天真坏了，我这边照样一片绿。
+  const land = await q('(function(){var up=document.body.getAttribute("data-landing")==="1";'
+    + 'var sd=document.querySelector(".side");'
+    + 'var seen=!!sd && sd.getClientRects().length>0;'
+    + 'if(up) SR.landing.hide();'
+    + 'return {up:up, sideSeen:seen, hideOk:typeof SR.landing.hide === "function"};})()');
+  // B0 量的是**这趟新加的那条规矩本身**：首屏上右栏整条收着。
+  //   （量 .side 自己——藏的就是它。别量 .tplbar：那是"藏了爹、孩子照样报 flex"。）
+  ok('★ B0：首屏上右栏整条是收着的（"页面偏左"的病根，照 mock 的 main.one）',
+     !!land && land.hideOk && land.up && land.sideSeen === false, land);
+  await wait(200);
+
   const vis = await q('(function(){'
     + 'var body=document.body, was=body.getAttribute("data-work");'
     + 'var bar=document.querySelector(".tplbar");'

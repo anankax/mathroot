@@ -353,7 +353,46 @@ SR.main = (function () {
   // ============================================================
   //  启动
   // ============================================================
+  // 现画工位那一行（输入框底下那六颗 .workbtn）。
+  //
+  // ★ 2026-10-02 加。左栏撤掉之前，这六颗是**写死在 index.html 里的**；
+  //   左栏一没，工位行得换个地方摆，顺手把"写死"这件事也去掉：
+  //   名字只有 js/config.js 的 SR.WORKS[].label 一个真源，加一格不用改两处。
+  //   ⚠ 教训是现成的：2026-10-02 查"六个项目在哪"时发现「学情」**从没进过源码**，
+  //     而当时左栏和首屏卡片各写死了一遍五个名字——两处都对得上，
+  //     所以少了的那一格在屏幕上看着完全正常，谁也看不出缺东西。
+  //
+  // ★ 非在 boot() **最前面**画不可（早于 memo.init / 下面那段接线 / 最后的 applyWork）：
+  //   · 接线那一句是 querySelectorAll('.workbtn')——按钮还没入 DOM 就找不到东西，
+  //     六颗全点不动（而且一声不响）；
+  //   · applyWork 要照着它们 toggle('on') 高亮、memo.js 的 paintWorks 还要照
+  //     SAY 给它们点灯（就在 memo.init 里）——都得先有按钮。
+  // ★ 用 SR.WORK_ORDER 排序、SR.WORKS 取名字，两样缺一就退回 WORKS 自己的顺序：
+  //   宁可排得不对，也不要空白一行——空白在屏幕上跟"产品没这个功能"一样。
+  function paintWorks() {
+    var box = $('works');
+    if (!box) return;
+    var order = (SR.WORK_ORDER || []).filter(function (id) { return !!SR.WORKS[id]; });
+    var all = Object.keys(SR.WORKS);
+    // 顺序表里漏掉的工位**补在后面**，不是丢掉：漏一个 = 那一格点不进去，
+    // 而"少了一格"在屏幕上和"本来就没有这一格"长得一样。
+    all.forEach(function (id) { if (order.indexOf(id) < 0) order.push(id); });
+    if (!order.length) return;
+    var html = '';
+    for (var i = 0; i < order.length; i++) {
+      var w = SR.WORKS[order[i]] || {};
+      // title 给的是 badge（那句话本来就是"这一格是干什么的"的唯一说明）。
+      html += '<button type="button" class="workbtn" data-work="' + order[i] + '"'
+           +  ' title="' + (w.badge || '') + '">' + (w.label || order[i]) + '</button>';
+    }
+    box.innerHTML = html;
+  }
+
   function boot() {
+    // ★ 第一件事：把工位那一行画出来。理由见 paintWorks 上面那段——
+    //   下面 SR.memo.init()、.workbtn 接线、最后的 applyWork 全都踩在这几颗按钮上。
+    paintWorks();
+
     // 署名以 config.js 为准刷一遍页脚和画板水印（index.html 里那两处是开机前的样子）。
     // 顺序上放最前面：board 挂牌时会用到水印，存图也照它取字。
     var cr = $('credits');
@@ -577,24 +616,19 @@ SR.main = (function () {
       b.addEventListener('click', function () { applyWork(b.getAttribute('data-work')); });
     });
 
-    // ---- 清空重开（左栏「我的」最下面那个 ⟳）----
+    // ---- 清空重开（顶栏那一排最右边那颗 ⟳）----
     // ★ 补这个按钮的理由：chat.js 里有 MAX_TURNS = 24 那道闸，可见前**没有任何清空入口**。
     //   备课是"一课一清"的活儿：上一节课的追问链留在屏幕上，下一课接着问会串味。
     //   原来只能靠切工位间接清（还得切两次），现在给它一个正当的门。
     //
-    // ★ 里面的箭头是**在这儿塞进去的**，不写在 index.html 里，也不引字体：
-    //   图标字体的箭头在不同机器上大小胖瘦差得远（有的机器根本没有那个字形，
-    //   会吐一个豆腐块）；而 index.html 里那段 `<svg>` 的 path 数据长得会把
-    //   邻近几行按钮挤到屏幕外，读起来不知道在看什么。塞在这儿，上头那条按钮
-    //   仍然是"一行一个按钮"。
+    // ★ 2026-10-02：那颗箭头**改成写在 index.html 里了**（原来是在这儿 innerHTML 塞的）。
+    //   原因是它旁边多了三个同伴（本地素材／备课卡片／知识库），四个图标同一套写法
+    //   才好对齐、好一起调大小；一个塞在这儿、三个写在 HTML 里，改一次得翻两个文件。
+    //   ★ 当初"塞在这儿"的两条理由仍然算数，一并留着：图标**不用字体**（图标字体的
+    //     箭头在不同机器上胖瘦差得远，有的机器干脆吐一个豆腐块），path 数据也**不挨着
+    //     别的按钮**（那段 d 长得会把邻近几行挤到屏幕外，读起来不知道在看什么）。
     var nb = $('newbtn');
     if (nb) {
-      nb.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"'
-                   +   ' fill="none" stroke="currentColor" stroke-width="2"'
-                   +   ' stroke-linecap="round" stroke-linejoin="round">'
-                   +   '<polyline points="22 6 22 11 17 11"/>'
-                   +   '<path d="M19.6 15.5a8 8 0 1 1-2-8.4L22 11"/>'
-                   + '</svg>';
       // ★★ 这颗是**唯一**能清记忆的地方（孔老师的原话：「除非我靠一个刷新按钮给他清了」）。
       //   {wipe:true} 只在这一个调用点出现——见 js/chat.js 的 reset 和 js/memo.js 的 clear。
       //   别把它加到 applyWork 上去：那样切一次工位就抹一场，

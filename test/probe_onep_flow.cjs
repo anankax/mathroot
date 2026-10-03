@@ -1,4 +1,4 @@
-// 第五阶段「走一遍」落地对账：**同一份东西在五个工位之间流过去**。
+// 第五阶段「走一遍」落地对账：**同一份东西在几个工位之间流过去**（件数照 SR.WORK_ORDER 现数）。
 //
 // 这张模拟稿（test/_mock/mock.html 的 ⑤）claim 的是两句话：
 //   「每一步都不用重新交代，每一步都给下一步留了东西」
@@ -102,7 +102,7 @@ function ok(cond, name, why) {
   }
 
   // ── 页面里的助手 ────────────────────────────────────────────────
-  // 调 buildSystem 拿那一段 system 原文。五个工位都是同一个签名。
+  // 调 buildSystem 拿那一段 system 原文。每个工位都是同一个签名。
   // 传空的 hist/parts：这一段附注跟历史无关，它读的是口袋。
   const SYS = w => V(`SR.api.buildSystem(${JSON.stringify(w)}, '按这一节出几道题', undefined, [], [], {})`);
   const WIPE = () => q(`SR.memo.clear(); try{localStorage.removeItem(${JSON.stringify(KEY)})}catch(e){}; 1`);
@@ -129,7 +129,8 @@ function ok(cond, name, why) {
   ok(topicSys.indexOf('3.1 用字母表示数') >= 0, '课题原样进去了');
   ok(topicSys.indexOf('七(7)班') >= 0, '班级原样进去了');
 
-  // 五个工位都要有：切到哪个工位都不用重新交代，不是只给某一个工位开小灶
+  // 每个工位都要有（件数照 SR.WORK_ORDER 现取）：切到哪个工位都不用重新交代，
+  // 不是只给某一个工位开小灶。2026-10-03 加「学情」时这一条自己就多跑了一格。
   const allW = await V(`SR.WORK_ORDER.join(',')`);
   for (const w of String(allW).split(',')) {
     const s = await SYS(w);
@@ -222,6 +223,30 @@ function ok(cond, name, why) {
   //   所以这儿不量 class，量两样**画出来的东西**：
   //     ① 那个小圆点自己的配色（伪元素上的 backgroundColor）
   //     ② 文字的左边缘**动没动**——预留的那点空白要是没生效，口袋一满字就整体右移 13px
+  //
+  // ★★ 2026-10-03 补的一道闸（这一节原来一直是**空的**）：
+  //   工位那一行（`#works`）归 `body[data-landing="1"] .works{display:none}` 管——
+  //   首屏还立着的时候它是 `display:none`。而 `applyWork()` **不会**放倒首屏
+  //   （只有 landing 自己的 send/pick 会），所以从前跑到这儿，首屏还立着：
+  //      · `getBoundingClientRect()` 全给 0 → `textLeft` 两边都是 0、
+  //        `btnW` 两边都是 0 → **"一个像素都没动"永远成立**；
+  //      · 下面 360px 那条"没把这一行顶高"也是 0→0。
+  //   量的是"看不见的东西"，报的却是"看见了、而且没歪"。所以先放倒首屏，
+  //   再**验一下它真的放倒了**——不然这道闸自己也能空转。
+  await q(`if(SR.landing&&SR.landing.hide) SR.landing.hide(); 1`);
+  await sleep(250);
+  const rowSeen = await V(`(function(){var e=document.getElementById("works");if(!e)return "NO#works";`
+                        + `var r=e.getBoundingClientRect();`
+                        + `return {h: Math.round(r.height), w: Math.round(r.width),`
+                        + `        btns: document.querySelectorAll("#works .workbtn").length};})()`);
+  ok(rowSeen && rowSeen !== 'NO#works' && rowSeen.h > 0 && rowSeen.w > 0 && rowSeen.btns > 0,
+     '尺子自检：工位那一行**真的在屏幕上**（不然下面量的全是 0，条条都会绿）', JSON.stringify(rowSeen));
+  if (!rowSeen || rowSeen === 'NO#works' || !(rowSeen.h > 0 && rowSeen.w > 0)) {
+    console.log('★ 尺子坏了：工位那一行没画出来，这一节（还有下面 360px 那条）会全变成"比了两个 0"。');
+    console.log('  先修这个再往下判——那几条绿的是假的。');
+    await fetch(`http://${HOST}/json/close/${t.id}`); ws.close(); process.exit(3);
+  }
+
   const DOT = () => V(`Array.prototype.slice.call(document.querySelectorAll('.workbtn')).map(function(b){
       var cs = getComputedStyle(b, '::before');
       var n = null;
@@ -272,18 +297,24 @@ function ok(cond, name, why) {
 
   // 手机上工位那一行是横排换行的，多出来这 13px 会不会把行数顶多一行——
   // 那块 CSS 自己写着"手机上一行高都很贵"。
+  //
+  // ★ 2026-10-03：左栏（`.rail`）撤了，工位现在只有**输入框底下那一行**（`#works`）。
+  //   原来这条同时量了"整栏"和"那一行"——整栏那个数现在没有对应的东西了，
+  //   再照抄会让 `querySelector('.rail')` 拿到 null 当场把探针炸掉（V 对异常是抛的）。
+  //   所以只量那一行，判据不变：亮灯前后高度得一样。
   await WIPE();
   await sleep(120);
   await send('Emulation.setDeviceMetricsOverride', { width: 360, height: 640, deviceScaleFactor: 1, mobile: true });
   await sleep(400);
-  const railOff = await V(`Math.round(document.querySelector('.rail').getBoundingClientRect().height)`);
-  const railOffH = await V(`Math.round(document.querySelector('.works').getBoundingClientRect().height)`);
+  const worksSel = '(function(){var e=document.getElementById("works");if(!e)return "NO#works";'
+                 + 'return Math.round(e.getBoundingClientRect().height);})()';
+  const worksOff = await V(worksSel);
+  if (worksOff === 'NO#works') { console.log('★ 仪器不对：页面上没有 #works（工位那一行）'); await fetch(`http://${HOST}/json/close/${t.id}`); ws.close(); process.exit(3); }
   await q(`SR.memo.produced('vary', {prob: 6}); 1`);
   await sleep(200);
-  const railOn = await V(`Math.round(document.querySelector('.rail').getBoundingClientRect().height)`);
-  const railOnH = await V(`Math.round(document.querySelector('.works').getBoundingClientRect().height)`);
-  ok(railOn === railOff && railOnH === railOffH,
-     '360px 上：亮灯**没把工位那一行顶高**（' + railOffH + '→' + railOnH + 'px，整栏 ' + railOff + '→' + railOn + '）',
+  const worksOn = await V(worksSel);
+  ok(worksOn === worksOff,
+     '360px 上：亮灯**没把工位那一行顶高**（' + worksOff + '→' + worksOn + 'px）',
      '多出来的那点宽度把这一行挤到多折了一行，手机上一行高很贵');
   await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 860, deviceScaleFactor: 1, mobile: false });
 

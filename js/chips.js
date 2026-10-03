@@ -54,6 +54,21 @@ SR.CHIPS = {
     '难度照课本例题那个档次',
     '换个章节，题型不变'
   ],
+  // ---- 学情工位：老师对这张成绩表提要求 ----
+  // ★ 2026-10-03 补的这一档，理由跟上面出材料那条**一字不差**：
+  //   新工位不补词，就会掉进 fallbackChips 最后那句 `return SR.CHIPS.chain`，
+  //   老师拖着一张成绩表，底下摆的是备课的「接着往下走／这句我说不出口」。
+  //   ⚠ 加一格必须来这儿补一档——这是第二次了（第一次是出材料），
+  //     漏掉不会报错，屏幕上只是一排**别人的话**。
+  //
+  // ★ 措辞照 js/prompt-grade.js 教模型的次序写：先看范围、再看先讲哪几道。
+  //   三条分别管**范围／先后／落点**，是老师拿到那个排行后最常紧接着提的。
+  //   不写结论、不写分号（跟上面各档同一条死规矩：写人话、是老师说的、一句 ≤20 字）。
+  grade: [
+    '只算我自己出的那几道',
+    '得分率从低到高排',
+    '先讲哪三道，给我讲讲为什么'
+  ],
   // ---- 讲评工位 · 第一轮（列完题号之后）：挑哪一道讲 ----
   review: [
     '先按题号顺序讲',
@@ -593,6 +608,7 @@ SR.fallbackChips = function (opts) {
   if (work === 'draw') return SR.CHIPS.draw;
   if (work === 'vary') return SR.CHIPS.vary;
   if (work === 'material') return SR.CHIPS.material;
+  if (work === 'grade') return SR.CHIPS.grade;
   // 讲评第一轮：数根刚把卷子上的题号列完，老师该挑讲哪一道了。
   // 之后就回到链子（他挑定一道、链子一开始，动作就跟备课一模一样）。
   if (work === 'review' && opts.first) return SR.CHIPS.review;

@@ -157,9 +157,26 @@ function closeTab(tid) {
     await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x, y: y, button: 'left', clickCount: 1 });
   };
 
+  // ★★ 2026-10-03 补两件，都是**尺子自己的毛病**，产品一个字没改：
+  //  ① 窗宽写死。原来这一把**不设窗宽**——量的是"他那扇 Chrome 窗口现在多宽"（实测 1707）。
+  //     等于把判据挂在他随手拉的窗口尺寸上：他要是把窗拖窄过 900px，单栏规矩一生效、
+  //     右栏整个收起来，下面每一条"看得见吗"都会红，而红的样子跟"产品坏了"长得一模一样。
+  //     （同族：写死的件数在"加一件"那天报成"仪器不对"。）
+  //  ② 收首屏。首屏（`body[data-landing="1"]`）的规矩是 **`.side{display:none}`**，
+  //     而 `.flowbox` 正好是这个文件顶上专门写过的那条坑——"爹藏了孩子照样报 flex"。
+  //     首屏是后加的（这把尺子写的时候，右栏一开页就露着），所以它量到的是
+  //     "`.flowbox` 自己 display=flex、`getClientRects()` 却是 0"。**藏它的那个爹就是首屏。**
+  //     首次实测（2026-10-03）：8 条红里有 5 条出自这一条，没有一条是产品坏了。
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: PAGE });
   for (let i = 0; i < 40; i++) { if (await q('!!(window.SR&&SR.flow&&SR.WORKS&&SR.chat)')) break; await wait(500); }
   await wait(1200);
+  await q('(function(){ if (window.SR && SR.landing && SR.landing.hide) SR.landing.hide(); })()');
+  await wait(600);
+  // ★ 自检：右栏真露出来了，才往下判。没露出来的话下面全是**假红**——
+  //   而"假红"最坏的地方不是白跑一趟，是它跟"产品坏了"长得一样，看久了就没人看红了。
+  const sideSeen = await q('(function(){var s=document.querySelector(".side");return !!s && s.getClientRects().length>0;})()');
+  ok('★ 对照：右栏真露出来了（没露的话下面每一条"看得见吗"都是假红）', sideSeen === true, sideSeen);
 
   const host = await q('location.host');
   console.log('这一趟跑在 : ' + host + '\n');
@@ -178,9 +195,14 @@ function closeTab(tid) {
   }
   ok('三块 DOM（.flowbox / #flowlist / #flowhint）和 SR.flow 那几个口子都在', true);
   // 对照：证明这一页真是产品那一页，不是个空壳（空壳也能让上面那条"通过"）
-  const ctrl = await q('({n:Object.keys(SR.WORKS).length,badge:((document.getElementById("badge")||{}).textContent||"").trim().length})');
-  ok('★ 对照：这一页真是产品那一页（五个工位 + 状态栏有字）',
-    ctrl.n === 5 && ctrl.badge > 0, ctrl);
+  // ★ 2026-10-03：原来写死 `ctrl.n === 5`（那时候五个工位）。加了「学情」之后它是 6，
+  //   这条当场红——**红的是这个写死的 5，不是产品**。改成关系式：屏幕上那一行工位按钮，
+  //   跟 `SR.WORK_ORDER`（工位顺序与名字的唯一真相）逐颗对得上。
+  const ctrl = await q('({n:Object.keys(SR.WORKS).length, order:(SR.WORK_ORDER||[]).length,'
+    + 'btns:document.querySelectorAll("#works .workbtn").length,'
+    + 'badge:((document.getElementById("badge")||{}).textContent||"").trim().length})');
+  ok('★ 对照：这一页真是产品那一页（工位按钮跟 SR.WORK_ORDER 逐颗对得上 + 状态栏有字）',
+    ctrl.n > 0 && ctrl.btns === ctrl.n && ctrl.n === ctrl.order && ctrl.badge > 0, ctrl);
 
   // ---------- A. 显隐跟着工位自己的开关走 ----------
   // ★ 关系式：不写死哪个工位该亮，拿 SR.WORKS 每个工位身上的 retrieve 去比。
@@ -232,7 +254,9 @@ function closeTab(tid) {
     + 'name:name,wantName:s.name,tag:tag,wantTag:s.route,note:note,wantNote:s.note});}'
     + 'return {count:rows.length,want:r.steps.length,same:bad.length===0,bad:bad,'
     + 'states:r.steps.map(function(s){return s.id+":"+s.state;}).join(" ")};})()');
-  ok('★ 面板上正好六格，一格不多一格不少（账本几步就画几行）',
+  // （★ 那句"正好六格"是旧的措辞：账本早就不是六步了。断言本来就是关系式，留着改个说法，
+  //   别让标签里那个数字撒谎——同一家族里"标签说六、实际七"也是会带人走错的一种。）
+  ok('★ 面板上格数 = 账本步数，一格不多一格不少（当前 ' + pair.want + ' 步）',
     pair.count === pair.want, pair);
   ok('★ 每一格的状态词、步名、出处标签、说明，跟账本逐格一样',
     pair.same === true, pair.bad);
@@ -284,9 +308,17 @@ function closeTab(tid) {
     + 'for(var i=0;i<rows.length;i++){'
     + 'var b=rows[i].querySelector(".fbtn.flink");'
     + 'if(b)got.push({i:i,id:window.__pr.steps[i].id,rerun:!!window.__pr.steps[i].rerun});}return got;})()');
-  ok('★ 「重跑」只长在能重跑的那两步上（翻教材、翻条目）',
-    btns.length === 2 && btns.every(b => b.rerun) &&
-    btns.map(b => b.id).join(',') === 'textbook,zhuawen', btns);
+  // ★ 2026-10-03：原来写死「长度===2 且恰好是 textbook,zhuawen」。加了「翻素材库」
+  //   那一步（reslib，它的产物翻歪了同样得能单独重跑）之后这里变成 3 颗，当场红——
+  //   又是**写死的件数**，不是产品。按这把尺子顶上声明的契约改：
+  //   它判的是"**面板跟账本一致**"（不是"流水线分得对不对"），所以判**一一对应**：
+  //   账本里标了能重跑的，面板上就得有那颗按钮；面板上有按钮的，账本里就得标着能重跑。
+  //   当前是哪几步**打印出来给人看**，不写成断言——口径真改了，屏幕上一眼看得到，
+  //   不必让这条报成"仪器不对"。
+  const rerunWant = await q('window.__pr.steps.filter(function(s){return s.rerun;}).map(function(s){return s.id;}).join(",")');
+  ok('★ 面板上的「重跑」跟账本里标了能重跑的那几步一一对应（当前账本是 ' + rerunWant + '）',
+    btns.length > 0 && btns.every(b => b.rerun) && btns.map(b => b.id).join(',') === rerunWant,
+    { 面板上的: btns.map(b => b.id), 账本里的: rerunWant });
   // 真鼠标点「翻教材」那一颗
   const spot = await q('(function(){var rows=document.querySelectorAll("#flowlist .fstep");'
     + 'var b=rows[1].querySelector(".fbtn.flink");if(!b)return null;'
@@ -301,7 +333,11 @@ function closeTab(tid) {
   const after = await q('(function(){var r=window.__pr;'
     + 'return {states:r.steps.map(function(s){return s.id+":"+s.state;}).join(" "),'
     + 'recall:SR.flow.at(r,"recall").state, text:SR.flow.at(r,"textbook").state,'
-    + 'cls:(document.querySelectorAll("#flowlist .fstep")[3]||{}).className,'
+    // ★ 2026-10-03：这里原来写死**下标 3**（那时候 prompt 排第 4 格）。
+    //   中间插进 reslib 之后下标 3 落到它身上（`st-skip`），这条于是报"面板没重画"——
+    //   又一次**写死的下标**。改成按 id 找那一格，插入多少步都不会再错位。
+    + 'cls:(function(){var i=0,k=r.steps;for(var j=0;j<k.length;j++){if(k[j].id==="prompt"){i=j;break;}}'
+    + 'var row=document.querySelectorAll("#flowlist .fstep")[i];return row?row.className:"";})(),'
     + 'foot:!!document.querySelector("#flowlist .ffoot"),'
     + 'footBtn:!!document.querySelector("#flowlist .ffoot .fbtn")};})()');
   ok('★ 点下去真跑了：翻教材这一步回到 done，而下游三步变成 stale',
@@ -390,6 +426,8 @@ function closeTab(tid) {
   //   留着一条假流水线，他下次打开会看到"我没发过这句话啊"。
   //   （flow.js 的账本只在内存里，reset 就够了；工位也放回原样。）
   await q('SR.flow.reset(); SR.flow.setWork(' + JSON.stringify(wasWork) + '); delete window.__pr;');
+  // ★ 窗宽也放回去（这一趟开头把它钉到 1440 了，不收掉会留给同一个 profile 的下一个探针）
+  await send('Emulation.clearDeviceMetricsOverride', {});
   await wait(300);
   const clean = await q('({n:SR.flow.list().length, work:document.body.getAttribute("data-work"),'
     + 'empty:!!document.querySelector("#flowlist .flowempty")})');

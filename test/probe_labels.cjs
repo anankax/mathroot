@@ -1,13 +1,19 @@
-// 五个工位的名字，**三处必须是同一套**。
+// 工位的名字，**三处必须是同一套**。件数照 SR.WORK_ORDER 现数，不写死。
 //
 // ★★ 这条守的是一个具体的、真会发生的错：
 //   工位的名字在**三个文件位置**各写了一遍——
 //     ① js/config.js   SR.WORKS[].label / .badge （产品自己认的那份，行为也挂在它上面）
-//     ② index.html     左栏那五个 <button class="workbtn">
-//     ③ index.html     「关于」里第一张列表的五个 <strong>
-//   改名字的时候漏掉一处，**没有任何东西会报**：页面照常跑，只是左栏写「组卷」、
+//     ② 页面上那一行   #works 里的 <button class="workbtn">（由 js/main.js 照
+//                      SR.WORK_ORDER 现画，名字取自 SR.WORKS 同一格）
+//     ③ index.html     「关于」里第一张列表的 <strong>
+//   改名字的时候漏掉一处，**没有任何东西会报**：页面照常跑，只是工位写「组卷」、
 //   点开「关于」还写着「出材料」。2026-10-02 换教师行话（出材料/画图/出题 →
 //   组卷/作图/命题）就是这种改动，所以当天写了这把尺子。
+//
+// ★ 2026-10-03：左栏撤了，②那条路从 `.rail .workbtn` 改成 `#works .workbtn`。
+//   注意②现在是**照着①现画**的，所以它对①的一致性几乎是被结构保证的——
+//   剩下的真价值在③（「关于」那份是手写的，谁也不会自动跟着改）。留着②是当**对照**：
+//   它要是也对不上，说明按钮根本没画出来（页面没起来），别把那种情况读成"③写错了"。
 //
 // ★ 为什么这不是"把产品措辞焊进测试"（这个仓库栽过的坑）：
 //   这里**一个名字都没写死**。尺子只问"三处一不一致"，不问"该叫什么"。
@@ -18,7 +24,7 @@
 //   ① 「画图」是**合法的正文**——「关于」里那句"它写一行**画图命令**，工作台自己
 //      把图渲出来印上去"说的就是画图这件事，一点没错。全局扫「画图」会把这句判成错的。
 //      （同族的坑：某次拿"禁『节』字"当规矩，可「环节」里本来就有「节」，四条正确输出全红。）
-//   ② 所以尺子**只认三个位置**：rail 按钮的可见文字、关于列表里加粗的那几个名字、
+//   ② 所以尺子**只认三个位置**：工位那一行按钮的可见文字、关于列表里加粗的那几个名字、
 //      以及 config 里那两份。别的地方写什么都不管。
 //
 // ★ #badge 那一条是**对照组**：光比"三处文字一不一致"的话，一个根本没渲染出来的页面
@@ -85,32 +91,35 @@ function closeTab(tid) {
   console.log('这一趟跑在 : ' + host + '\n');
 
   // ---- 前置：仪器在不在 ----
+  // 件数照 SR.WORK_ORDER 现数——加/减一个工位，这把尺子自己跟着走，不用改。
+  const nOrder = await q('SR.WORK_ORDER ? SR.WORK_ORDER.length : -1');
   const nWorks = await q('SR.WORKS ? Object.keys(SR.WORKS).length : -1');
-  const nBtns = await q('document.querySelectorAll(".rail .workbtn").length');
-  if (nWorks !== 5 || nBtns !== 5) {
-    console.log('★ 仪器不对，先别往下判：SR.WORKS 有 ' + nWorks + ' 个、左栏有 ' + nBtns + ' 个按钮。');
-    console.log('  两个都该是 5。是 0 的话多半是页面根本没起来（服务在 8138 吗？Chrome 9222 是这个 profile 吗？）。');
+  const nBtns = await q('document.querySelectorAll("#works .workbtn").length');
+  if (nOrder !== nWorks || nBtns !== nOrder || nOrder < 1) {
+    console.log('★ 仪器不对，先别往下判：SR.WORK_ORDER 有 ' + nOrder + ' 格、SR.WORKS 有 ' + nWorks
+      + ' 个、页面上画出来 ' + nBtns + ' 个按钮。三个该相等。');
+    console.log('  是 0 的话多半是页面根本没起来（服务在 8138 吗？Chrome 9222 是这个 profile 吗？）。');
     await closeTab(t.id); ws.close(); process.exit(3);
   }
 
   // ---- 三处取证。注意：这一整段**没有写死任何一个名字** ----
   const cfg = await q('(function(){var o={};for(var k in SR.WORKS){o[k]={id:SR.WORKS[k].id,label:SR.WORKS[k].label,badge:SR.WORKS[k].badge};}return o;})()');
-  const rail = await q('(function(){var o={};document.querySelectorAll(".rail .workbtn").forEach(function(b){o[b.getAttribute("data-work")]=b.textContent.trim();});return o;})()');
+  const rail = await q('(function(){var o={};document.querySelectorAll("#works .workbtn").forEach(function(b){o[b.getAttribute("data-work")]=b.textContent.trim();});return o;})()');
   // 「关于」里**第一张**列表 = 讲这五件事的那张（用位置取，不焊"五件事"这个标题词——
   // 标题哪天真改了字，这张列表还在原地，尺子不该跟着红）。
   const about = await q('(function(){var ul=document.querySelectorAll("#about ul")[0];if(!ul)return null;return Array.prototype.map.call(ul.querySelectorAll("li > strong:first-child"),function(s){return s.textContent.trim();});})()');
 
   console.log('① js/config.js  的 label : ' + Object.keys(cfg).map(k => k + '=' + cfg[k].label).join('  '));
-  console.log('② 左栏按钮的文字        : ' + Object.keys(rail).map(k => k + '=' + rail[k]).join('  '));
+  console.log('② 工位那一行的按钮文字  : ' + Object.keys(rail).map(k => k + '=' + rail[k]).join('  '));
   console.log('③ 「关于」列表的加粗名  : ' + (about || []).join(' / ') + '\n');
 
   // ---- 自检：不能"两边都空"也算一致 ----
   const labels = Object.keys(cfg).map(k => (cfg[k].label || '').trim());
-  ok('尺子自检：五个人话名都不是空的（不然"对得上"可能只是两边都空）',
-     labels.length === 5 && labels.every(s => s.length > 0), labels);
-  ok('尺子自检：五个人话名互不相同（防复制粘贴漏改，出现两个「备课」）',
-     new Set(labels).size === 5, labels);
-  if (labels.some(s => !s) || new Set(labels).size !== 5) {
+  ok('尺子自检：' + nOrder + ' 个人话名都不是空的（不然"对得上"可能只是两边都空）',
+     labels.length === nOrder && labels.every(s => s.length > 0), labels);
+  ok('尺子自检：' + nOrder + ' 个人话名互不相同（防复制粘贴漏改，出现两个「备课」）',
+     new Set(labels).size === nOrder, labels);
+  if (labels.some(s => !s) || new Set(labels).size !== nOrder) {
     console.log('\n★ 名字本身就不成立，比三处一致更重要——先修名字再跑这把尺子。');
     console.log('  结果：' + PASS + ' 通过, ' + FAIL + ' 失败');
     await closeTab(t.id); ws.close(); process.exit(1);
@@ -118,14 +127,14 @@ function closeTab(tid) {
 
   // ---- ①vs②：逐格对（按 data-work 配对，不按出现顺序） ----
   const badRail = Object.keys(cfg).filter(k => (rail[k] || '') !== cfg[k].label);
-  ok('①=②：左栏每个按钮的文字，都等于 config 里同一格的名字',
+  ok('①=②：工位那一行每个按钮的文字，都等于 config 里同一格的名字',
      badRail.length === 0,
-     badRail.map(k => ({ 工位: k, config: cfg[k].label, 左栏: rail[k] })));
+     badRail.map(k => ({ 工位: k, config: cfg[k].label, 工位行: rail[k] })));
 
   // ---- ①vs③：集合相同（顺序不管——关于列表是按"哪件事先说"排的，不必跟导航同序） ----
   const wantSet = labels.slice().sort();
   const gotSet = (about || []).slice().sort();
-  ok('①=③：「关于」那张列表里的名字，跟 config 的五个人话名是同一套',
+  ok('①=③：「关于」那张列表里的名字，跟 config 的 ' + nOrder + ' 个人话名是同一套',
      JSON.stringify(wantSet) === JSON.stringify(gotSet), { config: wantSet, 关于: gotSet });
 
   // ---- 对照组：这条链是活的 ----
