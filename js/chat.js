@@ -83,7 +83,10 @@ SR.chat = (function () {
 
   function init() {
     els.msgs = $('msgs');
-    els.chips = $('chips');
+    // `#chips`（输入框上面那排常驻选项）2026-10-03 删掉了 ——「想说」改成挂在
+    // 它自己那条回复底下（见 showChips），那个常驻容器就没人往里写了。
+    // ⚠ 连 `els.chips` 也一起删：下面那个 missing 检查是**按 els 的键**遍历的，
+    //   容器没了还留着这个键，页面一开就会报一句"少了个 id"的假警报。
     els.input = $('input');
     els.send = $('send');
     els.attach = $('attach');
@@ -230,23 +233,124 @@ SR.chat = (function () {
     if (prev && work && prev !== work) addDivider(work);
   }
 
+  // ============================================================
+  //  「流水线」那一块跟着**这一条回复**走（阶段 F）
+  // ============================================================
+  //
+  // ★ 以前它是右栏里跟画板上下分的一块，**常驻**：跑完七步它还立在那儿，
+  //   下一条回复来了再重画一遍——老师看不出"这条流水线是哪句话的"。
+  //   现在把它搬进这一轮那条气泡里，跟卷子卡、冻图一个待遇：**谁的话，挂在谁下面。**
+  //
+  // ★ 搬的是**整个 #flowbox 节点**，不是重画一份。`#flowlist` 是它的子节点，
+  //   搬父即整块搬；js/flow.js 一个字都不用改（它只认 `#flowlist` 那个 id，
+  //   paintNow 每次都重新 `getElementById`，节点挪到哪儿它都能接着画）。
+  //
+  // ⚠ **脱档的坑**（这一阶段唯一会咬人的地方）：一旦搬进气泡，`#flowbox` 就成了
+  //   `#msgs` 的后代；而 `#msgs` 有两处会被整个掏空（`reset()` 里一次、repaintLog
+  //   开头一次），它跟着一起脱档。脱档之后 `document.getElementById('flowbox')`
+  //   就**返回 null 了**（不在 document 里的节点查不到），屏幕上只表现为
+  //   "流水线不见了"，跟"这条本来就没有流水线"长得一模一样。
+  //   治法：**第一次读到它就攥住引用**（`flowEl`），脱档了也还在手上。
+  //   所以这个引用不许释放 —— 它就是全部保险，比 `getElementById` 认得的多一份。
+  var flowEl = null;    // #flowbox 本体
+  var flowHome = null;  // 它原来那个窝（抽屉里）：{parent, next}。空着的时候回这儿待着。
+
+  // 什么时候把它摆进对话？两条**都**要满足：
+  //   ① **这个工位有流水线** —— 判据是工位自己身上有没有 `retrieve` 这个开关，
+  //      跟 js/flow.js 的 setWork 用的是**同一个开关**（`.retrieve`，不是工位名字，
+  //      所以这儿也不会写死 "prep"/"review"）。
+  //   ② **账本里真有轮次** —— 刷新回来时 setWork 在 init 里跑过、那时一轮都没跑，
+  //      账本是空的；空的摆出来就是一句"最近 0 轮"，钉在回复下面只会像坏了。
+  //      **这正对**：刷新之后它就该回抽屉里待着，等下一轮再长出来。
+  // ⚠ 为什么不能只看账本（这是我第一版写错的那处）：切工位时 main.js 的顺序是
+  //   `SR.chat.setWork(w)`（走重画这条路）**在前**、`SR.flow.setWork(w)`（那才 reset
+  //   账本）**在后**——重画那一刻账本还是**上一个工位**的。只看账本的话，
+  //   从备课切到组卷，会把备课的流水线挂进组卷那条回复里。
+  // ⚠ 也不用 `data-flow` 那个属性：那是 css 显隐用的，同样慢一拍。
+  function flowLive() {
+    if (!((SR.WORKS || {})[work] || {}).retrieve) return false;
+    return !!(SR.flow && SR.flow.list && SR.flow.list().length);
+  }
+
+  function flowBox() {
+    if (!flowEl) {
+      // ★ 第一次一定读到抽屉里那一份：能把它搬进气泡的只有 homeFlow，而 homeFlow
+      //   也走这里。所以这一步顺手就把"窝"的坐标记下来了。
+      flowEl = document.getElementById('flowbox');
+      if (flowEl) {
+        flowHome = { parent: flowEl.parentNode, next: flowEl.nextSibling };
+        // 「跑完收起来」：点表头展开／收起。**不写进 js/flow.js** —— 那个文件管的是
+        // "七步怎么跑"，折叠纯粹是摆法，而且是搬进气泡之后才有的摆法。
+        var head = flowEl.querySelector('.colhead');
+        if (head) head.addEventListener('click', function () { flowEl.classList.toggle('open'); });
+      }
+    }
+    return flowEl;
+  }
+
+  // 搬进这条气泡。folded 默认 true（跑完了就折成一行，点开才铺开）。
+  function homeFlow(b, folded) {
+    var box = flowBox();
+    if (!box || !b) return false;
+    box.classList.toggle('done', folded !== false);
+    if (folded === false) box.classList.add('open');
+    b.appendChild(box);
+    // ★ 有产物 → 气泡定宽，跟卷子卡／冻图同一条理由（见 css `.bubble.hasprod`）：
+    //   流水线是一块要横向铺开的表格，气泡要是缩到文字的宽度，它会挤成一团。
+    b.classList.add('hasprod');
+    return true;
+  }
+
+  // 搬回抽屉里原来那个位置（空着的时候，或者换到没有流水线的工位时）。
+  function parkFlow() {
+    var box = flowBox();
+    if (!box || !flowHome || !flowHome.parent) return false;
+    box.classList.remove('done', 'open');
+    if (flowHome.next && flowHome.next.parentNode === flowHome.parent) {
+      flowHome.parent.insertBefore(box, flowHome.next);
+    } else {
+      flowHome.parent.appendChild(box);
+    }
+    return true;
+  }
+
   // 按记忆把这一场重画一遍。返回"到底摆回来了没有"——
   //   空的那一场得退回开场白，不能留一块空白。
   function repaintLog() {
     if (!SR.memo) return false;
     var list = SR.memo.log();
-    if (!list.length) return false;
+    // ★ 空场也要把流水线放回抽屉（下面那条路会提前 return，走不到散场那几行）。
+    if (!list.length) { parkFlow(); return false; }
+    // ★ 先把引用攥到手上（`flowBox` 第一句就是），再掏空 `#msgs` ——
+    //   这一行之后它可能就是脱档的那个了，理由见上面 flowEl 那段长注释。
+    flowBox();
     els.msgs.innerHTML = '';
     var prev = '';
+    var ask = '';  // 上一条**老师说的话** —— 卷子名字就是从它来的（见 fileTitle）
     var ai = 0;   // 第几条**助手回复**——「打包」那颗按钮拿它当序号（见下面那段注释）
+    var lastB = null;  // 最后一条助手气泡 —— 散场时流水线要挂到它身上
+    // 「想说」也要跟着摆回来，但**只摆最后那一条**（见散场那几行）。
+    //   这三样是给最后一条准备的材料：它自己那份 ```想说、在哪个工位、
+    //   是不是本场的第一次回复（`SR.fallbackChips` 里只有讲评那份认 `first`）。
+    var lastSay = null, lastWork = '', lastFirst = false;
     for (var i = 0; i < list.length; i++) {
       var t = list[i];
       // t.w = 说这句话的时候在哪个工位。变了就插一条分界线。
       if (t.w && prev && t.w !== prev) addDivider(t.w);
       if (t.w) prev = t.w;
-      if (t.r === 'u') { addUser(t.t, []); continue; }
-      var v = restoreText(t.t, t.w);
+      if (t.r === 'u') { ask = t.t; addUser(t.t, []); continue; }
+      // ★ 2026-10-03 起用 restoreParts（`restoreText` 是它的薄包装）：
+      //   重画这条路**不只要正文了** —— 每条回复底下还要钉回它自己那块冻图，
+      //   那需要 `ggb` 那几份命令原文。
+      var pr = restoreParts(t.t, t.w);
+      var v = pr.visible;
       var b = addAssistantText(v);
+      // ★ 给这条消息钉上它在 memo 里的序号。用途只有一个：**补卡**。
+      //   开机那一刻模板还没从 IndexedDB 里读出来（restore 是异步的，而这条路
+      //   在 chat.init() 里**同步**就跑完了），卷子卡建不出来；等模板接回来之后
+      //   paintMatCards() 要能回头找到该补的那条。靠 DOM 顺序数位置是不行的——
+      //   中间夹着分界线（addDivider）和老师说的话，数出来会错位。
+      if (b && b.parentNode) b.parentNode.setAttribute('data-mi', String(i));
       // ---- 「复制这段」/「打包」也要跟着摆回来 ----
       //
       // ★ 原来只有当场收流那条路（submit 的收尾，见 attachCopy 那边）会挂这两颗。
@@ -264,10 +368,89 @@ SR.chat = (function () {
       //   ⚠ ai 要数**每一条**助手回复，不受下面 copy 那道闸影响。
       var cfg = (SR.WORKS && SR.WORKS[t.w]) || {};
       if (cfg.copy) attachCopy(b, v, (SR.pack && SR.pack.__seed) ? ai : null);
+      lastSay = pr.say; lastWork = t.w; lastFirst = (ai === 0);
       ai++;
+      // 冻图跟着摆回来。★ 会话内有缓存（比如点 ⟳ 切工位触发的那次重画）就直接贴图；
+      //   刷新之后内存缓存是空的，就先摆一块写着「图」的占位 —— **点一下才现画**。
+      //   不这么做的后果是"刷新一次就把整场对话的图全重画一遍"，二十轮就是二十次
+      //   借板+截图，老师会以为页面卡死了。
+      for (var gi = 0; gi < pr.ggb.length; gi++) {
+        attachFigure(b, pr.ggb, gi, (pr.ggbInfo && pr.ggbInfo[gi]) || '');
+      }
+      // ---- 卷子卡也要摆回来 ----
+      attachMatCard(b, pr.matBody, ask);
+      lastB = b;
+    }
+    // 流水线挂到**最后那条**助手回复上（账本只说"最近 N 轮"，本来就是整场一份，
+    //   挂在最新那条下面才跟得上对话）。没有账本就回抽屉——见 flowLive 那段。
+    if (flowLive() && lastB) homeFlow(lastB, true);
+    else parkFlow();
+    // ---- 「想说」摆回**最后那一条**底下（阶段 G）----
+    // ★ 为什么只摆最后一条：当场那条路就是这样——`clearChips()` 在新一轮发出去时
+    //   先把上一排撤掉（见 submit 开头），所以屏幕上永远只有**最新**那一条底下有
+    //   三颗可点的话。二十轮全摆回来的话，一屏里横着二十排按钮，那不是对话。
+    // ★ 模型没写 ```想说 的那几轮，当场是**本地兜底**顶上的；重画这条路也得照做，
+    //   不然会出现"刷新之后最后那三颗不见了"——看着像按钮丢了，其实是没人重算。
+    //   兜底只需要 work 和 first 两样（`SR.fallbackChips` 里其实只用到这两个，
+    //   另外两个参数是旧写法留下来的）。判据跟当场同源：同一条 `pr.say`、
+    //   同一个 `SR.fallbackChips`，所以两处不会给出不一样的三句话。
+    if (lastB) {
+      var sl = (lastSay && lastSay[0]) ? lastSay[0].split('\n') : [];
+      sl = SR.filterCopiedChips(sl);
+      showChips(sl.length ? sl : SR.fallbackChips({ work: lastWork, first: lastFirst }), lastB);
     }
     scroll();
     return true;
+  }
+
+  // 给一条**已经画好的**气泡补上它那份卷子卡。
+  //
+  // ★ 判据是 `matBody`（正文有没有东西），**不是** `mat.length`：
+  //   围栏掉了、编号行是被本地捡回来的那种，`mat` 是空的而卷子照样有——
+  //   拿围栏数当判据的话，正是"最容易丢材料"的那一轮刷新之后卡不见了。
+  // ★ 走 `SR.material.renderCard`，跟当场同一个渲染器（模板取快照这条用不上：
+  //   刷新之后 `cur` 是从 localStorage 恢复的那一份，本来就只有它）。
+  // ⚠ 模板没恢复出来（同学换了台机器 / 清了站点数据）→ 卡摆不出来，那就别摆：
+  //   宁可没有这张卡，也不能拿一份**别人的**模板排出来的卷子糊弄他。
+  // ★ 已经有了就不重复摆（补卡那趟会重扫一遍整场对话）。
+  function attachMatCard(b, matBody, ask) {
+    if (!b || !matBody) return false;
+    if (!SR.material || !SR.material.renderCard || !SR.material.current()) return false;
+    if (b.querySelector('.paperbox')) return false;
+    var t = SR.material.current();
+    var mEl = document.createElement('div');
+    mEl.className = 'paperbox';
+    b.appendChild(mEl);
+    b.classList.add('hasprod');   // ★ 有产物 → 气泡定宽（见 CSS 里 .hasprod 那段）
+    SR.material.renderCard(mEl, t, SR.produce.parseBlocks(matBody), fileTitle(ask, t), '',
+      { lazy: true, collapsed: true });
+    return true;
+  }
+
+  // ★★ 补卡那一趟。**为什么非有不可**（2026-10-03 探针量到的真窟窿）：
+  //   模板存在 IndexedDB 里，`SR.material.restore()` 是**异步**的；而重画这条路
+  //   在 `SR.chat.init()` 里**同步**就跑完了 —— boot 里 init（main.js:441）排在
+  //   restore（main.js:525）前面。于是刷新之后重画那一刻 `SR.material.current()`
+  //   还是 null，卷子卡**一条都建不出来**，而且是**静默**的：对话里字一条不少、
+  //   冻图占位也在，只有那张卡没了 —— 老师只会以为"卷子丢了"。
+  //   （当场那一轮不经过这条路：`cur` 就在手上，所以这个毛病只在刷新后出现。）
+  //   治法：模板接回来之后再扫一遍，**只补还没有卡的那些气泡**（data-mi 认门牌）。
+  function paintMatCards() {
+    if (!els.msgs || !SR.memo || !SR.produce) return 0;
+    if (!SR.material || !SR.material.renderCard || !SR.material.current()) return 0;
+    var list = SR.memo.log(), ask = '', n = 0;
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      if (t.r === 'u') { ask = t.t; continue; }
+      var msg = els.msgs.querySelector('.msg[data-mi="' + i + '"]');
+      if (!msg) continue;
+      var b = msg.querySelector('.bubble');
+      if (!b || b.querySelector('.paperbox')) continue;
+      var pr = restoreParts(t.t, t.w);
+      if (attachMatCard(b, pr.matBody, ask)) n++;
+    }
+    if (n) scroll();
+    return n;
   }
 
   // 重画一条**模型说过的话**：必须走跟当场那一轮**同一个**解析（render.js 的 parseFences）。
@@ -287,15 +470,194 @@ SR.chat = (function () {
   //   · 出材料那份编号行 —— 交给 produce.pickSource，跟当场同一条规则。
   //     它自己保着一条底线："收都不收就别抹"（见 produce.js），
   //     所以这儿不会把气泡抹空——那句注释就是为这个边界写的。
-  function restoreText(raw, tw) {
-    if (!SR.render || !SR.render.parseFences) return raw;
+  // ★★ 2026-10-03：重画这条路要的**不只是正文**了。每条回复底下要长它自己的冻图
+  //   （`ggb` 那几份命令原文）、「想说」要长进那条气泡（`say`）、材料卡要那份 `mat`。
+  //   所以把解析结果**整个**交出来，`restoreText` 退化成它的一层薄包装。
+  //   ⚠ 里面**仍然只调 SR.render.parseFences**，绝不另写一遍正则 ——
+  //     当场（submit）、重画（repaintLog）、打包（seedPack）三处必须同源，
+  //     这是「不能破的东西」里的第 ① 条。多一份解析就是多一个会漂的真源。
+  function restoreParts(raw, tw) {
     var w = (SR.WORKS && SR.WORKS[tw]) || {};
+    if (!SR.render || !SR.render.parseFences) {
+      return { visible: raw, ggb: [], ggbInfo: [], say: [], mat: [], pending: '', matBody: '' };
+    }
     var p = SR.render.parseFences(raw, { stripAssign: !!w.stripAssign });
     var v = p.visible;
+    var matBody = '';                    // 这份卷子的正文（编号行原文），重画那张卡要用
     if (tw === 'material' && SR.produce && SR.produce.pickSource) {
-      v = SR.produce.pickSource(v, p.mat && p.mat.length ? p.mat[p.mat.length - 1] : '').rest;
+      var pk = SR.produce.pickSource(v, p.mat && p.mat.length ? p.mat[p.mat.length - 1] : '');
+      v = pk.rest;                       // ⚠ 编号行一律不许留在气泡里，跟当场同一条
+      matBody = pk.from ? pk.body : '';  // 没从这儿来 → 空串，调用方据此不摆卡
     }
-    return v;
+    return {
+      visible: v, ggb: p.ggb || [], ggbInfo: p.ggbInfo || [],
+      say: p.say || [], mat: p.mat || [], pending: p.pending || '',
+      // ★★ 2026-10-03：重画这条路也要把**卷子卡**摆回来。判据跟当场**同一条**
+      //   （`pk.from`，走的是同一个 produce.pickSource），所以"当场摆出来的卡"
+      //   和"刷新之后摆回来的卡"不会出现一张有一张没有。
+      matBody: matBody
+    };
+  }
+
+  function restoreText(raw, tw) { return restoreParts(raw, tw).visible; }
+
+  // ============================================================
+  //  每条回复底下那张**冻图**
+  // ============================================================
+  //
+  // 为什么冻一张下来、而不是每条回复嵌一个活画板：聊二十轮就有二十个 GeoGebra
+  // applet，页面会卡死。所以每条回复把图画**一次**、截下来，钉在它自己那条气泡底下；
+  // 老师真想动它，点「再摆弄」把右栏抽屉拉出来，在**那一块**板上接着弄。
+  //
+  // ★★ 最要紧的一条：**板是累积的**（`SR.board.openNew` 先 snapshot 再 run，从不清空）。
+  //   所以第 N 页 = 围栏 1…N 叠加 —— 这正是"讲题顺序"想要的样子。
+  //   于是冻第 N 张时**绝不能**再补 `#清空`：补了就把前面几页洗掉，冻出来一张
+  //   跟板对不上的图（"连接 AB"那张里根本没有 A、B）。
+  //   所以走 `SR.figures.splitLines`（只要切片），**不走 `linesOf`**（那个带清空）。
+  //   ⚠ 只有**第 1 张**要自己补一次 `#清空`，把上一轮对话的残留挡在外面。
+  //
+  // ★ 缓存键 = "**到这一处为止**的全部命令原文"，不是单看某一张围栏的原文：
+  //   同一句 `线段(A,B)` 落在不同的累积状态里，冻出来是两张不同的图。
+  //   ⚠ 也**不能**并进 `SR.figures` 那个缓存 —— 那边是"一张图一块干净画板"，
+  //     同一条命令在两处的语义正好相反，合并了就会互相串图。
+  //
+  // ★ 为什么由它自己去借板（`offscreenJob`）而不是让调用方借好：
+  //   借板是"把老师眼前这张原样收走、跑完原样还回来"，一次只该有一个人借。
+  //   调用方（submit 收尾 / 点占位）各自借一次，边界清楚。
+  var figCache = {};                       // 累计命令原文 → { url, w, h }
+
+  function figKeyUpTo(fences, upto) {
+    return SR.figures.key(fences.slice(0, upto + 1).join('\n'));
+  }
+
+  // 冻出这一轮的前 `upto+1` 张图（缓存命中就不重画）。回调拿到的数组跟 fences 等长，
+  // 画不出来的那几格是 null —— 调用方据此摆占位，绝不假装有图。
+  //
+  // ★★ 借不到板要**重试**，不能就这么算了。原因是个时序事实：这条路是在**收流之后
+  //   那一刻**发起的，而那会儿 `paint()` 刚把这一轮的围栏一排排推给画板
+  //   （`SR.tabs.drawHere` 排进串行链），板十有八九正忙着 —— `offscreenJob` 一句
+  //   "画板忙，没动它"就回来了，图一张都不会有，而屏幕上只是**空着**，看不出是为什么。
+  //   （2026-10-03 实测：探针 ⑥ 量到 `真图数:0 / 占位数:2`。）
+  function freezeFences(fences, cb, tries) {
+    fences = fences || [];
+    tries = tries || 0;
+    var done = cb || function () {};
+    if (!fences.length || !SR.board || !SR.board.offscreenJob || !SR.figures.splitLines) { done([]); return; }
+    var all = function () {
+      var out = [];
+      for (var k = 0; k < fences.length; k++) out.push(figCache[figKeyUpTo(fences, k)] || null);
+      return out;
+    };
+    // 全都已经在缓存里 → 连板都不用借（刷新后重画那条路常常走到这儿）
+    var miss = false;
+    for (var k2 = 0; k2 < fences.length; k2++) if (!figCache[figKeyUpTo(fences, k2)]) { miss = true; break; }
+    if (!miss) { done(all()); return; }
+
+    SR.board.offscreenJob(function (draw, finish) {
+      var i = 0;
+      (function next() {
+        if (i >= fences.length) return finish({ n: i });
+        var n = i, key = figKeyUpTo(fences, n);
+        if (figCache[key]) { i++; next(); return; }
+        var lines = SR.figures.splitLines(fences[n]);
+        if (n === 0) lines = ['#清空'].concat(lines);   // ★ 只第 1 张补清空，理由见上
+        // ⚠ 一张张按顺序画，不并行：板只有一块，并行画 = 几张互相覆盖，
+        //   每张截到的都是别人的半成品（pack.js 那边同一条）。
+        draw(lines, function (ok) {
+          if (!ok) { i++; next(); return; }            // 这张画不出来 → 留 null，接着画下一张
+          SR.board.shoot(function (url, w, h) {
+            if (url) figCache[key] = { url: url, w: w, h: h };
+            i++; next();
+          });
+        });
+      })();
+    }, function (r) {
+      // ★ 判据看的是 `r.res` 在不在，不是 `r.ok`：`ok` 说的是"板**还回去了**没有"，
+      //   图冻出来没有是另一回事。这一趟活儿真跑完了就照收，别因为板没还原把图扔了。
+      if (r && r.res) { done(all()); return; }
+      if (tries < 4) { setTimeout(function () { freezeFences(fences, cb, tries + 1); }, 900); return; }
+      done([]);                       // 重试到头了还是借不到 → 老实留占位，等老师点
+    });
+  }
+
+  // 往**这一条气泡**里钉一块图。★ 一律 appendChild，**绝不重写 bubble.innerHTML**：
+  //   重写会清掉已经摆好的 IMG、打乱 KaTeX 的排版，还废掉正文那条节流
+  //   （正文靠 `v !== msg.lastVisible` 判断要不要重刷，见 paint 里那段）。
+  function attachFigure(bubble, fences, idx, info) {
+    if (!bubble || !fences || idx < 0 || idx >= fences.length) return null;
+    var box = document.createElement('div');
+    box.className = 'figbox';
+    box.setAttribute('data-fig', String(idx));
+    if (info) {
+      var cap = document.createElement('div');
+      cap.className = 'figcap';
+      cap.textContent = info;
+      box.appendChild(cap);
+    }
+    fillFigure(box, fences, idx, info);
+    var again = document.createElement('button');
+    again.type = 'button';
+    again.className = 'figagain';
+    again.textContent = '再摆弄';
+    again.addEventListener('click', function () {
+      // ★ 摆的是**这一条为止的累积状态**，不是光这一张：老师点图上的「再摆弄」，
+      //   要的是"这张图当时那块板"，接着往下弄。只放最后一张围栏的话，
+      //   他会看到"连接 AB"里没有 A、B —— 跟图不一致。
+      var lines = SR.figures.linesOf(fences.slice(0, idx + 1).join('\n'));
+      if (SR.main && SR.main.openDrawer) SR.main.openDrawer();
+      if (SR.board && SR.board.run) SR.board.run(lines);
+      if (SR.tabs && SR.tabs.reset) SR.tabs.reset();   // 这一块板从此是老师在弄，页签重记
+    });
+    box.appendChild(again);
+    bubble.appendChild(box);
+    // ★ 有产物 → 气泡**定宽**，不再由内容撑。理由见 CSS 里 `.hasprod` 那段：
+    //   不定宽的话，"刷新后那一格占位"顶不动气泡（它没有图片那种固有宽度），
+    //   气泡会瘪成文字的宽度（实测 177px），占位跟着瘦成一条；等老师点一下、
+    //   图真出来了，气泡**啪地弹到 880** —— 一屏之内跳一次，看着像出了故障。
+    bubble.classList.add('hasprod');
+    return box;
+  }
+
+  // 把图填进这块 `.figbox`：会话内有缓存就贴图，没有就先摆一个写着「图」的占位。
+  // ★ 占位可点：点它才现冻（刷新后重画那条路走的就是这儿，见 repaintLog）。
+  //   这样"刷新一次就把二十张图全重画一遍"这件事不会发生 —— 老师点到哪张才画哪张。
+  function fillFigure(box, fences, idx, info) {
+    var key = figKeyUpTo(fences, idx);
+    var cached = figCache[key];
+    var old = box.querySelector('.figimg, .figph');
+    if (old) box.removeChild(old);
+    if (cached && cached.url) {
+      var im = document.createElement('img');
+      im.className = 'figimg';
+      im.src = cached.url;
+      im.alt = info || '这一轮的图';
+      box.removeAttribute('data-empty');          // ★ 画出来了就把"还空着"这个标摘掉
+      box.insertBefore(im, box.firstChild);
+      return;
+    }
+    var ph = document.createElement('div');
+    ph.className = 'figph';
+    ph.textContent = '图';
+    ph.title = '点一下画出来';
+    ph.addEventListener('click', function () {
+      if (ph.getAttribute('data-busy')) return;
+      ph.setAttribute('data-busy', '1');
+      ph.textContent = '正在画…';
+      freezeFences(fences.slice(0, idx + 1), function (got) {   // ★ 累积：前面几张一并冻
+        ph.removeAttribute('data-busy');
+        var f = got && got[idx];
+        if (!f) { ph.textContent = '图没画出来'; return; }
+        // 顺带把前面几张也填上（这一趟本来就把它们一起冻了，白扔可惜）
+        var sibs = box.parentNode ? box.parentNode.querySelectorAll('.figbox') : [];
+        fillFigure(box, fences, idx, info);
+        for (var s = 0; s < sibs.length; s++) {
+          var j = sibs[s].getAttribute ? Number(sibs[s].getAttribute('data-fig')) : NaN;
+          if (!isNaN(j) && j < idx) fillFigure(sibs[s], fences, j, '');
+        }
+      });
+    });
+    box.insertBefore(ph, box.firstChild);
+    box.setAttribute('data-empty', '1');           // 还空着（图上那句"正在画…"也归这一档）
   }
 
   // 打包的账本（js/pack.js）照记忆重建一份。
@@ -771,11 +1133,27 @@ SR.chat = (function () {
   }
 
   // ---- 可选回答（猜他想说）----
-  function clearChips() { if (els.chips) els.chips.innerHTML = ''; }
+  // ★★ 2026-10-03（阶段 G）：从「输入框上面常驻那一排」改成**这一条回复自己的**。
+  //   理由跟冻图、卷子卡、流水线是同一条：一样东西该长在说它的那句话底下。
+  //   常驻那一排还有个说不通的地方：它跟"哪一轮"没关系，可顶上那三句是拿
+  //   **这一轮**的回复（```想说 围栏／本地兜底）推出来的——聊了五轮，它还钉在
+  //   原地，屏幕上的对话早翻过去两屏了，那三句话是在接哪一句就没人说得清。
+  //   `#chips`（index.html:323）先留着不删，等阶段 H 清场时一并处理。
+  var curChips = null;   // 这一轮那一盒选项。清的时候认它，不去文档里瞎找——
+                         //   气泡会被 `#msgs.innerHTML = ''` 整批掀掉，
+                         //   照 id 找很容易找到**别的那一条**剩下的盒子。
+  function clearChips() {
+    if (curChips && curChips.parentNode) curChips.parentNode.removeChild(curChips);
+    curChips = null;
+  }
 
-  function showChips(lines) {
+  function showChips(lines, bubble) {
     clearChips();
-    if (!lines || !lines.length) return;
+    // 没有气泡就不摆：从今往后这三颗是**挂在某一条回复上**的，
+    //   没有那一条就没有它们该待的地方（老写法往 `#chips` 里塞，永远有个窝）。
+    if (!lines || !lines.length || !bubble) return;
+    var box = document.createElement('div');
+    box.className = 'chips';
     for (var i = 0; i < lines.length; i++) {
       var t = String(lines[i]).trim();
       if (!t) continue;
@@ -792,9 +1170,11 @@ SR.chat = (function () {
           clearChips();
           submit(txt);
         });
-        els.chips.appendChild(b);
+        box.appendChild(b);
       })(t, i);
     }
+    bubble.appendChild(box);
+    curChips = box;
   }
 
   // ---- 下载下来的文件叫什么 ----
@@ -902,7 +1282,19 @@ SR.chat = (function () {
       var pk = SR.produce.pickSource(v, p.mat.length ? p.mat[p.mat.length - 1] : '');
       v = pk.rest;                       // ← 无论如何，编号行都不许留在气泡里
       if (pk.from) {
-        msg.matFed = SR.material.feed(pk.body, fileTitle(msg.ask, SR.material.current()));
+        // ★★ 2026-10-03：这份卷子长在**这一条气泡自己的**位置（`msg.matEl`），
+        //   不再只往右栏那个单例里塞。为什么要改：右栏现在是**抽屉**，默认关着 ——
+        //   出材料出完，老师眼前一个字的产物都看不见（阶段 B 撤右栏带出来的）。
+        //   它本来就该跟产生它的那句话在一起（跟冻图同一条规矩）。
+        if (!msg.matEl) {
+          msg.matEl = document.createElement('div');
+          msg.matEl.className = 'paperbox';
+        }
+        // ★ 这两样**取快照**，别存会变的全局：`cur`（选中的模板）老师随时会换，
+        //   finish() 是几秒之后才回来重画的，那时候再去读，卡就印成了另一份模板。
+        msg.matTpl = SR.material.current();
+        msg.matTitle = fileTitle(msg.ask, msg.matTpl);
+        msg.matFed = SR.material.feed(pk.body, msg.matTitle, msg.matEl);
         msg.matLifted = pk.n;
         msg.matFrom = pk.from;           // 'lift' 还是 'fence'——下面那段别再喂一遍
       }
@@ -924,6 +1316,14 @@ SR.chat = (function () {
     }
     if (v !== msg.lastVisible) {
       SR.render.renderInto(msg.bubble, v || '');
+      // ★★ 上面那一句是**重写 innerHTML**（render.js:268），挂在这条气泡里的
+      //   材料卡会跟着被洗掉。所以每次重写之后都得把卡再挂回去 —— **顺序不能反**，
+      //   反了就是"卡在流式刚开始时闪一下、然后整场都不见了"。
+      //   ⚠ 卡里的内容不用重建：`msg.matEl` 这个节点在 DOM 里被摘掉，但 JS 这边
+      //     还握着它、innerHTML 也还在；下一次 feed 进来照样往同一个节点里写。
+      //   （冻图和「复制这段」没这个问题：它们是**收完流之后**才挂的，
+      //     那会儿 paint 的这条路已经不会再进这个 msg 了。）
+      if (msg.matEl) msg.bubble.appendChild(msg.matEl);
       msg.lastVisible = v;
       scroll();
     }
@@ -1079,15 +1479,6 @@ SR.chat = (function () {
         //   · 画图／出题：老师自己画图、自己出题，模型不出图就是它偷懒，替它圆场是错的；
         //   · 备课／讲评：老师卡住的时候不会说"画不出来"，他要的是下一句问话。
         //   留着它只会让"模型这一轮什么都没说"这件事变得看不出来。
-        // 模型写了 ```想说 就用它的（更贴这道题）；没写就用本地兜底。
-        // ★ 免费通道那两颗小模型守不住这个围栏（实测 0/4 ~ 6/6 看运气），
-        //   而"这一轮没有可点的话"正是这个功能要防的事——不留一个空白的输入框。
-        //   兜底词库和挑选规则见 js/chips.js 顶上的注释。
-        var modelChips = (msg.lastSay && msg.lastSay[0]) ? msg.lastSay[0].split('\n') : [];
-        modelChips = SR.filterCopiedChips(modelChips);   // 把提示词里那段示范原样抄回来的挡掉
-        showChips(modelChips.length ? modelChips : SR.fallbackChips({
-          work: work, first: isFirstTurn, lastUser: text, prevAssistant: prevAssistant
-        }));
         // 进度条：把这一轮**真摆出来的**那些节吃进槽位，然后重画。
         // ★ 判的是这一轮它真写出来的那行节标题，不是它报的计划——计划是预测、会漂，
         //   条子只画事实（见上面 stepSlots 那段）。第一轮给的是"几路"，读出来是 0，
@@ -1141,6 +1532,32 @@ SR.chat = (function () {
         //   空档，点下去少一段。
         var ti = SR.pack ? SR.pack.note(msg.lastVisible || res.text, msg.ggbAll || []) : null;
         if (SR.WORKS[work] && SR.WORKS[work].copy) attachCopy(b, msg.lastVisible || res.text, ti);
+        // ---- 冻图：这一轮的每一份 ```ggb 围栏，各截一张钉在这条气泡底下 ----
+        // ★★ 时机就在这里，**不在 paint() 那个流式循环里**：paint 每收到一截正文
+        //   就调一次（一轮几十次），在那儿出图会把画板洗几十遍，老师眼看着板子抽风；
+        //   而且围栏还没闭合时拿到的是半截命令。
+        //   `msg.ggbAll` 是 paint 最后一次解围栏的结果，此刻已经是完整的。
+        // ★ 不发包（ti 为空）也照样冻：打包是"带走"那条路，冻图是"看着"那条路，
+        //   两件事，不该绑在一起。
+        // ★ 顺序：**先把框摆上、再去冻**。反过来的话，借板+截图要好几秒，
+        //   这几秒里那条回复底下什么都没有——老师会以为这一轮没出图。
+        var fl = msg.ggbAll || [];
+        if (fl.length) {
+          var boxes = [];
+          for (var fi = 0; fi < fl.length; fi++) boxes.push(attachFigure(b, fl, fi, ''));
+          freezeFences(fl, function (got) {
+            for (var gi = 0; gi < fl.length; gi++) {
+              if (got && got[gi] && boxes[gi]) fillFigure(boxes[gi], fl, gi, '');
+              // 没冻上的那几格留着占位（「图」），点一下会再试一次 —— 见 fillFigure。
+            }
+          });
+        }
+        // ---- 卷子卡挪到这一条的最后 ----
+        // ★ 流式期间它每收一截就被 renderInto 洗掉一次、又被挂回末尾（见 paint 里那段），
+        //   所以收流那一刻它**排在「复制这段」和冻图前面**。这几行都挂完了再挪一次，
+        //   这条回复的顺序才是：正文 → 图 → 卷子 → 带走用的按钮。
+        //   （`appendChild` 对已经在里面的节点就是**挪位置**，不会复制一份。）
+        if (msg.matEl) b.appendChild(msg.matEl);
         // 思维导图跟着这一轮长出来（js/mindmap.js 的 refresh）。
         // ★★ 位置**必须在这一句 SR.pack.note 后面**：导图画的正是那份账本
         //    （SR.mm.chainDoc 读的是 SR.pack.turns()）。放到前面去，导图就永远
@@ -1155,6 +1572,24 @@ SR.chat = (function () {
         //   认链子、摆围栏、画配图、挂「复制这段」、刷导图——全都在这几行里发生。
         //   让 api.js 去标它就会写成"模型说完的时刻"，那是另一个时刻（见 js/flow.js 的 paintDone）。
         if (SR.flow) SR.flow.paintDone('链子、围栏、图、台阶都摆完了');
+        // ★ 摆完了再把它**搬进这条回复**（见上面 flowEl 那段长注释）。
+        //   ⚠ 顺序是反的会出一个很细的毛病：先搬后标的话，那一步的"跑完了"是在
+        //     已经挂上去之后才写的 —— 老师会看见流水线在气泡里又亮一下。
+        //   判据用 flowLive()：画图／出题那些工位没有账本，块留在抽屉里不动。
+        if (flowLive()) homeFlow(b, true);
+        // ---- 「想说」摆在最后（阶段 G）----
+        // ★ 位置从上面（`absorbChain` 之前）**挪到了这儿**：它要挂在气泡的**末尾**，
+        //   而在上面那几行跑完之前，这条气泡后面还会长三样东西——「复制这段」、
+        //   冻图、卷子卡、还有流水线。谁先 append 谁在前，所以只能等它们都落了位。
+        // ★ 模型写了 ```想说 就用它的（更贴这道题）；没写就用本地兜底。
+        //   免费通道那两颗小模型守不住这个围栏（实测 0/4 ~ 6/6 看运气），
+        //   而"这一轮没有可点的话"正是这个功能要防的事——不留一个空白的输入框。
+        //   兜底词库和挑选规则见 js/chips.js 顶上的注释。
+        var modelChips = (msg.lastSay && msg.lastSay[0]) ? msg.lastSay[0].split('\n') : [];
+        modelChips = SR.filterCopiedChips(modelChips);   // 把提示词里那段示范原样抄回来的挡掉
+        showChips(modelChips.length ? modelChips : SR.fallbackChips({
+          work: work, first: isFirstTurn, lastUser: text, prevAssistant: prevAssistant
+        }), b);
       }
     }).catch(function (e) {
       msg.streaming = false;
@@ -1290,11 +1725,20 @@ SR.chat = (function () {
     //   （原来这里还导出一个 paintStepBar，2026-10-02 删了：格数现在是动态的，
     //     "外部指定画第几格"这件事没有意义了，画什么完全由状态决定。）
     repaintSteps: repaintSteps,
+    // ★ 模板从 IndexedDB 接回来之后再补一次卷子卡（见 paintMatCards 顶上那段）。
+    //   main.js 在 `SR.material.restore()` 的 then 里调它。**不能**指望重画那趟：
+    //   它在 chat.init() 里同步跑完，那时模板还在路上。
+    paintMatCards: paintMatCards,
     // main.js 用这个判"输入框那边有没有东西等着发"（空了就别送空请求）
     hasPendingImage: function () { return pendingParts.length > 0; },
 
     // —— 探针用的口子（test/probe_files.cjs）。不参与界面逻辑，也别在界面里调。
     __parts: function () { return pendingParts; },
-    __clear: function () { pendingParts = []; pendingNote = ''; renderStrip(); }
+    __clear: function () { pendingParts = []; pendingNote = ''; renderStrip(); },
+    // 冻图那两个（test/probe_stream.cjs 的 ⑥⑦）。★ 导出的用意**不是**当公开 API，
+    //   是让探针能**直接问它"你冻出什么了"** —— 图没冻上时屏幕上只留一块空占位，
+    //   从 DOM 上根本看不出是"板忙"还是"命令画不出来"还是"截图为空"。
+    __freeze: freezeFences,
+    __figCache: function () { return figCache; }
   };
 })();

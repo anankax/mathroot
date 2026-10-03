@@ -42,10 +42,19 @@ SR.figures = (function () {
   //   而且**静默**：pack 那边只看到 shoot 出了张白图，照样收进包里。
   //   既然这个函数的身份是"一份命令 = 哪几行"（见下面导出处那段"两个真源"的说明），
   //   那两种写法就必须都在这儿收掉——不然它就不是那个真源。
+  // ★★ 2026-10-03 拆出来：切分规则本身成为**独立出口**（`splitLines`），
+  //   `linesOf` 变成「先清空 + 这些行」。为什么要拆：对话流里每条回复要冻一张
+  //   跟板对得上的图（见 js/chat.js 的 freezeFences），而**板是累积的**——
+  //   第 N 页 = 围栏 1…N 叠加。冻后面那几张时**绝不能**再补 `#清空`，
+  //   补了就把前面几页洗掉，冻出来的图 "连接 AB" 里没有 A、B。
+  //   所以冻图那条路要的是 `splitLines`（只要切片），不是 `linesOf`（带清空）。
+  //   ⚠ 但**切分规则只能有一份**：谁要切片都从这儿拿，不许自己再写一个 split。
+  function splitLines(cmds) {
+    return String(cmds || '').split(/[\n;；]/).map(function (s) { return s.trim(); }).filter(Boolean);
+  }
+
   function linesOf(cmds) {
-    return ['#清空'].concat(
-      String(cmds || '').split(/[\n;；]/).map(function (s) { return s.trim(); }).filter(Boolean)
-    );
+    return ['#清空'].concat(splitLines(cmds));
   }
 
   function get(cmds) { return cache[key(cmds)] || null; }
@@ -155,6 +164,8 @@ SR.figures = (function () {
     //   哪天发现还得再补一条（比如要画的图可能落在三维视角上，得先 `#平面`），
     //   只改了一处，另一种图上就会带着上一张的残留。
     linesOf: linesOf,
+    // ★ 2026-10-03 冻图那条路要的**只有切片**、不要那个 `#清空`（理由见 splitLines 定义处）。
+    splitLines: splitLines,
     // ★★ 同一个理由：dataURL → 字节也只有一份。
     //   ⚠ 打包那边拿到图之后要算 CRC，而 **CRC 必须算在字节上、不是 base64 文本上**——
     //     文本改一个字符（比如把 + 换成空格）字节其实没变，CRC 却会跟着变。

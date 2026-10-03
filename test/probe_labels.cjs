@@ -145,6 +145,44 @@ function closeTab(tid) {
   ok('对照：当前工位拿得到 badge（空的话上面那条会比较两个空串）',
      !!(cfg[cur] && (cfg[cur].badge || '').trim().length > 0), cfg[cur] && cfg[cur].badge);
 
+  // ---- 红验：往**页面跑起来之后的 DOM** 里注入"漏改一处"，看这把尺子抓不抓得住 ----
+  //
+  // ★ 为什么注入点选 DOM、不选仓库里的 js/：
+  //   这把尺子读的本来就是"页面上现在写着什么"（②的按钮文字、③的「关于」列表）。
+  //   要考它，就该改它读的那一层——改 js/ 再还原是另一码事（既动了产品文件，
+  //   又留下"忘了还原"的风险）。
+  // ★ 为什么每条先读回来核一遍：一根没接上的故障线会红得**跟真故障一模一样**，
+  //   于是"尺子抓得住"这个结论就是白得的。改不到 → 判红验作废（exit 3），
+  //   不许把它当成过。
+  // 用法：RED=about / RED=rail
+  if (process.env.RED) {
+    const which = process.env.RED;
+    if (which === 'about') {
+      const hit = await q(`(function(){var s=document.querySelectorAll("#about ul")[0].querySelector("li > strong");if(!s)return null;var was=s.textContent.trim();s.textContent="出材料";return {改前:was,改后:s.textContent.trim()}})()`);
+      console.log('\n[红验 about] 把「关于」第一个名字改成旧词：' + JSON.stringify(hit));
+      if (!hit || hit.改后 !== '出材料') {
+        console.log('★ 红验作废：这一处没改到（没找着那个 strong？）—— ③ 那条断言根本没被考验。');
+        await closeTab(t.id); ws.close(); process.exit(3);
+      }
+      const about2 = await q('(function(){var ul=document.querySelectorAll("#about ul")[0];if(!ul)return null;return Array.prototype.map.call(ul.querySelectorAll("li > strong:first-child"),function(s){return s.textContent.trim();});})()');
+      const w2 = labels.slice().sort(), g2 = (about2 || []).slice().sort();
+      ok('[红验] ③ 漏改一处 → 「①=③」必须红', JSON.stringify(w2) !== JSON.stringify(g2), { config: w2, 关于: g2 });
+    } else if (which === 'rail') {
+      const hit = await q(`(function(){var b=document.querySelector("#works .workbtn");if(!b)return null;var was=b.textContent.trim();b.textContent="出材料";return {改前:was,改后:b.textContent.trim()}})()`);
+      console.log('\n[红验 rail] 把第一个工位按钮改成旧词：' + JSON.stringify(hit));
+      if (!hit || hit.改后 !== '出材料') {
+        console.log('★ 红验作废：这个按钮没改到 —— ①=② 那条断言根本没被考验。');
+        await closeTab(t.id); ws.close(); process.exit(3);
+      }
+      const rail2 = await q('(function(){var o={};document.querySelectorAll("#works .workbtn").forEach(function(b){o[b.getAttribute("data-work")]=b.textContent.trim();});return o;})()');
+      const bad2 = Object.keys(cfg).filter(k => (rail2[k] || '') !== cfg[k].label);
+      ok('[红验] ② 漏改一处 → 「①=②」必须红', bad2.length > 0, bad2.map(k => ({ 工位: k, config: cfg[k].label, 工位行: rail2[k] })));
+    } else {
+      console.log('\n★ RED=' + which + ' 不认识（只有 about / rail）');
+      await closeTab(t.id); ws.close(); process.exit(3);
+    }
+  }
+
   console.log('\n结果：' + PASS + ' 通过, ' + FAIL + ' 失败');
   await closeTab(t.id); ws.close();
   process.exit(FAIL ? 1 : 0);

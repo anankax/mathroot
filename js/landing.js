@@ -31,10 +31,16 @@ SR.landing = (function () {
   // ★★ 2026-10-03 孔老师定的这一句：「要做什么？」
   //   之前写的是「今天要办哪一件？」——那是**我**留的占位（注释里写着"他还没定过"），
   //   一直没拿掉。模拟稿里那句是「告诉我你的问题。」，他看了两个候选，给了这第三个。
-  //   ⚠ 改这句要**两处一起**：这儿和 index.html 的 `<p class="lq" id="lq">`。
-  //     index.html 那份是**开机前**显示用的（JS 跑起来之前那一眼），
-  //     init() 里 `els.q.textContent = BQ` 会把它盖掉——只改一处，屏幕会跳一下。
+  //   ⚠ 这儿现在是**唯一真源**。原来 index.html 里还抄了一份（开机前那一眼显示用的），
+  //     init() 的 `els.q.textContent = BQ` 会把它盖掉——两处不一样屏幕会跳一下。
+  //     2026-10-03 首屏改成"#msgs 里第一条消息"之后那份**删了**：那条消息是 JS
+  //     现建的，开机前根本没有它可显示（首屏那一下由 css 的 `.ghost` 顶着）。
   var BQ = '要做什么？';
+  // ★ 六块底下那句。原来它写死在 index.html 的 `<p class="ltip">` 里——那份删掉之后
+  //   真源搬这儿来（跟 BQ 一样：写死两处，改一处屏幕就会不一致）。
+  //   "也可以"这三个字是**要紧的**：它说的是"这六块不是必须走的流程"，
+  //   直接打字一样能办（底线③：首屏是个入口，不是一道闸）。
+  var TIP = '也可以直接打一句话——说清要干什么，我看是哪一件。';
 
   var live = false;      // 首屏亮着吗
   var picked = 0;        // 他自己点过工位了吗——点过就不再拦（底线③）
@@ -262,15 +268,88 @@ SR.landing = (function () {
 
   function lbl(w) { return '【' + ((SR.WORKS[w] && SR.WORKS[w].label) || w) + '】'; }
 
+  // ---- 首屏是 #msgs 里的**第一条助手消息**（2026-10-03 改）----
+  //
+  // 原来它是 .col 里一个独立的 `#landing` 块，靠
+  //   `body[data-landing="1"] #msgs{display:none}`（旧 css:769）
+  // 把整个对话栏藏住来"让位"。那一藏就是 D1：**刷新回来，上一场对话明明
+  // 由 memo 接回来了、DOM 里也在、copybar 也挂好了，却被这条规则整块藏住，
+  // 老师一个字都看不见，会以为对话丢了。**
+  //
+  // 改成第一条消息之后，藏就不需要了——首屏和对话本来就该在同一列里，
+  // 首屏收起来只是它自己往下让，不是把整栏遮上。
+  // 「刷新回来不出现」这件事也不再靠 CSS，而是 init() 里**根本不建**（见那儿）。
+  function mountFirstMessage(box) {
+    var m = document.createElement('div');
+    m.className = 'msg assistant landing';
+    var b = document.createElement('div');
+    b.className = 'bubble';
+    var q = document.createElement('p'); q.className = 'lq'; q.id = 'lq';
+    var bl = document.createElement('div'); bl.className = 'lblocks'; bl.id = 'lblocks';
+    var tp = document.createElement('p'); tp.className = 'ltip'; tp.id = 'ltip';
+    tp.textContent = TIP;
+    b.appendChild(q); b.appendChild(bl); b.appendChild(tp);
+    m.appendChild(b);
+    box.insertBefore(m, box.firstChild);
+    return m;
+  }
+
+  // 那一列里那几块卡片的点击（★ 每次重建新节点都要重绑——监听是挂在**节点**上的，
+  //   不是挂在模块上的；老节点被抽走时它的监听跟着走，不会有第二份）。
+  function wireBlocks() {
+    if (!els.blocks) return;
+    els.blocks.addEventListener('click', function (e) {
+      var b = e.target && e.target.closest ? e.target.closest('.lblock') : null;
+      if (!b) return;
+      var w = b.getAttribute('data-work');
+      // ★ 在"不确定"那一屏上点一块 = 用他刚打的那句话办（held）——这就是他要的
+      //   "一下就能改"。手上没东西（比如只是进来点一下）就单纯跳过去。
+      if (heldOn) rework(w);
+      else pick(w);
+    });
+  }
+
+  // 确保首屏那条消息**在 #msgs 里、且在最前面**。已经是了就不重做。
+  // ★ 要能重复调：探针用 `SR.landing.show()` 摆回"刚进来、首屏亮着"那一屏
+  //   （test/probe_landing_send.cjs 就是这么回收现场的），所以 show() 不能只是
+  //   翻一个标志位，它得真把那条消息摆回来。
+  function ensureMount() {
+    var mbox = $('msgs');
+    if (!mbox) return;
+    if (els.box && els.box.parentNode === mbox) {
+      // 在是在，但可能在中间（重画会把对话整个重建，这条得重新占回第一位——
+      // 它是"这一栏从哪儿开始"，不是一条可以插在中间的回复）。
+      if (mbox.firstChild !== els.box) mbox.insertBefore(els.box, mbox.firstChild);
+      return;
+    }
+    els.box = mountFirstMessage(mbox);
+    els.q = $('lq'); els.tip = $('ltip'); els.blocks = $('lblocks');
+    if (els.q) els.q.textContent = BQ;
+    paintBlocks([]);
+    // 上次用的那一件，先轻轻标出来——省掉"我上次是干哪件来着"这一下。
+    var last = (SR.chat && SR.chat.getWork && SR.chat.getWork()) || '';
+    if (last) focusBlock(last);
+    wireBlocks();
+  }
+
   function show() {
     live = true;
     document.body.setAttribute('data-landing', '1');
-    if (els.box) els.box.hidden = false;
+    ensureMount();
+    // ★ 2026-10-03：首屏一亮，画板抽屉就得关上。原来这件事是 css 里
+    //   `body[data-landing="1"] .side{display:none}` 顺手办的——`.side` 撤了之后
+    //   那条规则也没了，于是抽屉（z-index 30）会盖在首屏上。显式关一次。
+    if (SR.main && SR.main.closeDrawer) SR.main.closeDrawer();
   }
   function hide() {
     live = false;
     document.body.removeAttribute('data-landing');
-    if (els.box) els.box.hidden = true;
+    // ★ 收起 = **整条抽走**，不是折叠留半句。
+    //   留半句（比如只留「要做什么？」当问候）当场和刷新后会长得不一样：
+    //   刷新回来时这一条根本不建（见 init），于是那句问候只在这一条路上有。
+    //   同一个事实两处各算一遍，屏幕给的答案就会不一致——这个仓库最老的病。
+    if (els.box && els.box.parentNode) els.box.parentNode.removeChild(els.box);
+    els.box = els.q = els.tip = els.blocks = null;
   }
   function blocking() {
     if (!live) return false;
@@ -401,32 +480,19 @@ SR.landing = (function () {
   }
 
   function init() {
-    els.box = $('landing');
-    els.q = $('lq');
-    els.tip = $('ltip');
-    els.blocks = $('lblocks');
     els.bar = $('routebar');
-    if (!els.box) return;                 // 这一页没放首屏（比如老页面）就整层不生效
-    if (els.q) els.q.textContent = BQ;
-    paintBlocks([]);
-    // 上次用的那一件，先轻轻标出来——省掉"我上次是干哪件来着"这一下。
-    var last = (SR.chat && SR.chat.getWork && SR.chat.getWork()) || '';
-    if (last) focusBlock(last);
-    if (els.blocks) {
-      els.blocks.addEventListener('click', function (e) {
-        var b = e.target && e.target.closest ? e.target.closest('.lblock') : null;
-        if (!b) return;
-        var w = b.getAttribute('data-work');
-        // ★ 在"不确定"那一屏上点一块 = 用他刚打的那句话办（held）——这就是他要的
-        //   "一下就能改"。手上没东西（比如只是进来点一下）就单纯跳过去。
-        if (heldOn) rework(w);
-        else pick(w);
-      });
-    }
+    if (!$('msgs')) return;               // 这一页没放对话栏（比如老页面）就整层不生效
     // ⟳ 清空重开：那一行"我按【X】办的"跟着这场对话一起走
     var nb = $('newbtn');
     if (nb) nb.addEventListener('click', clearStrip);
-
+    // ★★ 刷新回来**且这一栏已经有东西**：首屏不出现。
+    //   「要做什么？」问的是"这一栏还没开始的时候走哪一件"；已经有对话了，
+    //   这个问题已经问过、也答过了。硬要显示它，就得反过来把对话藏住——
+    //   而"把对话藏住"正是 D1：老师刷新后一个字都看不见，以为对话丢了。
+    //   ★ 不靠 CSS 藏、靠这儿根本**不建**：没有那条消息，也就没有要藏的东西。
+    //   ⚠ 判据用 memo 的**条数**（不是 hasUser）——上一场可能只有开场白没说过话，
+    //     那也已经是"开始了"，不该再拿首屏盖上去。
+    if (SR.memo && SR.memo.log && SR.memo.log().length) { live = false; return; }
     show();
   }
 

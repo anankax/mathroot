@@ -34,6 +34,14 @@ SR.main = (function () {
   function applyWork(w, force) {
     if (!SR.WORKS[w]) w = SR.DEFAULT_WORK || 'prep';
     var last = work;
+    // ★★ 2026-10-03：点工位那一行 = 老师已经明确说了"办哪一件"，首屏该收了。
+    //   为什么非收不可：下面 `SR.chat.reset()` 会 `#msgs.innerHTML=''` 把整栏重建，
+    //   首屏那条消息也跟着没了；而 `data-landing` **还挂着**
+    //   → `body[data-landing="1"] #msgs > .msg:not(.landing){display:none}`
+    //   会把刚重建出来的开场白一起藏住 → 屏幕上反而**什么都不剩**。
+    //   （boot 时也走这儿，但那会儿 landing.js 还没 init，`els.box` 是空的，
+    //    `hide()` 一拳打空、没有副作用；紧接着的 `SR.landing.init()` 会照常 show()。）
+    if (SR.landing && SR.landing.hide) SR.landing.hide();
     work = w;
     SR.chat.setWork(w);
     try { localStorage.setItem(SR.LS_WORK, w); } catch (e) {}
@@ -388,6 +396,29 @@ SR.main = (function () {
     box.innerHTML = html;
   }
 
+  // ============================================================
+  //  画板抽屉（2026-10-03）
+  // ============================================================
+  // ★ 只写 `data-drawer` 这一个属性，**别在这儿动别的**：开关长什么样全在
+  //   css 的 `.drawer` / `.drawer[data-drawer="open"]` 那两条里，一处真源。
+  //   `.boardbox` 全局只有一份，所以"同时只有一块活画板"天然成立，不用加锁。
+  //
+  // ⚠ 关的时候**不要**调 refit：尺寸一点没变（`transform` 不改布局，
+  //   这也是不能换成 `display:none` 的原因之一），ResizeObserver 不会触发，
+  //   手动 refit 一次反而会在离屏画图那会儿插队。
+  function openDrawer() {
+    var d = $('drawer'); if (!d) return;
+    d.setAttribute('data-drawer', 'open');
+    d.setAttribute('aria-hidden', 'false');
+    var s = $('drawerscrim'); if (s) s.hidden = false;
+  }
+  function closeDrawer() {
+    var d = $('drawer'); if (!d) return;
+    d.setAttribute('data-drawer', 'closed');
+    d.setAttribute('aria-hidden', 'true');
+    var s = $('drawerscrim'); if (s) s.hidden = true;
+  }
+
   function boot() {
     // ★ 第一件事：把工位那一行画出来。理由见 paintWorks 上面那段——
     //   下面 SR.memo.init()、.workbtn 接线、最后的 applyWork 全都踩在这几颗按钮上。
@@ -491,7 +522,17 @@ SR.main = (function () {
       //     **cur 一变就调 SR.paintTpl()**（选／传／删／接回来四处都调）。
       //     不重画的话，界面上一直写着"还没选模板"，而模型手上其实已经有版式表了；
       //     "它自己知道、界面上不说"正是这一行要消灭的东西。
-      SR.material.restore();
+      //   ★★ 接回来之后还得**回头补卷子卡**（2026-10-03）：
+      //     `restore()` 是异步的（读 IndexedDB），而重画对话那条路在 `chat.init()`
+      //     （上面第 441 行）里**同步**就跑完了 —— 那一刻 `cur` 还是 null，
+      //     刷新之后每一轮的卷子卡**一条都建不出来**，而且没有任何报错：
+      //     字在、冻图占位在，只有那张卡没了。老师只会以为"卷子丢了"。
+      //     （当场那一轮不走这条路，`cur` 就在手上，所以这个毛病只在刷新后出现。）
+      //   ⚠ 必须挂在 then 上，不能顺手在下面再调一次 —— 那时它还没读完。
+      var rp = SR.material.restore();
+      if (rp && rp.then && SR.chat && SR.chat.paintMatCards) {
+        rp.then(function () { SR.chat.paintMatCards(); });
+      }
     }
     SR.paintTpl();
 
@@ -655,6 +696,21 @@ SR.main = (function () {
       });
     });
 
+    // ---- 画板抽屉：遮罩点一下关、Esc 关 ----
+    // ★ 两条关的路都留着：遮罩是"点到外面"，Esc 是"我不想看了"，
+    //   少了任何一条，抽屉开了之后都有一半人是靠猜关掉的。
+    //   ⚠ Esc 只关抽屉，**不**顺手关别的层：overlay（关于／知识库）有自己的关法，
+    //     在这儿一起关会把"开着知识库按 Esc"变成两件事一起发生。
+    (function () {
+      var sc = $('drawerscrim');
+      if (sc) sc.addEventListener('click', closeDrawer);
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        var d = $('drawer');
+        if (d && d.getAttribute('data-drawer') === 'open') { closeDrawer(); e.preventDefault(); }
+      });
+    })();
+
     // ---- 备课卡片：挂搜索框和"点一行抄走" ----
     // ★ 只挂监听，不预装语料。语料是点开面板那一刻才去拿的（js/cards.js 的 open）——
     //   跟下面知识库那条是同一条纪律：首屏不许为了一个还没打开的抽屉付流量。
@@ -675,7 +731,8 @@ SR.main = (function () {
     $('input').focus();
   }
 
-  return { boot: boot, needKey: needKey, applyWork: applyWork, applyBackend: applyBackend, useOwnKey: useOwnKey };
+  return { boot: boot, needKey: needKey, applyWork: applyWork, applyBackend: applyBackend, useOwnKey: useOwnKey,
+           openDrawer: openDrawer, closeDrawer: closeDrawer };
 })();
 
 document.addEventListener('DOMContentLoaded', function () { SR.main.boot(); });

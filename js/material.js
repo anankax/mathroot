@@ -100,7 +100,10 @@ SR.material = (function () {
           cur = t;
           remember(t.id);
           notify();
-          say('读好了。下面这张卡是**它认出来的东西**——认错了可以改。', 'ok');
+          // ⚠ 这行**不能写 `**`**：say() 走的是 textContent，不是 markdown。
+          //   2026-10-03 走真路在页面上看见的：那两个星号原样露在老师眼前
+          //   （"下面这张卡是**它认出来的东西**"）。要强调只能另想办法，别指望它渲染。
+          say('读好了。下面这张卡是它认出来的东西——认错了可以改。', 'ok');
           card(t);
           return paint();
         })
@@ -266,45 +269,74 @@ SR.material = (function () {
     });
   }
 
-  // 把一份材料摆到右栏。★ 用 SR.produce 生成的是**同一份 blocks**——
-  //   右栏预览和下载下来的 docx 出自同一个中间结构，所以
+  // 把一份材料渲染进**任意一个容器**。★ 2026-10-03 从 show() 里抽出来：
+  //   「每条回复嵌它自己的那份卷子」要求同一张卡能长在**气泡里**（`.paperbox`），
+  //   而右栏那个 `#out` 只是它的第一个落点。★ 用 SR.produce 生成的是**同一份 blocks**——
+  //   预览和下载下来的 docx 出自同一个中间结构，所以
   //   "预览里看着对、下载下来不对"这种事不会发生。
-  function show(tpl, blocks, title, note) {
-    var box = $('out');
-    if (!box || !SR.produce) return null;
-    // ★ 打包放在更新 DOM **之前**：现在图是字节，进 `SR.docx.write` 那一步。
-    //   顺序反了的话，界面先显示出"已就绪"，文件其实还没拼出来；
-    //   中间要是抛错，老师看到的就是"右栏好端端的、点下载没反应"。
-    var blob = SR.produce.build(tpl, blocks);
+  //
+  // ★★ 按钮不许再用 id（原来叫 outpv / outdl / outpvbox）：同一屏上可以有好几份
+  //   材料卡，两个 id 相同的元素里 `$()` 只拿得到**第一个** —— 老师点第二条回复上的
+  //   「预览」，收起来的是第一条的。一律改成**在 el 里面找**（querySelector），
+  //   每张卡只顾自己那一份。
+  //
+  // ★ opts.lazy —— 先不 build docx（气泡里那份用）。原来的写法是**每次重画都把整个
+  //   docx 拼一遍**，而 feed() 在流式期间每收到一截正文就调一次；拼出来的 blob
+  //   没有任何调用方接（show 的返回值一路没人用），纯白烧。气泡卡把它推到点「下载」那一刻。
+  // ★ opts.collapsed —— 预览先收着（气泡里那份用）。两百行的周练卷摊在对话里会把
+  //   整场对话撑得没法看；老师要的是"哦，排好了"，不是当场通读。
+  //   ⚠ 老师点开过之后（`data-pv="1"`）就别再给他收回去：finish() 画完一张图会重画
+  //     一次卡，收回去的话他正读着半页卷子，界面自己合上了。
+  function renderCard(el, tpl, blocks, title, note, opts) {
+    if (!el || !SR.produce) return null;
+    opts = opts || {};
+    var blob = null;
+    if (!opts.lazy) {
+      // ★ 打包放在更新 DOM **之前**：现在图是字节，进 `SR.docx.write` 那一步。
+      //   顺序反了的话，界面先显示出"已就绪"，文件其实还没拼出来；
+      //   中间要是抛错，老师看到的就是"产物好端端的、点下载没反应"。
+      blob = SR.produce.build(tpl, blocks);
+    }
     var bad = SR.produce.check(tpl, blocks);
     var name = (title || tpl.name || '材料') + '.docx';
-    box.innerHTML =
+    el.innerHTML =
       '<div class="outhead">'
     +   '<div class="nm">' + esc(name) + '</div>'
     +   '<div class="act">'
-    +     '<button type="button" class="tool" id="outpv">预览</button>'
-    +     '<button type="button" class="tool primary" id="outdl">下载 .docx</button>'
+    +     '<button type="button" class="tool pvbtn">预览</button>'
+    +     '<button type="button" class="tool primary dlbtn">下载 .docx</button>'
     +   '</div>'
     + '</div>'
     + (note ? '<p class="figwait">' + esc(note) + '</p>' : '')
     + (bad.length
         ? '<p class="err">有 ' + bad.length + ' 处要修：' + esc(bad.map(function (b) { return b.why; }).join('；')) + '</p>'
         : '')
-    + '<div class="pvwrap" id="outpvbox">' + SR.produce.previewHtml(tpl, blocks) + '</div>';
+    + '<div class="pvwrap">' + SR.produce.previewHtml(tpl, blocks) + '</div>';
 
-    var d = $('outdl');
+    var d = el.querySelector('.dlbtn');
     if (d) d.addEventListener('click', function () { SR.produce.save(tpl, blocks, name); });
-    var p = $('outpv');
-    var pv = $('outpvbox');
-    if (p && pv) p.addEventListener('click', function () {
-      var on = pv.style.display !== 'none';
-      pv.style.display = on ? 'none' : '';
-      p.textContent = on ? '预览' : '收起预览';
-    });
+    var p = el.querySelector('.pvbtn');
+    var pv = el.querySelector('.pvwrap');
+    if (p && pv) {
+      if (opts.collapsed && el.getAttribute('data-pv') !== '1') pv.style.display = 'none';
+      p.addEventListener('click', function () {
+        var on = pv.style.display !== 'none';
+        pv.style.display = on ? 'none' : '';
+        p.textContent = on ? '预览' : '收起预览';
+        el.setAttribute('data-pv', on ? '0' : '1');
+      });
+    }
     return blob;
   }
 
-  // 模型吐的 ```材料 围栏 → 右栏产物。
+  // ★★ 2026-10-03（阶段 H）：这里原来有个 `show(tpl, blocks, title, note)`，
+  //   把卡渲染进右栏那个单例 `#out`。`#out` 已经删了（卷子改成只长在**它自己那条
+  //   回复的气泡里**，见 feed 的 `el`），这个函数跟着删。
+  //   ⚠ 真正要当心的是**它当年是个兜底**：`put()` 在 `el` 为空时会落到它身上。
+  //     删掉之后，`el` 为空就**没有任何落点**了——所以 put() 现在会把这件事说出来
+  //     （见下面那条 warn），不再像从前那样"静默渲染进一个已经不存在的容器"。
+
+  // 模型吐的 ```材料 围栏 → 这一条回复的产物卡。
   // ★ 它**在流式过程里会被反复调用**（每收到一截正文就重画一次），
   //   所以这里必须是纯的：不弹提示、不写库、不滚屏——只重画右栏。
   //   一份两百行的卷子，老师是看着它一行行长出来的，这比转圈等半天好得多。
@@ -312,14 +344,40 @@ SR.material = (function () {
   // ⚠ 返回 {ok, n, bad}：调用方（chat.js）拿它判断"这一轮到底出没出材料"。
   //   **不许拿"有没有收到围栏"当判据**——免费通道那几颗小模型掉围栏是常事，
   //   那种时候 fed.ok 是 false，界面得给老师一句人话，不能默默什么都不动。
-  function feed(body, title) {
+  // ★ `el` 给的是**这张卡自己的容器**（气泡里那块 `.paperbox`）；不传就落回右栏单例。
+  //   `el` 连同 body/title 一起记进 `lastFeed`，收完流的 finish() 照同一个落点重画。
+  function feed(body, title, el) {
     if (!cur) return { ok: false, why: '没有选中模板' };
     if (!SR.produce) return { ok: false, why: '出材料的模块没装上' };
     var blocks = SR.produce.parseBlocks(body);
     if (!blocks.length) return { ok: false, why: '空的' };
-    lastFeed = { body: body, title: title };
-    show(cur, blocks, title);
+    lastFeed = { body: body, title: title, el: el || null };
+    put(lastFeed.el, blocks, title);
     return { ok: true, n: blocks.length, bad: SR.produce.check(cur, blocks) };
+  }
+
+  // 「摆到落点上」。★ 集中在这儿是因为**两拍**（feed 期间、finish 之后）必须落
+  // 同一个地方——分开写的话，图都画完了卡还留在旧的落点上，屏幕上看着像"画丢了"。
+  //
+  // ⚠⚠ `el` 现在是**必填**的（阶段 H 把右栏那个单例落点 `#out` 删了，没有兜底了）。
+  //   调用链：`feed(body, title, el)` ← `js/chat.js` 传 `msg.matEl`；chat.js 那一头
+  //   在喂之前就 `if (!msg.matEl)` 现建一个，所以这条路上 `el` 恒是真元素。
+  //   ⇒ 真为空只可能是**以后有人改了 chat.js 那边**。那种时候 `renderCard(null, …)`
+  //     会安安静静返回 null —— 屏幕上就是"卷子没出来"，谁也不知道为什么。
+  //     所以这里留一句 warn 把话说出来。★ 只报一次：feed 在流式当中每收一截正文
+  //     就被调一次，一次不报一次的话控制台会被刷屏，反而没人看。
+  var warnedNoEl = false;
+  function put(el, blocks, title, note) {
+    if (!el) {
+      if (!warnedNoEl && window.console) {
+        warnedNoEl = true;
+        console.warn('[material] 没有落点（el 为空）：卷子渲染不出来。'
+          + '这条路上 el 应该是 chat.js 给的 msg.matEl —— 去看那边是不是没建。'
+          + '（右栏那个 #out 单例 2026-10-03 已删，没有兜底了。）');
+      }
+      return null;
+    }
+    return renderCard(el, cur, blocks, title, note, { lazy: true, collapsed: true });
   }
 
   // ============================================================
@@ -344,7 +402,7 @@ SR.material = (function () {
 
   function finish(cb) {
     if (!cur || !lastFeed || !SR.produce || !SR.figures) { if (cb) cb(null); return; }
-    var body = lastFeed.body, title = lastFeed.title;
+    var body = lastFeed.body, title = lastFeed.title, el = lastFeed.el || null;
     var blocks = SR.produce.parseBlocks(body);
     var st = SR.figures.stats(blocks);
     if (!st.need || st.ok === st.need) { if (cb) cb({ need: st.need, dropped: 0 }); return; }
@@ -353,12 +411,12 @@ SR.material = (function () {
       function (i, n) {                       // 每画完一张，把进度摆出来
         // ★ 这儿得**重新解析** lastFeed.body：模型流式期间可能又补了几行，
         //   拿着画图开始时那一份重画，会把后长出来的东西吃掉。
-        show(cur, SR.produce.parseBlocks(lastFeed.body), title,
-             '正在画第 ' + i + '/' + n + ' 张图…');
+        put(el, SR.produce.parseBlocks(lastFeed.body), title,
+            '正在画第 ' + i + '/' + n + ' 张图…');
       },
       function () {
         var rt = dropDeadFigs(SR.produce.parseBlocks(lastFeed.body));
-        show(cur, rt.blocks, title);
+        put(el, rt.blocks, title);
         if (cb) cb({ need: st.need, dropped: rt.dropped });
       });
   }
@@ -373,8 +431,11 @@ SR.material = (function () {
   });
 
   return {
-    open: open, use: use, drop: drop, show: show, slotBrief: slotBrief,
+    open: open, use: use, drop: drop, slotBrief: slotBrief,
     feed: feed, finish: finish,
+    // ★ 重画那条路（刷新回来 / 切工位）自己往气泡里摆卡，要用同一个渲染器——
+    //   另写一份的话，"卡长什么样"就有两个真源，改一处另一处就漂。
+    renderCard: renderCard,
     restore: restore,
     current: function () { return cur; },
     // 目前没有调用方。留着它，但**也走 notify()**——绕过通知的口子只要开一条，

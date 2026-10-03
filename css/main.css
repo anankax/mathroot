@@ -406,7 +406,7 @@ body[data-work="vary"] .workbtn.on { background: var(--alt); }
 .tool:disabled { opacity: .45; cursor: default; }
 .tool:disabled::after { content: none; }
 
-/* ---------- 主体：两栏（中对话 / 右产物＋画板） ---------- */
+/* ---------- 主体：一栏（对话流） ---------- */
 /* ★ 2026-10-01 从两栏改成三栏（左工位 / 中对话 / 右产物）。理由照腾讯 WorkBuddy／
    扣子那类成熟产品排的形——原来顶栏一横排十来个按钮，是"看着不像成熟产品"最直接的原因。
    ★★ 2026-10-02：**左栏那 200px 撤掉了，退回两栏**。孔老师看着线上站问
@@ -414,19 +414,27 @@ body[data-work="vary"] .workbtn.on { background: var(--alt); }
    而"两遍"最实际的问题是两边各写死了一遍工位名（改一处、另一处不同步，屏幕上看着完全正常）。
    工位那一行现在在**输入框底下**（`.works.stretch`），跟输入框同栏，
    老师说一句话之后接着换一件，手不用来回跑。
-   ★ 当初要解决的那件事（顶栏挤了十来个控件）已经用别的办法解决了：顶栏只剩
-     品牌／通道／一排小图标／关于。 */
+   ★★ 2026-10-03：**右栏也撤了，改成单列**。孔老师原话「不做成对话流确实显得很low」。
+   病根跟左栏那次一模一样：右栏（产物 + 流水线 + 画板）大部分时间是空的，
+   却把对话挤到偏左那 1fr 里；而出材料时"产物和画板要同屏"这个真实需求，
+   现在是靠**点「再摆弄」把画板抽屉滑出来**满足的，不需要一条常驻分栏。
+   ⚠ 别再改回两栏／三栏。三道栏撤光的理由是同一条：**同一件事画两遍。** */
 main {
   flex: 1 1 auto;
   display: grid;
-  /* ★ 右栏宽度 44% → 42%：1440 下原来产物栏 621 比对话栏 563 还宽，
-     一个"看结果"的栏目比"干活"的栏目宽，主次反了。收一档之后 610 / 514。
-     撤掉左栏那 200px 之后，省下来的宽度全归对话栏（它是干活的那一栏）。 */
-  grid-template-columns: minmax(320px, 1fr) minmax(348px, 42%);
+  /* ★ `minmax(0,1fr)` 而不是 `minmax(320px,1fr)`：320 在手机上是**横着溢出**的
+     （360 减左右各 14px 内边距只剩 332），`minmax` 的下限会把 content box 撑破。
+     这条跟模拟稿 `test/_mock/mock.html` 的 `main.one` 差一个数，是有意的偏差。 */
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   padding: 14px;
   min-height: 0;
 }
+
+/* 对话栏居中封顶 900px。★ 这条原来只写在 `body[data-landing="1"]` 底下
+   （只是首屏那一屏），现在**升格成默认**——单列之后每一屏都该这样，
+   否则 1440 的屏上对话栏横着一整条，一行字长到读不下去。 */
+main > .col { max-width: 900px; margin: 0 auto; width: 100%; }
 
 .col {
   background: var(--panel); border: 1px solid var(--line);
@@ -509,18 +517,57 @@ main {
    最容易误点，一次误点等于整场对话没了）。另外两道只是分组的呼吸缝。 */
 .thinrule { width: 1px; height: 18px; background: var(--line); margin: 0 6px; flex: 0 0 auto; }
 
-/* ---------- 右栏：上产物、下画板 ---------- */
+/* ---------- 画板抽屉（2026-10-03 取代常驻右栏）----------
+   ★ 形态：`position:fixed` 贴右边一整条，平时推到画布外，点「再摆弄」滑进来。
+     `inset: 0 0 0 auto` = 上下贴边、右边贴边、左边自适应（宽度由 width 给）。
+   ⚠⚠ 关闭态**必须**用 `transform` + `visibility`，**绝不用 `display:none`**：
+     `figures.drawAll` / `pack.make` 都是借眼前这块板离屏画再截图，`display:none`
+     会让 `board.js` 的 `fit()` 量到 0、落回 `MIN_H=60`，图**静默**缩成 240×60。
+     `visibility:hidden` 仍参与布局，`#ggb` 从头就有真实尺寸。
+   ⚠ `calc(100% + 24px)` 那个 24px 是给投影留的：只推 100% 的话，
+     阴影还会在右边露一条出来（比抽屉本身还显眼）。
+   ⚠ 别给它写 `overflow:hidden`：`.boardwrap::after` 那圈 vignette 和 GeoGebra
+     自己的弹出菜单都会伸出来，裁掉就没了。宽度那儿用 `min()` 封顶，
+     不需要靠 overflow 兜。
+   ⚠ `visibility` 那一档过渡照实说：它是**离散**的，`visibility:hidden→visible`
+     在过渡**开始**就生效（这正是我们要的——滑进来时立刻能点），
+     `visible→hidden` 在过渡**结束**才生效（滑出去之后才不可点）。 */
+.drawer {
+  position: fixed; inset: 0 0 0 auto; width: min(520px, 42vw);
+  display: flex; flex-direction: column; gap: 0;
+  background: var(--panel); border-left: 1px solid var(--line);
+  box-shadow: -18px 0 44px rgba(0, 0, 0, .16);
+  transform: translateX(calc(100% + 24px)); visibility: hidden;
+  pointer-events: none; z-index: 30;
+  transition: transform .22s ease, visibility .22s;
+}
+.drawer[data-drawer="open"] { transform: none; visibility: visible; pointer-events: auto; }
+/* 遮罩：点一下关抽屉。★ 只在开着的时候在，关着时 `hidden` 直接摘掉，
+   不留一层透明的可点区域盖在页面上（那会让整页点不动）。 */
+.drawer-scrim {
+  position: fixed; inset: 0; z-index: 29;
+  background: rgba(0, 0, 0, .18); border: 0; padding: 0; margin: 0;
+  animation: scrimIn .18s ease;
+}
+.drawer-scrim[hidden] { display: none; }
+@keyframes scrimIn { from { opacity: 0 } to { opacity: 1 } }
+
+/* ---------- 抽屉里：上产物、下画板 ---------- */
 /* ★ 为什么合成一栏而不是再开第三栏：出材料的时候这两样是**同屏要用**的——
-   一边看生成的卷子、一边调题目要的图。1280 的屏再切一刀，对话栏就没法读了。 */
-.side { overflow: hidden; }
+   一边看生成的卷子、一边调题目要的图。1280 的屏再切一刀，对话栏就没法读了。
+   ★ 2026-10-03：`.side{overflow:hidden}` 那条跟着 `.side` 一起消失了。
+     它当年是把「.boardbar 被挤出右边框」这件事**静默裁掉**的刀（见下面 .boardbar
+     那段注释里 1024 那一档的账）。现在板子在抽屉里、`.boardbar` 又是 wrap 的，
+     不需要这把刀了——**别再把它加回来**。 */
 
 .outbox {
   flex: 0 0 auto; display: flex; flex-direction: column;
   max-height: 46%; min-height: 0; border-bottom: 2px solid var(--rule);
 }
-#out { flex: 1 1 auto; overflow-y: auto; padding: 13px 15px; min-height: 58px; }
-.outempty { margin: 0; font-size: 13px; line-height: 1.8; color: var(--ink-3); }
-.outempty strong { color: var(--brand); }
+/* ★ 2026-10-03（阶段 H）：原来这儿还有 `#out {...}`（右栏那个单例落点）、
+   `.outempty {...}` / `.outempty strong {...}`（它的空白态）三条。`#out` 已经
+   从 index.html 里删掉了——卷子改成长在**它自己那条回复的气泡里**（阶段 E），
+   那三条是死规则，一并删。`.outbox` 这个壳留着：它装着下面的「版式」行。 */
 
 /* 版式那一行（「组卷」独有）。★ 它住在 .outbox 里，于是**天然只在组卷这一格出现**
    ——.outbox 本来就只在 material 工位显示，不用再写一条 `body[data-work]` 的显隐规则。
@@ -541,8 +588,10 @@ main {
 .tplbar .v.on { color: var(--brand); font-weight: 700; }
 .tplbar .tplbtn { font-size: 12px; padding: 4px 10px; }
 
-/* ★ 不在出材料工位时，产物栏整块收起，画板自动占满整栏。
-   一个工位不产东西，"产物"那栏就该消失——留着一个空框比没有更难看。 */
+/* ★ 不在出材料工位时整块收起（里面现在只剩「版式」那一行）。画板自动占满整栏。
+   一个工位不产东西，这一格就该消失——留着一个空框比没有更难看。
+   ★ 这条现在**还得继续挂着**：阶段 H 把产物删了，可「版式」那一行仍靠它
+     "只在组卷工位出现"。壳一撤，模板库按钮就会在作图、备课那些工位上也冒出来。 */
 body:not([data-work="material"]) .outbox { display: none; }
 
 /* ---------- 右栏：流水线（备课／讲评）----------
@@ -561,6 +610,54 @@ body[data-flow="on"] .flowbox {
 .flowbox .fhint { margin-left: auto; font-size: 11px; color: var(--ink-3); font-weight: 400; }
 #flowlist { flex: 1 1 auto; overflow-y: auto; padding: 9px 15px 12px; min-height: 0; }
 .flowempty { margin: 0; font-size: 12.5px; line-height: 1.85; color: var(--ink-3); }
+
+/* ★★ 搬进气泡之后的那份（阶段 F，2026-10-03）---------------------------------
+   `#flowbox` 现在会被 js/chat.js 的 `homeFlow()` 搬进**这一轮的助手气泡**里
+   （谁的话挂在谁下面），不再是右栏里跟画板抢高度的那一块。
+   上面那几条 `max-height:42%` / `min-height:92px` / `border-bottom:2px` 是给**右栏**
+   写的：在那儿它是"上下分"里的一格，要跟画板分高度；搬进气泡之后这些全都错位——
+   42% 是拿一个已经很高的容器算的（会把流水线压成一条），
+   下边框在气泡里看着像"下面还有一块"。
+
+   宽度照 .figbox 那套：把气泡的左右内边距（14px）啃回来 = 比正文宽。
+   表头 .colhead 自己的 `padding:9px 14px` 正好跟啃回来的边对上，不用改。 */
+.msg .bubble .flowbox {
+  margin: 10px -14px 0;
+  max-height: none; min-height: 0;
+  border-top: 1px solid var(--line); border-bottom: 0;
+}
+
+/* 「跑完收起来」：折成表头一行，点一下展开。
+   ★ 判据是 JS 加的 `.done`（homeFlow 挂上去时加），**不是**让 css 自己猜"跑完了没"——
+     跑没跑完只有账本知道。`.open` 是点开之后加的。
+   ★ 折叠这件事**没写进 js/flow.js**：那个文件管的是"七步怎么跑"，
+     折起来纯粹是摆法，而且是搬进气泡之后才有的摆法。 */
+.msg .bubble .flowbox.done .colhead { cursor: pointer; user-select: none; }
+.msg .bubble .flowbox.done .colhead:hover { background: rgba(0, 0, 0, .028); }
+.msg .bubble .flowbox.done .colhead::after {
+  content: '▸'; font-size: 10px; color: var(--ink-3); transition: transform .15s;
+}
+.msg .bubble .flowbox.done.open .colhead::after { content: '▾'; }
+.msg .bubble .flowbox.done:not(.open) #flowlist { display: none; }
+
+/* ★★「想说」（阶段 G 搬进气泡，2026-10-03）----------------------------------
+   ｜这里放的是**寄生**在气泡里的那份摆法。老那份（输入框上面那排常驻的 `#chips`）
+   ｜**阶段 H 已经删干净了**——容器、规则、`els.chips` 一起走的，见 index.html 那段注释。
+   ｜
+   ｜★ 负外边距照 .figbox / .flowbox 那一套啃回气泡的 14px 内边距：这一排是三颗
+   ｜  按钮，要铺满气泡的宽度、还要有一条通到底的分隔线；留在内边距里的话，
+   ｜  线两头各短 14px，看着像"贴了个纸条在气泡里"。
+   ｜  上下：`-11px` 抵掉气泡自己的下内边距（`10px 14px 11px`），这一排就是气泡的
+   ｜  **最后一格**，底边跟气泡底边齐平。
+   ｜★ `border-top` 是分隔线（原来是常驻那排 `:not(:empty)` 那条，跟着过来）；
+   ｜  这里不用 `:not(:empty)` 兜 —— 这一盒是**有话说才建**的（见 showChips），
+   ｜  空盒子根本不会出现在页面上。 */
+.msg .bubble .chips {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin: 10px -14px -11px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--line);
+}
 
 .fround { padding: 7px 0 9px; border-top: 1px solid var(--line); }
 .fround:first-child { border-top: 0; padding-top: 2px; }
@@ -651,7 +748,7 @@ body[data-flow="on"] .flowbox {
   color: var(--brand); opacity: .06;
   pointer-events: none; user-select: none; -webkit-user-select: none;
 }
-#msgs, #thumb, #chips, .composer { position: relative; z-index: 1; }
+#msgs, #thumb, .composer { position: relative; z-index: 1; }
 
 /* ============================================================
    首屏（一个框 + 五块 + 归完那一行）。见 js/landing.js 顶上那几段。
@@ -659,8 +756,33 @@ body[data-flow="on"] .flowbox {
      色条还是 3px、字还是思源宋体打头——它只是"这一栏还没开始"的那一屏，
      不是第二个产品。新开一套的话，老师从首屏走到工位会像换了个站。
    ============================================================ */
-#landing { flex: 1 1 auto; overflow-y: auto; padding: 34px 22px 10px; }
-#landing[hidden] { display: none; }
+/* ★★ 2026-10-03：首屏从"独立的一层"改成 **`#msgs` 里第一条助手消息**
+   （`div.msg.assistant.landing`，见 js/landing.js 的 mountFirstMessage）。
+   原来那两条描述的是那块独立层，一起删了：
+     `#landing{flex:1 1 auto; overflow-y:auto; padding:34px 22px 10px}` 与 `#landing[hidden]`。
+   滚动现在归 `#msgs`（它自己就是 overflow-y:auto），内边距也归它。
+   ★ 为什么要搬：原来那层得靠 `body[data-landing="1"] #msgs{display:none}`
+     把整个对话栏藏住来让位——**那条规则就是 D1**（刷新回来，memo 把上一场对话
+     接回来了、DOM 里也在、copybar 也挂好了，却被它整块藏住，老师一个字都看不见）。
+     搬进 `#msgs` 之后不用藏了：首屏和对话本来就该在同一列里。
+   ★ 视觉上它**不做成气泡**（下面几条把 .bubble 的底色和色条抹掉）：
+     主流智能体（ChatGPT / Claude）的首屏都是"一句大标题 + 一排建议"，不是一句话泡；
+     套上气泡框反而像"数根先说了一句话"，可这一屏是它还没开始说的时候。
+   ★ 挂 `.landing` 这个类**不是为了好看**：它是消息，得走消息那条路
+     （刷新时由 memo 接回来、重画 `innerHTML=''` 时跟着一起走）。 */
+.msg.landing { margin-bottom: 22px; }
+.msg.landing .bubble {
+  max-width: none; width: 100%; padding: 0;
+  background: none; border-left: 0;
+}
+/* 不挂「数根 / MATHROOT」那枚铭牌（那是 .msg.assistant .bubble::before 自动挂的）：
+   这一条是入口，不是某句话的出处。 */
+.msg.landing .bubble::before { display: none; }
+/* ★ 下面这两条是**跟 .bubble p 抢**：`.bubble p{margin:.45em 0}` 的优先级
+   （0,1,1）比 `.lq`（0,1,0）高，不抢的话标题底下那 22px 会被压成 .45em，
+   六块卡片就贴着标题了。 */
+.msg.landing .lq { margin: 0 0 22px; }
+.msg.landing .ltip { margin: 18px 0 0; }
 .lq {
   margin: 0 0 22px; font-family: var(--song); font-size: 27px; font-weight: 700;
   letter-spacing: 1px; line-height: 1.35; color: var(--ink);
@@ -720,35 +842,30 @@ body[data-flow="on"] .flowbox {
      病根就是这个"画两遍"。等老师说第一句话（首屏收起来）它才出来。
      ⚠ 别改成"首屏时把工位列变灰"：灰的按钮看着是"暂时不能点"，可它不是不能点，
        是**这会儿不该点**（卡片那一屏本身就是更清楚的入口）。收起来才对。 */
-body[data-landing="1"] #msgs,
+/* ★★ 2026-10-03：`#msgs` **不许再整块藏**。首屏那条消息现在就住在它里面，
+   藏它就是藏首屏自己；而刷新回来时它藏的是 memo 刚接回来的那一场对话——**那就是 D1**。
+   改成只藏"**首屏之外**的那些消息"：
+   首屏亮着时，下面还等着 chat.js 给空档案加的那句开场白（OPENING），
+   不藏的话"要做什么？+六块"底下紧跟着"给我一道题或者一个课题…"，
+   两句话说的是同一件事。点完卡片首屏一收，开场白正好露出来——衔接是接得上的。
+   ★ 判据用 `:not(.landing)` 而**不是**"藏第几条"或"藏某句文案"：
+     只认它是不是首屏那条，以后加一条消息不用回来改这儿。 */
+body[data-landing="1"] #msgs > .msg:not(.landing),
 body[data-landing="1"] #thumb,
 body[data-landing="1"] #steps,
-body[data-landing="1"] #chips,
 body[data-landing="1"] .works,
 body[data-landing="1"] .ghost { display: none; }
 
-/* ---------- 首屏：一栏 + 居中 ---------- */
-/* ★★ 2026-10-03 孔老师原话："页面也太偏左了，我觉得就应该对话框居中"。
-   病根是**右栏（画板）这会儿还立着**：`main` 是两栏网格，画板占掉右边 42%，
-   对话栏被挤在左边那 1fr 里，而 #landing 自己贴着它左边缘——所以看着"偏左"。
-   模拟稿里刚进来那一屏（`test/_mock/mock.html` 的 `main.one`）就是**一栏**：
-   没有右栏、对话栏居中封顶 900px。这张纸是正本，照它做。
-
-   ⚠ 只在 `data-landing="1"` 时这样。老师说了第一句话，landing 收起来，
-     画板就该自己长出来——那会儿要走回上面 `main` 那条两栏规则。
-     **别把 `.side` 在别处也隐藏**：`landing.js` 的 `.ghost`/`#msgs` 那套是
-     "首屏亮着才让开"，同一条命，跟着这个属性走。
-   ⚠ `.side{display:none}` 会不会把已经注入的 GeoGebra 弄坏：applet 是在
-     `js/main.js` 里**先**注入的（那会儿 `.side` 还看得见，有尺寸），
-     之后才 init landing。`board.js` 的 ResizeObserver 盯着 `#ggb`，
-     隐藏→显示时尺寸变回非零会再 refit 一次。这条**得用探针量**，不能想当然——
-     见 test/probe_landing_ui.cjs 那段"说了第一句话之后画板还在不在"。
-   ⚠ `minmax(0,1fr)` 跟模拟稿的 `minmax(320px,1fr)` 差一个数：模拟稿是固定宽的
-     画框，320 永远不会撑破；真机在 320px 手机上减去左右各 14px 内边距只剩 292px，
-     写 320 会横着溢出。**这是有意的偏差，不是抄漏**。 */
-body[data-landing="1"] main { grid-template-columns: minmax(0, 1fr); }
-body[data-landing="1"] .side { display: none; }
-body[data-landing="1"] .col:not(.side) { max-width: 900px; margin: 0 auto; width: 100%; }
+/* ---------- 首屏：只剩「让开」那几条，布局规则搬走了 ---------- */
+/* ★★ 2026-10-03：原来这儿有三条**改布局**的规则——
+     body[data-landing="1"] main { grid-template-columns: minmax(0,1fr); }
+     body[data-landing="1"] .side { display: none; }
+     body[data-landing="1"] .col:not(.side) { max-width: 900px; margin: 0 auto; }
+   三条全删了，因为**它们描述的那个布局现在就是默认布局**（`main` 已经是单列、
+   `.col` 已经居中封顶 900）。留着的话就是第二份真源：哪天默认布局改了，
+   这三条还按着首屏那一屏，而那一屏看着完全正常。
+   ⚠ 上面那组「首屏亮着时谁让开」的规则**保留**——那是首屏自己的事，
+     跟布局无关（见那段注释）。 */
 
 /* ---------- 归完那一行 ---------- */
 /* ★ 紧贴输入框上沿，凹槽底子（sunken）：它说的是"框里那句话去哪了"，
@@ -786,8 +903,12 @@ body[data-landing="1"] .col:not(.side) { max-width: 900px; margin: 0 auto; width
      一列之后它们没有意义，留着只会在窄屏把列数悄悄改回去。
      原来那条 620 的注释（"两列时每格最窄 ≈290px"）就是为这个算的，一并作废。 */
 @media (max-width: 900px) {
-  #landing { padding: 22px 14px 8px; }
-  .lq { font-size: 22px; margin-bottom: 16px; }
+  /* ★ 2026-10-03：原来这条是 `#landing{padding:22px 14px 8px}`——首屏搬进
+     `#msgs` 之后那个 id 不存在了，改成收 `#msgs` 自己的边距（同一件事换了主人）。 */
+  #msgs { padding: 14px 14px 6px; }
+  /* ⚠ 选择器必须带 `.msg.landing`：上面那条 `.msg.landing .lq{margin:0 0 22px}`
+     优先级（0,2,0）比光秃秃的 `.lq`（0,1,0）高，写成 `.lq{...}` 这儿一个字都不生效。 */
+  .msg.landing .lq { font-size: 22px; margin-bottom: 16px; }
   .lblock { padding: 10px 11px 11px; }
   .lblock b { font-size: 16px; }
   #routebar { margin: 0 10px; }
@@ -797,7 +918,8 @@ body[data-landing="1"] .col:not(.side) { max-width: 900px; margin: 0 auto; width
    藏掉 `i` 之后就只剩"备课／作图／命题／组卷／学情／讲评"六个光秃秃的词，
    而这六块的全部用处恰恰是**说出它们分别给我什么**。多滑一下比丢掉半句话值。 */
 @media (max-width: 620px) {
-  .lq { font-size: 20px; }
+  /* ⚠ 同上：必须带 `.msg.landing`，否则被上面那条 900px 的 22px 压住。 */
+  .msg.landing .lq { font-size: 20px; }
 }
 
 /* ---------- 栏头 ---------- */
@@ -853,7 +975,11 @@ body[data-landing="1"] .col:not(.side) { max-width: 900px; margin: 0 auto; width
 body[data-work="draw"] .msg.user .bubble,
 body[data-work="vary"] .msg.user .bubble { background: var(--alt-soft); border-left-color: var(--alt); }
 
-.bubble > .who, .msg.assistant .bubble::before {
+/* ★ 2026-10-03（阶段 H）：这一组原来的选择器是 `.bubble > .who, .msg.assistant
+   .bubble::before` —— `.bubble > .who` 那半个**全项目没有任何地方产出过**
+   （就是下面注释里说的"往 DOM 里塞元素"那条被否掉的老路，元素版的铭牌）。
+   删掉它不影响任何东西：它本来一条都匹配不到。 */
+.msg.assistant .bubble::before {
   display: block; font-family: var(--mono); font-size: 10px; letter-spacing: 1.6px;
   color: var(--ink-3); margin-bottom: 5px;
 }
@@ -910,8 +1036,9 @@ body[data-work="vary"] .bubble strong { color: var(--alt); }
 @keyframes bl { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
 
 /* ---------- 可选回答 ---------- */
-#chips { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px 10px; }
-#chips:not(:empty) { padding-top: 10px; border-top: 1px solid var(--line); }
+/* ★ 2026-10-03（阶段 H）：原来这儿还有两条 `#chips {...}` / `#chips:not(:empty) {...}`
+   —— 输入框上面那排**常驻**选项的规则。容器本身已经从 index.html 里删掉，
+   这两条是死规则，一并删。现役的那份在 `.msg .bubble .chips`（css 上部那段）。 */
 /* 直角 + 左侧一道粗线。★ 这条粗线不只是装饰：它是"这是一句可以按的话"的记号，
    跟左边气泡那道色条同族，学生一眼就知道这两种东西不是一回事。
    ★ 悬停时右下角冒出角线，和 .tool 一个语言——全站"能按的东西"共用一种手感。 */
@@ -1170,9 +1297,17 @@ body[data-work="vary"] #send:hover { background: var(--alt-dark); }
    而不是"页脚上的一句提示"。那篇里 Bender 那一段说的就是这个效果。 */
 #status {
   flex: 0 0 auto; font-family: var(--mono); font-size: 11.5px; letter-spacing: .6px;
-  color: var(--ink-3); padding: 7px 14px; border-top: 1px solid var(--line); min-height: 30px;
+  color: var(--ink-3); padding: 7px 14px; border-top: 1px solid var(--line);
   background: var(--panel);
 }
+/* ★ 2026-10-03：**空着的时候整条收掉**（原来写死 `min-height:30px`，一直占着一条）。
+   这条原来是手机专有的（见文件末尾 @media 里那条），现在升格成默认——理由变了：
+   那会儿它住在画板**底下**，那 30px 是从画板里抠的，收掉会让画板跳一下；
+   现在它在输入框**上面**、对话流自己会 flex，空着就是输入框上压一条白杠，
+   在一个"看起来像对话"的界面上就是多余的一行。
+   ⚠ 出提示时上面的对话会顶一下，这是对的：它本来就是"刚刚发生了一件事"。
+   ⚠ 别改回 `min-height`：留着等于每条提示都要先占一块地。 */
+#status:empty { display: none; }
 
 /* ---------- 页脚（署名第二处） ---------- */
 /* 那篇里方舟的东西没有一件是居中的——居中是"没安排"的形状。
@@ -1215,6 +1350,127 @@ footer .r {
 /* 拷成的那一瞬间换个说法（"复制好了"）。★ 用 .done 而不是 :active——
    剪贴板这一下是异步回来的，:active 在手指抬起来的时候就没了，看不见反馈。 */
 .copybtn.done, .packbtn.done { border-color: var(--brand); color: var(--brand); font-weight: 700; }
+
+/* ---------- 每条回复底下那块**冻图**（见 js/chat.js 的 attachFigure） ----------
+   一条回复画了几张图，就一句一句钉几块在这儿，**长在它自己那条气泡里**——
+   不再是一块常驻的右栏（这是"一个对话"该有的样子：产物跟产生它的那句话在一起）。
+
+   ★ 宽度：这块比**同一气泡里的文字那一栏**宽。做法是把 .bubble 的左右内边距
+     （14px）往两边啃回来，于是它顶到气泡外沿、比文字宽出 28px。
+     ⚠ 别写 `width:100vw` 那类绝对值：它会冲出对话栏，把整页撑出一条横向滚动条，
+       而这条滚动条在窄屏上还会带着输入框一起抖。
+   ⚠ 也别给它设 min-width —— 窄屏上那会顶破气泡。 */
+.figbox {
+  margin: 10px -14px 2px;
+  /* ★★ `align-items` 从 flex-start 改成 center（2026-10-03，**上眼**看出来的）。
+     起因：冻图是"把整块画板裁掉白边存下来"，而**画板上的坐标轴贯穿整个视口**，
+     所以裁完 ≈ 整块板子那么大 —— 板子是竖的（抽屉又高又窄），冻出来就是竖的。
+     一张 996×1574 的图被封进 max-height:360px，实测渲染成 **228×360**。
+     于是气泡里出现：左边一张 228 宽的图，右边 500 多 px 全白 ——
+     在图上看就是"这块产物坏了"。而探针**量不出来**：它量的是宽度有没有顶满、
+     边距对不对，全都对，只是图缩在左边。
+     ★ 为什么不把图放大：360 这个上限是量出来的（见下面 .figimg 那段），
+       一张竖图要占满 748 的宽就得 1182 高，一条回复两张图 = 两屏半。
+     ★ 为什么不改画板形状：板子是**作图**和**导图**共用的，作图想要横的、
+       导图想要竖的，动哪边都是拿另一边换 —— 那是取舍，不是 bug。
+     ⇒ 所以只治"看着像坏了"这一条：让图在自己那一格里**居中**。
+       两旁仍会留白（图的形状决定的），但居中读起来是"一张图"，
+       左对齐读起来是"这块还没渲染完"。 */
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.figcap {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .6px; color: var(--ink-3);
+}
+/* ★★ 为什么要有 `max-height`（2026-10-03 **上眼**看出来的，探针量不出来）：
+   冻图是"把画板裁掉白边存下来"，而**画板上的坐标轴是贯穿整个视口的** ——
+   只要这张图里有坐标轴，裁出来就是**将近一屏**那么高。实测"两个点 + 一条线段"
+   冻出来是 **996×818**（另一趟 996×1646），铺在气泡里比正文高一倍还多，
+   第二张直接被推出屏幕外；而图上真有内容的只有中间一小块。
+   这不是"图错了"，是"图没被约束" —— 当图片摆就得给图片该有的上限，
+   跟 ChatGPT / Claude 里生成的图一个道理。
+   ⚠ 用 `max-height` + `width:auto` 等比缩，别用 `object-fit`（那会在框里留边、看着像没画满）；
+     宽而扁的（一条数轴 996×70）本来就够不着上限，保持原样、不放大。
+
+   ★ 360 这个数是**量出来的**，不是挑的：996×818 的一张图，封顶 400 时渲染成 487×400，
+     加上按钮那一块，**一条回复里两块图就是 870px** —— 而整个对话视口才 900px 高，
+     等于两句话配了两屏图。封到 360 之后是 438×360，一张图 + 它的正文 + copybar
+     刚好一屏放得下；再小（试过 300）就轮到字看不清了，那比多滚一下更糟。
+   ⚠⚠ 这段注释是**连摔两跤**换来的，两跤都在同一个地方：
+     第一跤：把这段文字接在注释结尾符**后面**，它就成了裸露的 CSS 垃圾文本，
+       解析器一路吞到能恢复为止 —— 把紧跟其后的 .figimg 整条规则**吃掉**了。
+     第二跤：修的时候我在注释**里面**写出了"注释结尾符"那两个字符（就是在解释别这么写的那句话里），
+       注释当场**提前结束**，后面的话又成了垃圾文本，.figimg 又被吃一次。
+     两次的表现**一模一样**：文件里明明白白写着 max-height: 360px，
+     而页面上量到的是 `maxH:"none"`、图还是 996 全宽。
+     ★ 教训不是"小心点"，是**判据要选对**：改完 CSS 必须回到页面上量
+       (a) 渲染尺寸，和 (b) 那条规则到底进没进 document.styleSheets。
+       只看渲染尺寸，会把"规则被吃掉"和"规则被压回去"混成同一件事；
+       只看文件内容，两次都会判成"我改好了"。 */
+.figimg {
+  display: block; max-width: 100%; max-height: 360px; width: auto; height: auto;
+  background: #fff; border: 1px solid var(--line);
+}
+/* 还没画出来那一格。★ 它是**可点的**（点一下现画，见 fillFigure 里的 click），
+   所以样子得像块"能按的东西"，不能做得跟一句纯说明文字一样。 */
+.figph {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; min-height: 76px; cursor: pointer;
+  border: 1px dashed var(--line); background: var(--sunken);
+  color: var(--ink-3); font-family: var(--mono); font-size: 11.5px; letter-spacing: 1.4px;
+}
+.figph:hover { border-color: var(--brand); color: var(--brand); }
+.figagain {
+  border: 1px solid var(--line); background: var(--sunken); font: inherit;
+  font-size: 11.5px; padding: 3px 10px; cursor: pointer;
+  color: var(--ink-2); letter-spacing: .3px;
+}
+.figagain:hover { border-color: var(--brand); color: var(--brand); }
+
+/* ★★ 带产物的气泡**定宽**（2026-10-03，**上眼**看出来的，探针原先量不着）。
+   气泡默认是"缩到内容那么宽"（.msg 是 flex、.bubble 是 flex item，宽度按内容算）。
+   平时没问题，**有产物就出两种丑**：
+
+   (1) 刷新后那一格占位特别瘦。冻图是 <img>，它带着 996px 的**固有宽度**，
+       把气泡顶到 `max-width:88%`；刷新之后图还没画，那儿摆的是一个
+       `.figph{width:100%}` —— 百分比宽度对"内容算多宽"**贡献为零**，
+       于是气泡瘪回文字的宽度（**实测 177px**），占位跟着瘦成 146px 一条。
+   (2) 更要紧的是**它会跳**：老师点一下占位、图真出来了，气泡啪地弹到 880px —
+       一屏之内跳这么一次，看着像页面出了故障。
+
+   ★ 治法不是在占位上写死一个宽度（那只是把 146 换成另一个猜的数），
+     是**让"有产物"这件事本身决定宽度**：js/chat.js 在挂产物时给气泡加
+     `.hasprod`（attachFigure / attachMatCard 两处），这儿定成跟 `max-width`
+     同一个数。于是有图没图、画了没画，气泡都是同一个宽度，也**不会跳**。
+   ⚠ 用类名而不是 CSS 的 `:has()`：老浏览器不认 `:has()` 时会把整条规则丢掉，
+     而这条规则一旦丢了，上面那两种丑就回来了 —— 类名是 JS 加的，走到哪儿都认。
+   ⚠ 88% 是跟着 `.bubble{max-width:88%}` 来的，两处**必须同数**：
+     这儿要是填个更大的（比如 100%），max-width 会把它压回去，看着"没生效"。 */
+.msg .bubble.hasprod { width: 88%; }
+
+/* ★★ 卷子卡（2026-10-03，阶段 E）：**这份材料长在产出它的那句话底下**。
+   跟 `.figbox` 是同一条道理（产物跟它的出处在一起），宽度也用同一个做法——
+   向两边啃掉气泡的 14px 内边距，于是它顶到气泡外沿、比文字那一栏宽出 28px。
+   ⚠ 别改成 `100vw` 那类绝对值（会撑出整页横向滚动条），也别给 min-width（窄屏顶破气泡）。
+
+   ★ 它为什么必须有（不是"这样好看"）：右栏改成抽屉之后**默认是关着的**，
+     卷子原来只往 `#out`（抽屉里）摆 —— 出一份材料，老师眼前一个字的产物都没有，
+     得先知道"要去点「再摆弄」"才找得到自己那份卷子。那是阶段 B 撤右栏带出来的窟窿。
+
+   ★ 卡里那份预览**先收着**（`renderCard` 的 `opts.collapsed`）：两百行的周练卷摊在
+     对话里会把整场对话撑得没法看，老师要的是"哦，排好了"，不是当场通读。
+     ⚠ 所以必须用 `opts.collapsed` 去设 `display`，**不能**在这儿写 `.paperbox .pvwrap{display:none}`
+       —— 那条会把"点预览展开"也一起关掉（内联的 `display:''` 顶不过样式表里的 `none`，
+       老师点一下什么都不发生，而这看着跟按钮坏了长得一样）。 */
+.paperbox {
+  margin: 10px -14px 2px;
+  border: 1px solid var(--line); background: var(--panel);
+  padding: 9px 12px 11px;
+}
+/* 抬头和预览之间的那道间距改由 **预览自己** 扛（`margin-top`）：
+   预览收起来的时候，抬头底下就不该再空出 11px —— 收着的卡看着像个"上重下轻"的空盒子。
+   （`.outhead` 原本自带 `margin-bottom:11px`，那是给右栏那份一直摊开着的卡写的。） */
+.paperbox .outhead { margin-bottom: 0; }
+.paperbox .pvwrap { margin-top: 11px; }
 
 /* ★★ 「打包」为什么落在这儿（三个别的落点都去看过，都被否掉了）：见 js/pack.js 顶上那段。
    一句话版：画板工具条**量过**放不下（360px 时 5 个孩子要 311px、只剩 20px 余量，
@@ -1722,7 +1978,17 @@ footer .r {
   font: inherit; font-size: 13px; width: 100%; margin-top: 5px;
   padding: 7px 9px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
 }
-.tplhint { font-size: 12.5px; color: var(--ink-3); line-height: 1.7; margin: 10px 0 0; }
+/* 「我认出来的是」卡里最后那段说明。★ 这条原来写的是 `.tplhint`，可 js/material.js 的
+   card() 一直发的是 `class="hint"` —— **名字对不上，所以这段从我写它那天起就没穿上过样式**，
+   一直吃的是上面 `.overlay p` 那条（14px / ink-2，跟对话框正文一个样），
+   摆在一张"名词 + 值"的表底下，看着跟表格正文平起平坐。
+   ★ 2026-10-03 走真路量出来的（CDP 往 #tplfile 塞一份真 .docx）：
+     改前 14px / rgb(51,68,59) / 行高 24.5；改后 12.5px / rgb(90,110,100) / 行高 21.25。
+     下面那颗「就按这个来」跟它的间距两边都是 -16（.row 的 margin-top 撑着，不受这条影响）。
+   现在按 JS 真正用的类名写，尺寸取跟 `.tplcard dt`、`.tplrow .sm` 同一档。
+   ⚠ **故意带 `#tplcard` 前缀**：不带的话它会顺带管到 `#keyerr.hint`（main.js:145 那个
+     "提示走灰字"的口子），把那句提示的字号从 14px 缩到 12.5px —— 那是另一处的事。 */
+#tplcard .hint { font-size: 12.5px; color: var(--ink-3); line-height: 1.7; margin: 10px 0 0; }
 
 #tplmsg { min-height: 1.4em; margin: 9px 0 0; font-size: 13px; color: var(--ink-3); }
 #tplmsg.ok { color: var(--brand); }
@@ -1933,13 +2199,9 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
   .viewbtn { font-size: 12px; padding: 5px 5px; }
   .boardbar b, .boardbar em { display: none; }   /* 手机上标题只留那一串名字本身 */
 
-  /* ★ 手机上让状态条**空着的时候别占地方**（2026-10-02）。
-     桌面那条 `min-height: 30px` 是有道理的——它让"存好了：xxx"这类一闪而过的提示
-     不会把画板顶得一跳一跳。可手机上画板那一整块才 156px（360 实测），
-     这 30px 是它的**五分之一**，而且绝大多数时候它是空的。
-     代价是手机上出提示时画板会重排一次——比"永远少五分之一"划算。
-     ⚠ 只在这一档收：桌面（>900px）那块地方不值钱，不值得为它换来画板跳动。 */
-  #status:empty { min-height: 0; padding: 0; border-top: 0; }
+  /* ★ 状态条空着时收掉——**2026-10-03 起这是全站默认**（见上面 #status 那条），
+     不再只在这一档生效。原来这儿那条 `#status:empty{min-height:0;padding:0;border-top:0}`
+     删了：它已经从"手机特例"变成"默认行为"的第三份抄写，留着就是第二个真源。 */
 
   /* 多页标签条也收一档。★ 这一行只在**真有第二页**时才出现，
      那时候它的高度是从画板里抠的：桌面上 6+5+边框 ≈ 30px，手机上收到 26px。
