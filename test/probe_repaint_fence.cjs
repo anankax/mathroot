@@ -25,14 +25,25 @@ const WebSocket = require(path.join(process.env.USERPROFILE, '.claude', 'skills'
 const PAGE = process.env.SR_PAGE || 'http://localhost:8138/index.html';
 const RED = process.env.SR_RED === '1';
 const CHAT = path.join(__dirname, '..', 'js', 'chat.js');
-const FIXED = 'addAssistantText(restoreText(t.t, t.w))';
-const BROKEN = 'addAssistantText(t.t)';
+// ★ 2026-10-03：锚点换过一次。原来锚的是 `addAssistantText(restoreText(t.t, t.w))`，
+//   而阶段 A–H 把这条路改成 `restoreParts` 之后，那串字**在文件里已经不存在了**——
+//   红验于是一句"没找到…红验作废"就退了。绿验照旧绿（产品没坏），
+//   红验却**再也红不起来**，而它看上去一直好好的。这正是"尺子悄悄坏掉"的样子。
+//   换成现在这两行，并且**查一次唯一性**：锚不唯一时宁可不做红验，
+//   也不能改错地方——改错地方的红验，红了也说明不了事。
+const FIXED = 'var v = pr.visible;\n      var b = addAssistantText(v);';
+const BROKEN = 'var v = pr.visible;\n      var b = addAssistantText(t.t);';
 
 let DOCTORED = null;
 if (RED) {
-  const src = fs.readFileSync(CHAT, 'utf8');
+  // ⚠ 行尾：这个文件在工作树里是 **CRLF**（1744 个 \r），而锚点里写的是 \n。
+  //   不做这一步的话 indexOf **永远找不到**，红验就退回成"红验作废"——
+  //   而它看上去只是在报一句无关痛痒的话，绿验那边照样全绿。
+  //   换行只是运输格式，JS 不在乎，所以统一成 \n 再比对、再写回。
+  const src = fs.readFileSync(CHAT, 'utf8').replace(/\r\n/g, '\n');
   const a = src.indexOf(FIXED);
-  if (a < 0) { console.log('★ chat.js 里没找到"' + FIXED + '"——红验作废'); process.exit(2); }
+  if (a < 0) { console.log('★ chat.js 里没找到锚点——红验作废'); process.exit(2); }
+  if (src.indexOf(FIXED, a + 1) >= 0) { console.log('★ 锚点在 chat.js 里不止一处，改哪处说不准——红验作废'); process.exit(2); }
   const s = src.slice(0, a) + BROKEN + src.slice(a + FIXED.length);
   try { new Function(s); } catch (e) { console.log('★ 改坏的那份编译不过，红验作废：' + e.message); process.exit(2); }
   DOCTORED = s;

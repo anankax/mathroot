@@ -89,7 +89,78 @@ SR.board = (function () {
   function translate(line) {
     var parts = String(line).split(/("(?:[^"\\]|\\.)*")/);
     for (var i = 0; i < parts.length; i += 2) parts[i] = translateBare(parts[i]);
-    return parts.join('');
+    return fixTextPos(parts.join(''));
+  }
+
+  // ---- 兜底一：行首那个「点」字 ----
+  //
+  // ★★ 2026-10-03 实测。老师问「在数轴上表示-2和3」，模型回的是：
+  //     ```ggb
+  //     #清空
+  //     数轴
+  //     点 A = (-2, 0)
+  //     点 B = (3, 0)
+  //     文本 ("A", A, below)
+  //     文本 ("B", B, below)
+  //     ```
+  //   它**想做的事全对**——可四行里一条都没建出来，屏幕上只剩一条空数轴。
+  //   病根：GeoGebra 没有「点」这个前缀，`evalCommand('点 A = (-2, 0)')` 返回 **false**，
+  //   而错误弹窗是被我们关掉的（board.js 顶上那段注释：公开课上不能弹模态框）——
+  //   于是**一句提示都没有**。老师看见的是一张空白图，只会以为模型没干活。
+  //
+  //   这是 chips.js / giveBlank 同一类毛病：**凡是免费通道上守不住的，本地兜着。**
+  //   只削行首、且后面紧跟「变量名 =」的那种，`中点(A,B)`、`中点(…)` 一律不碰。
+  function stripPointPrefix(s) {
+    return s.replace(/^(\s*)点\s*(?=[A-Za-z]\w*\s*=)/, '$1');
+  }
+
+  // ---- 兜底二：`文本` 的位置词 ----
+  //
+  // ★ 同一个用例里的第二处。GeoGebra 的 Text 只吃「一个点」，
+  //   写成 `Text("A", A, below)` 返回 false、一个字都不出（实测）。
+  //   提示词里明明给了坐标的例子、还加粗写过「字符串后面必须跟上摆放的位置」，
+  //   可模型还是写了 below——这是很自然的英语习惯，改提示词治不了根。
+  //
+  //   换算成一个偏移点：`A + (0, -0.6)`。实测它**即时求值、不留下多余的点对象**，
+  //   所以图上是干净的（不然轴上会多出一个没名字的小圆点）。
+  var TEXT_DIR = {
+    below: [0, -0.6], '下': [0, -0.6], '下面': [0, -0.6], '下方': [0, -0.6],
+    above: [0, 0.6], '上': [0, 0.6], '上面': [0, 0.6], '上方': [0, 0.6],
+    left: [-0.9, 0], '左': [-0.9, 0], '左边': [-0.9, 0], '左方': [-0.9, 0],
+    right: [0.9, 0], '右': [0.9, 0], '右边': [0.9, 0], '右方': [0.9, 0]
+  };
+  function fixTextPos(s) {
+    var m = /^(\s*Text\s*\()([\s\S]*)(\)\s*)$/.exec(s);
+    if (!m) return s;
+    // ⚠ 命令名和左括号之间**不能留空格**：实测 `Text ("A", A)` 返回 false、什么都不建。
+    //   模型爱写 `文本 ("A", A, below)` 这种，中文名那条路 translateBare 会把空格吃掉；
+    //   这里再收一道，专治它直接写英文 `Text (` 的情况。
+    var head = m[1].replace(/\s+/g, '');
+    // 引号里的内容先抠出来——文本内容里很可能就有逗号
+    var hold = [];
+    var bare = m[2].replace(/"(?:[^"\\]|\\.)*"/g, function (q) {
+      hold.push(q);
+      return '\u0001' + (hold.length - 1) + '\u0001';
+    });
+    var unhold = function (t) {
+      return t.replace(/\u0001(\d+)\u0001/g, function (_, i) { return hold[+i]; });
+    };
+    // 按**括号外的**逗号切参数
+    var args = [], cur = '', depth = 0;
+    for (var i = 0; i < bare.length; i++) {
+      var ch = bare.charAt(i);
+      if (ch === '(' || ch === '[') depth++;
+      else if (ch === ')' || ch === ']') depth--;
+      if (ch === ',' && depth === 0) { args.push(cur); cur = ''; continue; }
+      cur += ch;
+    }
+    args.push(cur);
+    if (args.length !== 3) return s;                 // 只认「内容, 点, 方向」这一种
+    var kw = unhold(args[2]).trim();
+    var d = TEXT_DIR[kw] || TEXT_DIR[kw.toLowerCase()];
+    if (!d) return s;                                 // 不是方向词就原样放行
+    return head + unhold(args[0]) + ', ' + unhold(args[1]).trim() +
+           ' + (' + d[0] + ',' + d[1] + ')' + m[3];
   }
 
   function translateBare(s) {
@@ -110,7 +181,7 @@ SR.board = (function () {
   // ---- 关键字 → 真实命令 ----
   // 提示词里教模型用的就是这几个词，别改词面，改了模型就不认了。
   function expand(cmd) {
-    var c = cmd.trim();
+    var c = stripPointPrefix(cmd.trim());
     if (!c || c.charAt(0) === '/' ) return [];
     if (c === '#清空') return ['__NEW__'];
     // 数轴／坐标系走真 API，不走 evalCommand。
@@ -143,9 +214,14 @@ SR.board = (function () {
       if (one.indexOf('__SHOW__') === 0) { api.setVisible(one.slice(8), true); return; }
       if (one.indexOf('__PLAY__') === 0) { markPlayable(one.slice(8)); return; }
       if (one === '__STOP__') { stopPlay(); return; }
-      api.evalCommand(one);
+      // ★★ 2026-10-03：`evalCommand` 是会**返回 false** 的（命令它不认识），
+      //   而错误弹窗又是关着的——所以「模型写了四条命令、四条全没画出来」
+      //   这件事，老师和我们都看不见。老师看见的只是一张空白图，
+      //   会以为模型没干活（他 2026-10-03 就是这么来问的："这也没成功啊"）。
+      //   单条不吭声（免得刷屏），攒着，等这一批跑完在状态条上一次性说清楚。
+      if (api.evalCommand(one) === false) failedNow.push(one);
     } catch (e) {
-      log('这条画不出来：' + one + ' —— ' + (e.message || e));
+      failedNow.push(one);
     }
   }
 
@@ -186,6 +262,7 @@ SR.board = (function () {
     gen++;
     var myGen = gen;
     clearTimers();
+    failedNow = [];                        // 这一批里画板没认的命令，见 exec
     var lines = [];
     for (var i = 0; i < rawLines.length; i++) {
       var exp = expand(rawLines[i]);
@@ -203,6 +280,11 @@ SR.board = (function () {
           exec(one);
           slimPoints();                // 新点子生出来就是小的，别等画完再集体缩一圈
           queueLeft--;                 // ★ 跑一条减一条，"在画"才收得住
+          // 这一批跑完了、又有没认的 → 在状态条上说一句。
+          // 说这句话是**为了老师**：空白的画板和不吭声的画板，是两回事。
+          if (queueLeft === 0 && failedNow.length) {
+            log('这一段里有 ' + failedNow.length + ' 条画板没认：' + failedNow.join(' ／ '));
+          }
         }, idx * SR.GGB_CMD_DELAY));
       })(lines[k], k);
     }
@@ -210,6 +292,7 @@ SR.board = (function () {
   }
 
   var pendingLines = null;
+  var failedNow = [];
 
   // 画板上还有没有活。★ 只留**这一处**定义，导出给外面的 `isBusy` 和 draw() 内部
   //   判"画完了没有"用的是同一个函数。
@@ -633,7 +716,14 @@ SR.board = (function () {
     var xMin = v.xMin, yMax = v.yMin + v.height * v.invYscale;
     return {
       k: k, xMin: xMin, xMax: xMin + v.width * v.invXscale, yMax: yMax,
-      cssPerUnitX: v.invXscale, cssPerUnitY: v.invYscale,
+      // ★★ 2026-10-03 修正：`v.invXscale` 是**每像素多少单位**（≈0.028），
+      //   不是"每单位多少像素"——这个字段一直叫 cssPerUnitX，值却正好是它的倒数。
+      //   于是 `niceStep(0.028)` 一路挑到 2000（0.028×2000=56≥50），把刻度间隔钉成 2000，
+      //   而视野一共才 14 个单位宽 → 那个画数字的循环只走得出一个 "0"。
+      //   症状：**每一张冻图上的坐标轴都只有一个孤零零的 0**。
+      //   他问"在数轴上表示-2和3"，屏幕上就是一条线加一个看不懂的 0（2026-10-03 截图来问）。
+      //   取倒数之后 = 每单位约 35.6 像素 → niceStep 给 2 → 数字 −6…6 每两格一个，正是卷子上的样子。
+      cssPerUnitX: 1 / v.invXscale, cssPerUnitY: 1 / v.invYscale,
       sx: function (x) { return (x - xMin) / v.invXscale * k; },
       sy: function (y) { return (yMax - y) / v.invYscale * k; }
     };
@@ -811,17 +901,94 @@ SR.board = (function () {
         var g = c.getContext('2d');
         g.drawImage(im, 0, 0);
         var d = g.getImageData(0, 0, im.width, im.height).data;
-        var x0 = im.width, y0 = im.height, x1 = -1, y1 = -1;
-        for (var y = 0; y < im.height; y++) {
-          for (var x = 0; x < im.width; x++) {
-            var i = (y * im.width + x) * 4;
-            // 阈值别抠太紧：抗锯齿的浅灰也要算成内容，
-            // 不然数轴那根细线的两端会被裁掉一小截。
-            if (d[i] < 245 || d[i + 1] < 245 || d[i + 2] < 245) {
+        var W = im.width, H = im.height;
+        // 阈值别抠太紧：抗锯齿的浅灰也要算成内容，
+        // 不然数轴那根细线的两端会被裁掉一小截。
+        var isInk = function (i) { return d[i] < 245 || d[i + 1] < 245 || d[i + 2] < 245; };
+        var x, y, i;
+        // ★ 第一遍：数每一行／每一列有多少墨。
+        //
+        //   为什么非要多这一遍：**坐标轴和网格是画板自己画的参考线**，
+        //   横轴贯穿全宽、纵轴贯穿全高、网格线条条如此。只要它们在场，
+        //   "墨迹包围盒"就**恒等于整块画板**，裁边一寸也裁不掉。
+        //   实测：「坐标系 + 三角形 + 外接圆」裁出来是 996×1646（= 整块板的 2 倍），
+        //   封进 360px 上限渲染成 218 宽 —— 图上真正的内容只占成品高度的三成，
+        //   老师看见的就是"画了个鸡毛"。
+        //   （反证：数轴只有一条横线，竖着能裁，所以那张是 996×70。）
+        var rowInk = new Uint32Array(H), colInk = new Uint32Array(W);
+        for (y = 0; y < H; y++) {
+          var rb = y * W * 4;
+          for (x = 0; x < W; x++) if (isInk(rb + x * 4)) { rowInk[y]++; colInk[x]++; }
+        }
+        //   贯穿整幅的（≥85%）才算参考线——图自己的笔画是**有限长**的，再长也到不了 85%。
+        //
+        // ★ 但 85% 这一条**抓不住所有的轴**：实测纵轴只占画布高的 **58%**
+        //   （画布比 GeoGebra 真正画图的那块面板高：1640 里只有约 950 有轴），
+        //   于是它一路逃过 85%，而它偏偏是全图最高的一条墨——包围盒被它撑到顶，
+        //   「坐标系 + 三角形 + 外接圆」裁成 566×981，圆只占中间 540，上下各空一大条。
+        //
+        //   轴在哪一列／哪一行**不用猜**：`viewMap` 就是"世界坐标→像素"的映射，
+        //   `sx(0)`／`sy(0)` 正是两根轴落的位置。
+        //
+        // ★★ 但**光排轴那一条线远远不够：轴上还有个箭头，它比线宽四五倍**。
+        //   实测（2026-10-03，scale=2 的位图：画布 996×1712、轴在列 498／行 856）：
+        //     · 轴的**线**只有 2 px —— 纵轴列 498、499；横轴行 856、857；
+        //     · 轴的**箭头**张开到 ±9 px —— 纵轴箭头在行 2‥11 上铺满列 490..507，
+        //       横轴箭头在列 986..995 上铺满行 848..865；
+        //     · 而且**只有正端有箭头**：底部（行 1652..1711）和最左（列 1..7）
+        //       都只有那 2 px 的线。
+        //   前两版带子开到 `xA±2` 且要求"该列墨量过半"，两条都拦不住箭头：
+        //   窗口够不着箭头两翼（差 7 px），箭头又只有十来像素高、占比 0.009。
+        //   于是箭头原封不动留在画布**最顶**和**最右**，包围盒被顶成 [464,2,995,979]
+        //   ＝532×978，而圆的真实范围是 [464,486]–[955,979]＝493×494 ——
+        //   上下各空掉小半个画布，老师看见的就是"画了个鸡毛"。
+        //   所以带子要按**箭头**的宽度开：±(4.5 CSS px × scale)。
+        var xA = -1, yA = -1, bandPx = 12;
+        try {
+          var mv = viewMap(W);
+          xA = Math.round(mv.sx(0));
+          yA = Math.round(mv.sy(0));
+          bandPx = Math.max(6, Math.round(4.5 * mv.k));
+        } catch (e) { xA = -1; yA = -1; }
+        // 轴**真的在场**才排（那一列／行上墨量过半）：轴不显示时带子一寸都不动，
+        // 免得把一条贴着轴画的竖线整根剃掉。轴落在画布外（视野里没有 x=0）时
+        // xA 会是负数或超出，下面两条判据天然不成立，不用额外判。
+        var axOnX = xA >= 0 && xA < W && colInk[xA] / H >= 0.5;
+        var axOnY = yA >= 0 && yA < H && rowInk[yA] / W >= 0.5;
+        var spanR = new Uint8Array(H), spanC = new Uint8Array(W);
+        for (y = 0; y < H; y++) if (rowInk[y] >= W * 0.85 || (axOnY && Math.abs(y - yA) <= bandPx)) spanR[y] = 1;
+        for (x = 0; x < W; x++) if (colInk[x] >= H * 0.85 || (axOnX && Math.abs(x - xA) <= bandPx)) spanC[x] = 1;
+        // ★ 第二遍：只认"不在贯穿行／列上"的墨 —— 那才是这张图自己的范围。
+        //   注意这里**必须整行整列地排除**：一个点若正好落在轴上，
+        //   它在该轴那一行上的墨会被一起排掉，但它的上下几行还在，
+        //   所以点本身不会丢（A=(0,0) 这种照样框得住）。
+        var x0 = W, y0 = H, x1 = -1, y1 = -1;
+        for (y = 0; y < H; y++) {
+          if (spanR[y]) continue;
+          var rb2 = y * W * 4;
+          for (x = 0; x < W; x++) {
+            if (spanC[x]) continue;
+            if (isInk(rb2 + x * 4)) {
               if (x < x0) x0 = x;
               if (x > x1) x1 = x;
               if (y < y0) y0 = y;
               if (y > y1) y1 = y;
+            }
+          }
+        }
+        // 排完什么都不剩（模型只写了「坐标系」这种，满屏都是参考线）→
+        // 退回"整幅墨迹"的旧口径，别给一张空白。
+        if (x1 < 0) {
+          x0 = W; y0 = H;
+          for (y = 0; y < H; y++) {
+            var rb3 = y * W * 4;
+            for (x = 0; x < W; x++) {
+              if (isInk(rb3 + x * 4)) {
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+                if (y < y0) y0 = y;
+                if (y > y1) y1 = y;
+              }
             }
           }
         }
@@ -832,7 +999,16 @@ SR.board = (function () {
         //   照画板算出来的字会小一半）；留白按字号给，字才有地方站；
         //   顺序反了的话，写出去的字会顶到画布边上被切掉半个。
         var fontPx = snap ? paperFontPx(x1 - x0 + 1, y1 - y0 + 1) : 0;
-        var pad = snap ? Math.max(10, Math.round(fontPx * 0.8)) : 10;
+        // ★★ 2026-10-03：留白从 0.8 倍字号提到 2.0 倍。
+        //   旧值只够"别让图本身贴着边"，**装不下我自己要写上去的那些字**：
+        //   刻度数字写在横轴下方 1.15 倍字号处（`paperDrawText` 里那一行），
+        //   点的名字写在点右上方，0.8 倍连一个数字的高度都不够。
+        //   而字是**裁完之后**才写到这张小画布上的（见下面 paperDrawText 那一步），
+        //   所以留白必须事先预留出来，否则就是"数字被齐齐切掉下半截"——
+        //   数轴那张底下一排看不懂的小圆弧，就是这么来的
+        //   （孔老师 2026-10-03 拿着截图来问："这也没成功啊"）。
+        //   2.0 倍是按最费地方的那一处算的：轴下方 1.15 + 半个字高 0.62 ≈ 1.8，再留一点余量。
+        var pad = snap ? Math.max(10, Math.round(fontPx * 2.0)) : 10;
         x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad);
         x1 = Math.min(im.width - 1, x1 + pad); y1 = Math.min(im.height - 1, y1 + pad);
         var w = x1 - x0 + 1, h = y1 - y0 + 1;
