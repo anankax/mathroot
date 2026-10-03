@@ -431,10 +431,25 @@ main {
   min-height: 0;
 }
 
-/* 对话栏居中封顶 900px。★ 这条原来只写在 `body[data-landing="1"]` 底下
+/* 对话栏居中封顶。★ 这条原来只写在 `body[data-landing="1"]` 底下
    （只是首屏那一屏），现在**升格成默认**——单列之后每一屏都该这样，
-   否则 1440 的屏上对话栏横着一整条，一行字长到读不下去。 */
+   否则 1440 的屏上对话栏横着一整条，一行字长到读不下去。
+   ★★ 2026-10-03：从"一刀切 900"改成**按工位分三档**。理由不是审美，是量出来的：
+     1920 的屏上 `min()` 也好布局也好都没问题，可对话栏只占 900，左右各空 510 ——
+     一整页 27% 的横向空间是纯背景。而"该多宽"这件事，六个工位**不是一个答案**：
+       · 组卷／学情 —— 拿走的产物是**表格和卷面**（题目一行一条、成绩表的列多），
+         行短、列多，宽一点不用折行就能一屏看全，1120。
+       · 讲评 —— 它第一步先把**整份卷子的题目**列一遍（比备课的链子行更长），
+         可挑定一道之后就退化成纯链子（跟备课同形），所以只到 1000，不跟组卷同档。
+       · 备课／作图／命题 —— 读的是**短句和图**。900 是"一行字读得下去"的上限，
+         再宽眼睛要来回扫，反而更慢。
+   ⚠ 别拿 `.works` 那六格当参照——那六格是 `flex:1 1 0` 平分整行，跟这里无关。
+   ⚠ 首屏那一屏仍由 `body[data-landing="1"]` 那条单独管到 900（六张卡就那么大），
+     它的选择器权重比这里高，是有意的，别去动。 */
 main > .col { max-width: 900px; margin: 0 auto; width: 100%; }
+body[data-work="material"] main > .col,
+body[data-work="grade"]    main > .col { max-width: 1120px; }
+body[data-work="review"]   main > .col { max-width: 1000px; }
 
 .col {
   background: var(--panel); border: 1px solid var(--line);
@@ -542,6 +557,23 @@ main > .col { max-width: 900px; margin: 0 auto; width: 100%; }
   transition: transform .22s ease, visibility .22s;
 }
 .drawer[data-drawer="open"] { transform: none; visibility: visible; pointer-events: auto; }
+/* ★★ 2026-10-03：抽屉从**覆盖式**改成**挤压式**。
+   改的原因是量出来的：1440 的屏上抽屉占 920~1440，而对话列是 270~1170 ——
+   **249px 的对话内容被压在画板底下**（讲评那种一行长句子，正好压在折行处）。
+   覆盖式还有一层更隐蔽的坏处：抽屉一开，老师想回头看一眼刚才那条回复，
+   得先把它关掉。挤压式下两栏各占各的，边看边摆。
+   做法：打开时给 `main` 一个等于抽屉宽的右内边距，对话栏在**剩下的空间里重新居中**。
+   ⚠ 值必须跟 `.drawer` 的 `width` 用同一个 `min()` —— 两处写岔了就会
+     要么留一条缝、要么把对话栏塞到抽屉底下（比原来的覆盖式还糟）。
+     多出来的 14px 是 `main` 本来就有的 `padding:14px`，留着当两栏之间的呼吸缝。
+   ⚠ 过渡曲线跟抽屉那条对齐（`.22s ease`），否则一边先到、另一边后到，会看见对话栏"弹"一下。
+   ⚠ 用 `padding-right` 而不是 `margin-right`：`main` 是 grid，内边距直接缩 content box，
+     外边距会把它自己推出视口、横着长出滚动条。
+   ⚠ 窄屏（≤620）抽屉改成从底下升起，不吃横向空间，所以那一档不设这个内边距。 */
+@media (min-width: 621px) {
+  main { transition: padding-right .22s ease; }
+  body[data-drawer="open"] main { padding-right: calc(min(520px, 42vw) + 14px); }
+}
 /* 遮罩：点一下关抽屉。★ 只在开着的时候在，关着时 `hidden` 直接摘掉，
    不留一层透明的可点区域盖在页面上（那会让整页点不动）。 */
 .drawer-scrim {
@@ -920,6 +952,28 @@ body[data-landing="1"] .ghost { display: none; }
 @media (max-width: 620px) {
   /* ⚠ 同上：必须带 `.msg.landing`，否则被上面那条 900px 的 22px 压住。 */
   .msg.landing .lq { font-size: 20px; }
+
+  /* ★★ 2026-10-03：手机上抽屉改成**从底下升起的一整块**（原来是右边一条竖抽屉）。
+     不改的话是这样：`.drawer` 的宽是 `min(520px, 42vw)`，390px 的手机上
+     42vw 只有 **164px** —— 一块一巴掌宽的画板条；推到画布外之后它的左沿在 415，
+     也就是**整个画板都在屏幕外**（实测截图那一幕）。宽度那档公式是给桌面算的
+     （"最多占屏幕三成"），可手机上根本没有横向空间可"占"。
+     改法：底边升起、占满整宽、给到 86vh——上面留一条缝，
+     一来看得见后面还有对话（点一下就关掉），二来这一条缝正好是 `.drawer-scrim`
+     露出来的地方，遮罩不至于白做。
+     ⚠ `transform` 的方向必须跟着从 X 换成 Y，不然它还是会往右边滑出去。
+     ⚠ 那个 `24px` 的习惯值留着：只推 100% 的话阴影会在底边露一条，比抽屉本身还显眼。
+     ⚠ 这一档**不给 `main` 加内边距**（桌面那条挤压式写在 `@media (min-width:621px)` 里）：
+       底部升起的面板不吃横向空间，给 `main` 加右边距只会把对话栏无谓地压窄。 */
+  .drawer {
+    inset: auto 0 0 0; width: 100%; height: 86vh;
+    border-left: 0; border-top: 1px solid var(--line);
+    box-shadow: 0 -18px 44px rgba(0, 0, 0, .16);
+    transform: translateY(calc(100% + 24px));
+  }
+  /* 关闭态的 `transform:none` 不用在这儿重写一遍：本文件 :571 那条
+     `.drawer[data-drawer="open"]`（0,2,0）比这儿的 `.drawer`（0,1,0）权重高，
+     它照样赢——这里只改"往哪个方向滑"。 */
 }
 
 /* ---------- 栏头 ---------- */
@@ -1533,8 +1587,193 @@ footer .r {
      画得一样实，老师就分不清哪几节是真摆过的了。 */
 #steps .stepbtn.todo { color: var(--ink-3); opacity: .58; }
 #steps .stepbtn.todo:hover { opacity: 1; }
+/* 「⛶ 投影」——台阶条末尾那一格（2026-10-03，见 js/project.js）。
+   ★ 它跟旁边所有格子**不是一类**：别的格子点下去都是"给模型发一句话"，
+     这一格是纯前端换一种放映方式，一个字都不发出去。
+     所以给它一道**主色的左边条**，让它在条子上认得出是"另一件事"——
+     不是"又一个环节"。同理它也不该穿 .todo 那身灰（它不是预排的格子）。
+   ⚠ 那一道用 inset box-shadow 而不是 border-left：`.stepbtn` 本来就有一条
+     `border-left: 1px solid var(--line)`，再叠一层 border 会变成两条细线，
+     而 `.now` 那颗已经占用了 `inset 0 -3px`，两者不在同一边，不打架。 */
+#steps .stepbtn.proj {
+  color: var(--brand); font-weight: 700;
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+#steps .stepbtn.proj:hover { background: var(--brand-soft); }
 #steps .stepbtn:hover { background: var(--brand-soft); }
 #steps .stepbtn.now:hover { background: var(--brand-soft); }
+
+/* ---------- 投影：上课现用的大字视图（2026-10-03，见 js/project.js） ----------
+   治的是孔老师那句话：「投到教室字太小、步骤全露」。备课／讲评的链子一屏摆全，
+   在电脑上当草稿看正合适，投到教室就同时坏了两次——字小到后排看不清，
+   而且「学生大概会说」那行提前把答案亮在黑板上，这一节课的讲法就白设计了。
+
+   ★ 所以它不是"同一个页面把字放大"，是**换一种放映方式**：一屏只放一节，
+     一节点一下。整层铺满、盖住底下那页。
+
+   ★★ 字号一律走 clamp(最小, vw/vh, 最大)，**不写死 px**。
+     理由是硬的：投影仪的分辨率什么都有——本子上是 1366×768，教室那台可能是
+     1920×1080、也可能被系统缩放到 1280×720。写死 px 的话，同一份讲义在两种机器上
+     差出一倍去，而后排看不看得清**只有一次机会**（课已经开始了）。
+     下界保"小屏也读得清"，上界保"巨大屏上不被撑成一屏两个字"。
+
+   ⚠ 这一层是靠 `display:none` 开合的，**别往里面放画板 `#ggb`**：
+     `display:none` 会让 board.js 的 `fit()` 量到 0、图静默缩成 240×60
+     （同下面抽屉那一段的教训）。要在投影里看图得另开一块板。
+
+   ★★ 选择器一律用 `#proj` 这个 **id**，**不写 `.proj`**——2026-10-03 探针当场
+     抓到的一次类名撞车：台阶条末尾那格按钮也穿着 `proj` 这身衣服
+     （`#steps .stepbtn.proj`，见上面），而那条规则**没写 `display`**，
+     于是按钮的 display 就落到这条 `.proj{display:none}` 头上——
+     **按钮长出来了、事件也挂着、点了就开，可它就是看不见**。
+     这种坏法在屏幕上什么都不报（`click()` 不管可见性，`getComputedStyle().color`
+     照样读得到主色），只有量 `getClientRects().length` 才现形。
+     这一层全页只有一份、本来就有 id，用 id 是它**该有的**写法；
+     换成 id 之后还顺手把"以后再有人叫 proj"这条路堵死了。
+     （`.projhead` / `.projbody` 那些复名不撞，保持原样。） */
+#proj {
+  position: fixed; inset: 0; z-index: 120;
+  display: none; flex-direction: column;
+  background: var(--paper);
+  padding: clamp(18px, 3.2vh, 44px) clamp(20px, 3.4vw, 72px) clamp(16px, 2.6vh, 34px);
+  font-family: var(--sans);
+}
+#proj[data-proj="1"] { display: flex; }
+#proj:focus { outline: 0; }     /* 焦点是收进来给键盘用的，不给它画一圈框 */
+
+/* 头：节号 + 节名。★ 节名走衬线（--song）——它在这块屏上的地位就是"标题"，
+   跟顶栏、弹层标题是同一档；正文才走无衬线。 */
+.projhead {
+  flex: 0 0 auto; display: flex; align-items: flex-start; gap: clamp(12px, 1.6vw, 26px);
+  padding-bottom: clamp(10px, 1.6vh, 20px);
+  border-bottom: 2px solid var(--rule);
+}
+.projmk { flex: 1 1 auto; min-width: 0; }
+.projnum {
+  display: block; font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: clamp(12px, 1.25vw, 17px); letter-spacing: .22em;
+  color: var(--brand); font-weight: 700;
+}
+.projname {
+  display: block; margin-top: clamp(4px, .8vh, 9px);
+  font-family: var(--song); font-weight: 700; color: var(--ink);
+  font-size: clamp(26px, 4vw, 58px); line-height: 1.16;
+  overflow-wrap: break-word;
+}
+.projhint {
+  flex: 0 0 auto; align-self: center; white-space: nowrap;
+  font-family: var(--mono); font-size: clamp(11px, 1vw, 13px);
+  letter-spacing: .1em; color: var(--ink-3);
+}
+.projx {
+  flex: 0 0 auto; cursor: pointer; font: inherit;
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: clamp(12px, 1.15vw, 15px); letter-spacing: .1em;
+  padding: clamp(7px, .9vh, 11px) clamp(12px, 1.2vw, 18px);
+  border: 1px solid var(--rule); background: var(--panel); color: var(--ink-2);
+}
+.projx em { font-style: normal; font-family: var(--mono); color: var(--ink-3); }
+.projx:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
+
+/* 正文：一屏就是这三块。
+   ★ 内容少（常见的是一节两三行）时**竖直居中**，让它落在视线高度上，
+     而不是缩在屏幕顶上、底下空掉一大片——投到教室，"内容都在上半屏、
+     下半屏是空的"会显得整块屏没准备好。
+   ★ 居中用两头 `margin:auto` 而不是 `justify-content:center`：
+     flex 容器配 `justify-content:center` + `overflow:auto` 时，
+     内容一旦比容器高，**顶部会被裁掉且滚不上去**（这是 flex 的经典坑）。
+     两头 auto 的写法在内容超出时自然退回从头顶开始，滚得到。 */
+.projbody {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column;
+  gap: clamp(12px, 2vh, 26px);
+  padding: clamp(14px, 2.4vh, 30px) 0;
+}
+.projbody > :first-child { margin-top: auto; }
+.projbody > :last-child { margin-bottom: auto; }
+
+/* 一块 = 一个标签 + 一段话。左边那道竖条是这三块的"档位"标识：
+   越粗越深 = 越该照着念。 */
+.pblk {
+  padding: clamp(8px, 1.2vh, 16px) clamp(10px, 1.2vw, 20px) clamp(8px, 1.2vh, 16px) clamp(12px, 1.5vw, 26px);
+  border-left: clamp(4px, .45vw, 8px) solid var(--line);
+}
+.plabel {
+  display: block; font-size: clamp(12px, 1.3vw, 19px);
+  letter-spacing: .16em; font-weight: 700; color: var(--ink-3);
+  margin-bottom: clamp(4px, .8vh, 10px);
+}
+.ptext {
+  color: var(--ink); line-height: 1.55;
+  font-size: clamp(19px, 2.3vw, 34px);
+  overflow-wrap: break-word;
+}
+/* 公式：KaTeX 的 display 模式默认上下留一大截空，在投影上会把三块挤散。
+   收窄成 .72em，读起来还分得开，又不会把"学生大概会说"顶出屏幕。 */
+.ptext .katex-display { margin: .72em 0; }
+
+/* ① 学生大概会说 —— 老师照着这句问出去（或者就是预判的那个答案）。
+      次一等，但它得读得清：读不清老师就得凑到屏幕前，那还不如投影关了。 */
+.p_said { border-left-color: var(--brand-line); }
+.p_said .ptext { font-size: clamp(18px, 2.1vw, 31px); color: var(--ink-2); }
+
+/* ② 你接这句 —— **整屏的主角**。老师要照着念的就是它，所以最大最重、还带底色。 */
+.p_you { border-left-color: var(--brand); background: var(--brand-soft); }
+.p_you .plabel { color: var(--brand); }
+.p_you .ptext { font-size: clamp(23px, 3vw, 46px); font-weight: 700; line-height: 1.42; }
+
+/* ③ 这么接的道理 —— 老师自己的备课笔记。最小最淡：
+      它是"为什么这么讲"，不是要念出来的话，抢了②的戏就本末倒置了。 */
+.p_why { border-left-color: var(--line); }
+.p_why .ptext { font-size: clamp(15px, 1.7vw, 25px); color: var(--ink-2); }
+
+/* 模型没把三行写全时那句实话（js/project.js 写的）。★ 故意做得不像内容：
+   它是**关于这一屏的说明**，不是链子里的话，混进正文里就会被当成模型说的。 */
+.pnote {
+  margin: 0; font-size: clamp(12px, 1.2vw, 16px);
+  color: var(--ink-3); font-family: var(--mono); letter-spacing: .04em;
+}
+
+/* 脚：前后翻 + 进度点。
+   ★ 进度点**可点**：课上最常发生的一件事是"刚才那节再讲一遍"，
+     只能一下一下往回按的话，讲到第五节就得按四下。 */
+.projfoot {
+  flex: 0 0 auto; display: flex; align-items: center;
+  gap: clamp(10px, 1.4vw, 22px);
+  padding-top: clamp(10px, 1.6vh, 20px);
+  border-top: 2px solid var(--rule);
+}
+.projnav {
+  flex: 0 0 auto; cursor: pointer; font: inherit; font-weight: 700;
+  font-size: clamp(14px, 1.45vw, 21px);
+  padding: clamp(9px, 1.3vh, 15px) clamp(14px, 1.7vw, 26px);
+  border: 1px solid var(--rule); background: var(--panel); color: var(--ink);
+  white-space: nowrap;
+}
+.projnav:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
+/* 停在头／尾时那一颗按不动。★ 变淡**但不隐藏**——它会消失的话，
+   条子上的东西就跟着位置挪，老师按第二下的时候手指落在别处了。 */
+.projnav:disabled { opacity: .34; cursor: default; }
+.projdots {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+  gap: clamp(6px, .7vw, 11px);
+}
+.pdot {
+  width: clamp(9px, .85vw, 13px); height: clamp(9px, .85vw, 13px);
+  padding: 0; cursor: pointer; border-radius: 50%;
+  border: 1px solid var(--rule); background: var(--panel);
+}
+.pdot:hover { border-color: var(--brand); background: var(--brand-soft); }
+.pdot.now { background: var(--brand); border-color: var(--brand); transform: scale(1.35); }
+
+/* 手机上投影本来就没什么用（那是投到教室才需要的），
+   但真在手机上打开了也别散架：藏掉键位提示，把翻页那两颗摊平分掉整行。 */
+@media (max-width: 620px) {
+  .projhint { display: none; }
+  .projnav { flex: 1 1 0; }
+  .projdots { flex: 1 1 100%; order: 3; padding: 6px 0 0; }
+}
 
 /* ---------- 弹层（Key 设置 / 关于 / 本地素材，共用一套） ---------- */
 /* 遮罩用毛玻璃。那篇第六节讲"降低玩家对忽然跳出的新页面的抗拒感"：
@@ -2052,21 +2291,19 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
   .brand .sub { display: none; }
 }
 @media (max-width: 900px) {
-  /* ★ 两栏在手机上变**两行**：对话一行、右栏（画板）一行。
-     ★ 2026-10-02：左栏撤掉之后，原来那三行（左栏横过来占一整行 + 对话 + 右栏）
-       只剩两行。⚠ `grid-template-rows` 的条数必须跟着改——
-       多留一条会在底下挂出一行**空的轨道**，把两栏一起往上挤，
-       而"下面白了一块"看着像页面没排满，不像网格多写了一行。 */
-  /* ★ 下面那行（右栏＝画板）比上面（对话）多分一点：1.25 : 1。
-     为什么不是平分（2026-10-02 实测）：手机上一行高度很贵，而画板那一栏里
-     boardbar 自己要占掉 80px（标题+三个工具+平面/三维，手机上还会折成两行）。
-     平分 758px 的可分配高度时，画板盒子只剩 170px，去掉 boardbar 就只有 90px 给画布——
-     画布 160px 塞进 90px，底下切掉大半块（这就是"手机上画板被切"那一处）。
-     倾斜到 1.25 之后画板那一行从 293 涨到约 330，画布能拿到 160px 出头。
-     ⚠ 两边都保 minmax(0, …)：**下限写 0，任何一栏都能被压小**。
-       要是给这一行写死下限（minmax(260px,1fr)），短横屏的手机上总高不够，
-       行会被顶出去，而 body 是 overflow:hidden——顶出去的东西直接没了，比切一半更糟。 */
-  main { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1.25fr); }
+  /* ★★ 2026-10-03：这里原有一条
+       `main { grid-template-columns: 1fr; grid-template-rows: minmax(0,1fr) minmax(0,1.25fr); }`
+     ——「手机上一行对话、一行画板，画板那行多分 1.25 倍」。**它现在是残骸，删了。**
+     右边那一栏（`.side`）已经搬进抽屉，`main` 现在**只有一个孩子**（那个 `.col`）。
+     显式写两条轨道而只有一个网格项时，第二条是**空轨道**：按 fr 照样分走
+     1.25/2.25 ≈ 56% 的高度，对话栏只剩 44%，底下白掉大半屏——
+     正是上面那段注释自己警告过的「多留一条会在底下挂出一行空的轨道」，
+     只不过那次改的是条数（三→二），没跟着右栏搬走再改一次。
+     ⚠ 那条 1.25 的倾斜理由（"画板那行 boardbar 要占 80px，平分只剩 90px 给画布"）
+       现在归**抽屉**管：抽屉不再跟对话栏抢同一列高度，它在 ≤620px 是
+       86vh 的整块（见本档末尾那条）。所以那两个数都不用留。
+     ⚠ 别再往这儿加轨道。`main` 的基线（本文件 :428）本来就是单列、隐式单行，
+       这里一个字都不用写；留一条跟默认值相同的规则只会是下一次被改错的地方。 */
   /* ★ 工位那一行手机上更要紧（桌面上它还有「关于」里那句说明，手机上没有别的入口）。
      六格一行、每格更窄一点，但**不换行**：换行会把这行顶成两行，
      而它正贴着输入框，多一行就是多占一块打字的地方。

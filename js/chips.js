@@ -173,6 +173,28 @@ SR.EXAMPLE_CHIPS = [
   '要多鼓励学生',
   '我不会'
 ];
+// 作图工位那三句的示范，来自 js/prompt-say.js 的收尾块（（好）（差）两组都在里面）。
+//
+// ★★ 为什么**另起一份**、不并进上面那张表：`test/check_prep_prompts.cjs` 的正向断言是
+//   「EXAMPLE_CHIPS 里每一条都得在**那四份备课提示词**里逐字找到」。
+//   作图这几句在备课那四份里当然找不到——并进去就是当场判红。
+//   所以两份各自对应自己的提示词文件，各查各的（那个脚本里加了对应的 ②b）。
+// ★ 但**防抄那两道闸必须同时认两份**：模型是看着作图那份示范写那三句的，
+//   抄也只可能抄这一份；闸只认备课那份，等于没挡。见下面 EXAMPLE_GRAMS 与 filterCopiedChips。
+SR.EXAMPLE_CHIPS_SAY = [
+  // prompt-say.js 收尾块（好）里那三句
+  '顶点用虚线标出来',
+  '两个交点写上 A、B',
+  '加个滑动条，让它上下平移',
+  // （差）里那三句。它们摆在那儿是当**反面**用的，可"摆出来"本身就是示范（同上一条注释）
+  '再详细讲一讲',
+  '还有别的画法吗',
+  '换个例子试试',
+  // 自检那段里当例子引的那一句
+  '画个正方体，让它转起来'
+];
+// 两道闸共用的一份底（一字不差 + 六字雷同都拿它查）
+SR.ALL_EXAMPLE_CHIPS = SR.EXAMPLE_CHIPS.concat(SR.EXAMPLE_CHIPS_SAY);
 // 抄了就整组作废。
 // 作废不是"留空"——chat.js 见它返回空，会落回下面的本地兜底，照样有得点。
 //
@@ -185,7 +207,7 @@ SR.normChip = function (s) {
 };
 SR.EXAMPLE_GRAMS = (function () {
   var set = {}, CH = 6;
-  SR.EXAMPLE_CHIPS.forEach(function (c) {
+  SR.ALL_EXAMPLE_CHIPS.forEach(function (c) {
     var n = SR.normChip(c);
     for (var i = 0; i + CH <= n.length; i++) set[n.slice(i, i + CH)] = 1;
   });
@@ -196,7 +218,7 @@ SR.filterCopiedChips = function (lines) {
   if (!ls.length) return [];
   for (var i = 0; i < ls.length; i++) {
     var s = String(ls[i]).trim();
-    if (SR.EXAMPLE_CHIPS.indexOf(s) >= 0) return [];            // 一字不差
+    if (SR.ALL_EXAMPLE_CHIPS.indexOf(s) >= 0) return [];        // 一字不差
     var n = SR.normChip(s);
     for (var j = 0; j + 6 <= n.length; j++) {
       if (SR.EXAMPLE_GRAMS[n.slice(j, j + 6)]) return [];       // 六字雷同

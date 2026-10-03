@@ -226,6 +226,46 @@ SR.board = (function () {
     return s;
   }
 
+  // ---- 兜底：把「点((0,0,0))」这种**函数调用式的建点**改回赋值 ----
+  //
+  // ★★ 2026-10-03 孔老师那天让画「动图，点在圆上移动」，状态条上写着：
+  //     「这一段里有 2 条画板没认：点((0,0,0)) ／ Rotate(点, t, zAxis)」
+  //     —— 图上就只剩一个不会动的圆。**两条命令是连坐的**：第二行是拿 `点`
+  //     当对象名引用，第一行没把 `点` 建出来，它就必然跟着死。
+  //     所以"动点不动"的全部原因在第一行。
+  //
+  //   模型想说的是"在原点建一个点"，却写成了**函数调用**。
+  //   （提示词 js/prompt-draw.js:76、:154 两处都写着「点名前面不许加「点」字，
+  //     写 `A=(-2,0)`」，模型把这条读成了"点是个命令"，于是写出 `点((0,0,0))`。）
+  //
+  //   ★★ 改写成什么，是量出来的（test/_q2.cjs 逐条试，读的是 getObjectType）：
+  //
+  //     行                        返回    建出来的是
+  //     A=(0,0,0)                true    A  / point     ← 大写字母打头才是"点"
+  //     v=(0,0,0)                true    v  / vector
+  //     点=(0,0,0)               true    点 / vector    ← ★ 直接写等号会变成**向量**
+  //     点=Point((0,0,0))        false   什么都没建
+  //     点=Point({(0,0,0)})      true    点 / point     ← ★ 只有这条对
+  //
+  //   GeoGebra 的老规矩：**名字以大写字母开头才算点**，小写和中文都算向量。
+  //   而零向量在图上等于看不见（`Rotate` 一个零向量也永远是零向量）——
+  //   所以"直接写等号"虽然能让状态条不再报"画板没认"，**图上却还是什么都没有**，
+  //   老师会以为白修了。必须包一层 `Point({…})` 把它**显式建成点**。
+  //   ⚠ 别改成"换个 ASCII 大写名"：那样后面引用 `点` 的行（`Rotate(点, t, zAxis)`）
+  //     全得跟着改名，漏一处就变成"建出来了却没人用"——而中文名+Point() 一行就够。
+  //
+  // ⚠ 只认「**中文名** + 恰好一个括号里的坐标元组」这一种，别的一概不碰：
+  //   · `中点(A,B)`    —— 名字后面不是一个元组（里面有 A、B）
+  //   · `圆((0,0),(1,1))` —— 参数是两个元组
+  //   名字必须是中文，这条闸是有讲究的：跑到这里时 `translate()` 已经把 CMD_MAP 里
+  //   **认得的中文命令名全翻成英文**了，所以**还留着中文的，本来就都是 GeoGebra
+  //   不认的名字**，正好卡在这一点上，不会误伤真命令。
+  var RE_BARE_NAME_PT = /^([一-龥][^\s=()]*)\s*\(\s*(\([^()]*\))\s*\)$/;
+  function fixBareNamePoint(s) {
+    var m = RE_BARE_NAME_PT.exec(s);
+    return m ? (m[1] + ' = Point({' + m[2] + '})') : s;
+  }
+
   // ---- 关键字 → 真实命令 ----
   // 提示词里教模型用的就是这几个词，别改词面，改了模型就不认了。
   function expand(cmd) {
@@ -246,7 +286,9 @@ SR.board = (function () {
     if ((m = c.match(/^#显示\s+(.+)$/))) return ['__SHOW__' + translate(m[1].trim())];
     if ((m = c.match(/^#播放\s+(.+)$/))) return ['__PLAY__' + m[1].trim()];
     if (c === '#暂停' || c === '#停止') return ['__STOP__'];
-    return [translate(c)];
+    // ★ 顺序要紧：**先 translate 再兜底**。translate 把认得的中文命令名翻成英文，
+    //   兜底那条正是靠"名字还是中文"来判断"这不是个真命令"的。
+    return [fixBareNamePoint(translate(c))];
   }
 
   // ---- 单条执行 ----
@@ -959,8 +1001,34 @@ SR.board = (function () {
       var s = '';
       try { s = String(api.getValueString(n)); } catch (e) { s = ''; }
       if (!s) return;
-      var px = m.sx(api.getXcoord(n)) - box.x0;
-      var py = m.sy(api.getYcoord(n)) - box.y0;
+      // ★★ 2026-10-03：文本对象的坐标**问不了 getXcoord／getYcoord**——
+      //   实测（test/_dup3.cjs）三个文本对象**全抛** `Class$S83: IllegalArgument`，
+      //   而这两个调用原先**没有各包一层**，一抛就落到 paperDrawText 最外面的
+      //   catch（控制台那句「图上写字失败：」就是这儿出的），**结果是这一批文本框
+      //   一个都不写**。标「甲／乙」、标「3cm」这类图，卷面上就空出那一块。
+      //   （数轴刻度的字不受影响：上面那段刻度循环自己会写，不是走这里。）
+      //
+      //   改从对象的 XML 里读 `<startPoint x= y= z=>`（齐次坐标，z 是分母）。
+      //   ⚠ 这一路也包在 try 里：万一哪版 GeoGebra 的 XML 长得不一样，
+      //     最坏就是"这一个文本不写"，绝不会把后面的一起带走。
+      //   ⚠ 两条路都读不到就**跳过这一个**，绝不硬猜一个位置——写歪的字比缺字更糟。
+      var px, py, got = false;
+      try {
+        px = api.getXcoord(n); py = api.getYcoord(n); got = true;    // 点和向量走这条
+      } catch (e) { got = false; }
+      if (!got) {
+        try {
+          var xml = api.getXML(n) || '';
+          var sp = xml.match(/startPoint[^>]*\bx="([-\d.eE+]+)"[^>]*\by="([-\d.eE+]+)"(?:[^>]*\bz="([-\d.eE+]+)")?/);
+          if (sp) {
+            var z = (sp[3] == null) ? 1 : parseFloat(sp[3]);
+            if (z) { px = parseFloat(sp[1]) / z; py = parseFloat(sp[2]) / z; got = true; }
+          }
+        } catch (e) { got = false; }
+      }
+      if (!got) return;
+      px = m.sx(px) - box.x0;
+      py = m.sy(py) - box.y0;
       if (px < -60 || py < -30 || px > box.w + 60 || py > box.h + 30) return;
       g.textAlign = 'left';
       g.fillText(s, px, py);
@@ -1209,6 +1277,15 @@ SR.board = (function () {
     var d = fit(), xr = 7;
     var yr = xr * (d[1] / d[0]);
     try { api.setCoordSystem(-xr, xr, -yr, yr); } catch (e) {}
+    // ★ 刻度步长必须是 1。孔老师当场看出来的一处：
+    //   「为什么你的数轴单位长度不是1，不应该把1、-1这些也给标出来么，为啥只有2、4、6什么的」。
+    //   根因就在上一行：setCoordSystem 之后 GeoGebra **自己挑**步长，视野一宽它就挑 2，
+    //   整数刻度被抽掉一半 —— 数轴上的"单位长度"于是不是 1，学生照着图数格会数错。
+    //   实测（test/_shot/axis-改前.png / axis-改后.png）：改前只标 -6,-4,-2,0,2,4,6；
+    //   改后 -6…6 每个整数都标出来。
+    //   ⚠ 顺序不能反 —— 必须排在 setCoordSystem **之后**，否则会被它重置回去。
+    //   ⚠ 包在 try 里：三维视角底下这条未必认，不认就随它去，别为一个刻度把整个视角切换搞崩。
+    try { api.setAxisSteps(1, 1); } catch (e) {}
   }
 
   // ---- 平面 / 三维 两个视角 ----

@@ -421,12 +421,21 @@ SR.main = (function () {
     d.setAttribute('data-drawer', 'open');
     d.setAttribute('aria-hidden', 'false');
     var s = $('drawerscrim'); if (s) s.hidden = false;
+    // ★★ 2026-10-03 加的这一行：抽屉从**覆盖式**改成**挤压式**。
+    //   挤压要靠 CSS 给 `main` 加一条等于抽屉宽的右内边距，而那条规则得知道
+    //   "现在开着"——`body` 上这个属性就是那个信号（规则写在 css 的
+    //   `body[data-drawer="open"] main` 里）。
+    //   ⚠ **两处都写**（元素上那份留着），别只写 body：`data-drawer` 是抽屉自己
+    //     的开关状态，CSS 里 `.drawer[data-drawer="open"]` 一直在读它。
+    //     body 上那份说的是"页面要为它让出多宽"，两件事，只是同一个开合。
+    document.body.setAttribute('data-drawer', 'open');
   }
   function closeDrawer() {
     var d = $('drawer'); if (!d) return;
     d.setAttribute('data-drawer', 'closed');
     d.setAttribute('aria-hidden', 'true');
     var s = $('drawerscrim'); if (s) s.hidden = true;
+    document.body.setAttribute('data-drawer', 'closed');
   }
 
   function boot() {
@@ -564,8 +573,17 @@ SR.main = (function () {
     // ★ 按钮平时是藏着的。只有本机那份索引真在、真读进来了，才让它露面——
     //   公开站上没有那个文件，客户那边从头到尾看不到这个按钮。
     //   探一下是首页之后才做的，不挡开机。
+    // ★★ 2026-10-03 补的门禁：这段原来只判 `if (rb)`，**无条件**把 click 接上去了。
+    //   露不露面靠"索引读没读进来"（下面那个 load 回调）——那是一条**异步**的
+    //   数据条件，接线的这一瞬间还没结论。于是线上出现这样一个缝：
+    //   按钮明明 `display:none` 看不见，可它的 click 是活的；哪天索引
+    //   真被塞进仓库（或者别的什么把 display 改回来），它就凭空冒出来并可用。
+    //   隔壁「备课卡片」（:567）和「知识库」（:594）**同一个道理两套判法**，
+    //   这两处都判 `isLocal`，只有这里漏了。补齐成同一套：
+    //   **是不是本机 = 门禁（同步、先判）；索引在不在 = 显示（异步、后判）。**
+    //   ⚠ `display:none` 不是门禁——那只是"看不见"。能点得动的东西，不受它保护。
     var rb = $('resbtn');
-    if (rb) {
+    if (rb && isLocal) {
       rb.addEventListener('click', openResources);
       var rq = $('resq');
       if (rq) rq.addEventListener('input', function () { paintResources(rq.value); });
@@ -726,6 +744,15 @@ SR.main = (function () {
     //   跟下面知识库那条是同一条纪律：首屏不许为了一个还没打开的抽屉付流量。
     if (SR.cards) SR.cards.bind();
 
+    // ---- 投影（见 js/project.js）：挂退出/翻页三颗按钮 + 一个键盘监听 ----
+    // ★ 它跟上面 cards/mindmap 那几件是同一种东西——**只挂监听，不干活**：
+    //   不预读对话、不建 DOM、不花流量。真正的取数在 open() 那一刻（建()），
+    //   所以开机这一趟它一毫秒都不占。
+    // ★ 位置放在 applyWork **前面**：applyWork 会 reset 对话，而投影读的是
+    //   `SR.memo` 里已经落盘的对话——顺序反过来也不出错（它取数是惰性的），
+    //   摆在这儿只是"开机这一串里，挂监听的跟挂监听的一起"。
+    if (SR.project) SR.project.init();
+
     applyWork(readSavedWork(), true);
 
     // 首屏（见 js/landing.js）。★ 位置就压在 applyWork 后面，两个理由：
@@ -745,4 +772,15 @@ SR.main = (function () {
            openDrawer: openDrawer, closeDrawer: closeDrawer };
 })();
 
-document.addEventListener('DOMContentLoaded', function () { SR.main.boot(); });
+// ★★ 2026-10-03：开机前面加一道**第三方库的闸门**（见 index.html 那段注释）。
+//   改之前这五份库是 `<script defer>`：defer 会挡住 DOMContentLoaded，而开机就挂着
+//   DOMContentLoaded 上——所以**某一个 CDN 慢，整页就一起等它**。实测过一次
+//   katex.min.js 被限速到 2.5KB/s（277KB ≈ 一分半），屏幕上从头到尾一片白，
+//   而且不报错，看着就像"网站打不开"。
+//   现在闸门自己带 8 秒上限：等齐了就走，等不齐也走（少个把库照样能用）。
+//   ⚠ `SRlib` 那个 IIFE 在 head 里、不带 defer，DOMContentLoaded 时它一定已经执行过了，
+//     但**不能省掉这个判断**：万一那段被摘掉（或者将来被谁搬走），页子得照常开机。
+document.addEventListener('DOMContentLoaded', function () {
+  if (window.SRlib && SRlib.whenReady) SRlib.whenReady(function () { SR.main.boot(); });
+  else SR.main.boot();
+});

@@ -860,8 +860,18 @@ SR.chat = (function () {
       //   老师对着一格上的名字点下去，看到的提示词得说"走到那个环节"，不能又说"摆第 N 节"。
       b.title = (sd === 'close') ? '把整条链子一次给我，好整段拷走'
         : (sd === 'next') ? '接着往下走'
-          : '把链子走到这个环节';
-      b.addEventListener('click', function () { if (!busy) stepGo(sd); });
+          : (sd === 'project') ? '放大成一屏一节，投到教室给全班看（← → 翻页，Esc 退出）'
+            : '把链子走到这个环节';
+      // ★★ 2026-10-03：「投影」这一格跟旁边所有格子**不是一类**，它必须在这条
+      //   分支上被截住，不能掉进 stepGo。
+      //   旁边每一格点下去都是"给模型发一句话"（stepGo → SR.stepJump → submit）；
+      //   这一格是**纯前端换一种放映方式**——一个字都不发出去、不花额度、不改对话。
+      //   掉进 stepGo 的后果是 `SR.stepJump('project')` 返回空串，看着就是"点了没反应"，
+      //   而真正想看的那一层永远不出现，屏幕上一句报错都没有。
+      b.addEventListener('click', function () {
+        if (sd === 'project') { if (SR.project) SR.project.open(); return; }
+        if (!busy) stepGo(sd);
+      });
       box.appendChild(b);
       return b;
     }
@@ -886,6 +896,16 @@ SR.chat = (function () {
     if (stepSlots.length >= stepPlan) mk('▶ 下一环节', 'next', 'todo');
     // 「整条」永远在最后：它是这个工位的终点动作（链子的产物就是能拷走的一段文字）。
     mk('整条', 'close', '');
+
+    // ★★ 2026-10-03 新增「⛶ 投影」：上课现用的大字视图，一屏只放一节（见 js/project.js）。
+    //   判据是「**现在真的放得出东西**」——`SR.project.can()` 数的是已经落盘的节。
+    //   ⚠ 为什么不直接"这个工位支持投影就算数"：这条台阶条只有摆出链子之后才画得出来
+    //     （上面 `!stepSlots.length` 那句就 return 了），按理 can() 必然为真；
+    //     可**万一**为假（memo 被清过、只剩屏幕上那几个字），点下去就是一颗死按钮。
+    //     宁可不画它，也不能给老师一颗点了没反应的格子——这就是用 can() 而不是硬写 true 的道理。
+    if (SR.project && SR.project.can()) mk('⛶ 投影', 'project', 'proj');
+    // 投影开着的时候，链子每往前走一节，那一屏跟着走（关着时它自己是一句 return）。
+    if (SR.project && SR.project.refresh) SR.project.refresh();
   }
 
   function stepGo(sd) {

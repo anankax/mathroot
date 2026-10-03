@@ -27,7 +27,7 @@ const LS = {
   removeItem: k => { delete store[k]; }
 };
 const W = { SR: {} };
-for (const f of ['config.js', 'prompt-prep.js', 'chips.js']) {
+for (const f of ['config.js', 'prompt-prep.js', 'prompt-say.js', 'chips.js']) {
   try {
     new Function('window', 'localStorage', 'navigator',
       'var SR = (window.SR = window.SR || {});\n' + fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'))(W, LS, { onLine: true });
@@ -204,6 +204,53 @@ SR.EXAMPLE_CHIPS.forEach(c => {
 });
 
 // ============================================================
+//  ②b 正向：EXAMPLE_CHIPS_SAY 每条都得在 js/prompt-say.js 里逐字找到
+// ============================================================
+// ★ 作图工位那三句是 2026-10-03 加的，走的是另一份提示词（prompt-say.js 的收尾块）。
+//   为什么不并进上面那张表：那四份备课提示词里没有这几句，并进去 ② 当场判红。
+//   两份名单各自对应自己的文件，各查各的——分开查，反而比合成一份更紧：
+//   合成一份的话，把作图那句误删、把备课那句误加，两个方向都看不出来。
+const SAY = SR.PROMPT_SAY_TAIL;
+const SAYREG = (SR.EXAMPLE_CHIPS_SAY || []).map(c => c.trim());
+if (!SAY) { console.log('★ js/prompt-say.js 里没有 SR.PROMPT_SAY_TAIL，②b/③b 两条都别信。'); process.exit(1); }
+// ★ 判据提成两个函数，**真断言和下面自检里的哨兵走同一段代码**。
+//   不这么写的话，"哨兵咬得住"跟"真断言查得对"是两段各写各的：
+//   哨兵绿只证明那段哨兵代码在跑，管不到真断言（记忆里"红验写成把 got/want 对调是恒绿"那一类）。
+function 死条目(reg, text) { return reg.filter(c => text.indexOf(c) < 0); }
+function 没登记的(reg, lines) { return lines.filter(l => l && !reg.some(c => c === l)); }
+
+死条目(SAYREG, SAY).forEach(c => {
+  must('EXAMPLE_CHIPS_SAY', false,
+    '这条在 js/prompt-say.js 里一句都找不到，是句死条目：「' + c + '」');
+});
+
+// ============================================================
+//  ③b 反向：prompt-say.js 里 ```想说 围栏的每一行，都必须登记
+// ============================================================
+// ★ 形状跟 ③ 不同：那边认的是"行首就是行名"的骨架行，这份里没有行名——
+//   三句示范就是围栏里的**裸行**。所以直接按围栏切：
+//   凡是夹在 "```想说" 和 "```" 之间的、非空的行，都是模型会照着写的东西，都得登记。
+// ★ 这比 ③ 更硬：③ 靠"长得像"猜，这里靠界线切，一个都漏不掉。
+// 围栏怎么切也提成一个函数——自检里那个哨兵要造一个假围栏走同一段切法。
+function 切围栏(text) {
+  const out = [];
+  const re = /```[ \t]*想说[ \t]*\r?\n([\s\S]*?)```/g;
+  let m;
+  while ((m = re.exec(text))) out.push(m[1]);
+  return out;
+}
+const SAYFENCES = 切围栏(SAY);
+SAYFENCES.forEach((body, bi) => {
+  const rows = body.split('\n').map(s => s.trim());
+  没登记的(SAYREG, rows).forEach(line => {
+    must('③b·示范登记', false,
+      'js/prompt-say.js 第 ' + (bi + 1) + ' 个 ```想说 围栏里的这一行没登记（模型照抄它没人挡）：\n' +
+      '        「' + line + '」\n' +
+      '        要留着就加进 js/chips.js 的 EXAMPLE_CHIPS_SAY。');
+  });
+});
+
+// ============================================================
 //  ③ 反向：提示词里凡长得像示范三行的，都必须登记
 // ============================================================
 // ★ 只认**行首就是**那三个行名的行（行内引用不算——正文里到处是"「学生大概会说」"）。
@@ -283,6 +330,22 @@ SAME.forEach(([why, needF, needL]) => {
 });
 // ② 正向：名单不能是空的
 if (!REG.length) selfBad.push('EXAMPLE_CHIPS 是空的，"每条都找得到"空转通过');
+// ②b/③b：作图那份同理，而且**围栏得真扫到**——
+//        扫到 0 个的话，"围栏里每一行都登记了"是句恒真的话，一个字的示范都没管到。
+if (!SAYREG.length) selfBad.push('EXAMPLE_CHIPS_SAY 是空的，"每条都找得到"空转通过');
+if (SAYFENCES.length < 2) selfBad.push('在 js/prompt-say.js 里只扫出 ' + SAYFENCES.length + ' 个 ```想说 围栏（（好）（差）至少两个），围栏正则大概是崩了');
+// ②b/③b 的反向那半边：**各喂一个已知的坏东西，必须被咬住**。
+//    ⚠ 不能只写"名单非空就算过"——那验的是**名单**，不是**检测器**。
+//      所以哨兵走的是上面那两个真函数（死条目／没登记的），不是另写一段。
+const SAY_CANARY = '这一行故意没登记，只拿来验尺子';
+const 哨_死条目 = 死条目([SAY_CANARY], '这里当然找不到那句话').length === 1;
+const 哨_没登记 = (function () {
+  const fences = 切围栏('```想说\n' + SAY_CANARY + '\n```');
+  if (fences.length !== 1) return false;                  // 围栏正则自己就没切出来 → 也算坏
+  return 没登记的(SAYREG, fences[0].split('\n').map(s => s.trim())).length === 1;
+})();
+if (!哨_死条目) selfBad.push('②b 检测器认不出一个明知不在提示词里的条目 —— 它的"通过"没有意义');
+if (!哨_没登记) selfBad.push('③b 检测器咬不住一行明知没登记的裸行 —— 它的"通过"没有意义');
 // ③ 反向：**喂一句明知没登记的示范，必须被抓住**
 const CANARY = '你接这句：这是一句故意没登记的话，拿来验尺子。';
 let canaryHit = false;
@@ -310,6 +373,10 @@ console.log('  反向检测器咬得住没登记的示范  ' + (canaryHit ? '过
 console.log('  真提示词里扫得出示范行（' + suspects.length + ' 行）  ' + (suspects.length >= 2 ? '过' : '★ 不过'));
 console.log('  附注指路检测器咬得住假节名  ' +
   (BODIES.every(([, body]) => pointsTo(CANARY_SECTION, body)) ? '★ 不过' : '过'));
+console.log('  作图名单非空（' + SAYREG.length + ' 条）／扫出 ' + SAYFENCES.length + ' 个 ```想说 围栏  ' +
+  ((SAYREG.length && SAYFENCES.length >= 2) ? '过' : '★ 不过'));
+console.log('  ②b 检测器认得出死条目  ' + (哨_死条目 ? '过' : '★ 不过'));
+console.log('  ③b 检测器咬得住没登记的裸行  ' + (哨_没登记 ? '过' : '★ 不过'));
 if (selfBad.length) {
   console.log('');
   console.log('★★★ 尺子自己坏了 —— 下面那份清单**一条都别信**，先修 test/check_prep_prompts.cjs：');
@@ -323,6 +390,8 @@ console.log('');
 // ============================================================
 console.log('四份提示词：' + NAMES.map(n => n + ' ' + ALL[n].length + ' 字').join('　') + '');
 console.log('同源条目 ' + SAME.length + ' 条　EXAMPLE_CHIPS ' + REG.length + ' 条　疑似示范行 ' + suspects.length + ' 行');
+console.log('作图那格：EXAMPLE_CHIPS_SAY ' + SAYREG.length + ' 条　```想说 围栏 ' + SAYFENCES.length + ' 个　' +
+  '（进防抄闸的总数 ' + (SR.ALL_EXAMPLE_CHIPS || []).length + ' 条）');
 console.log('附注指针 ' + pointers.length + ' 条：' + pointers.map(p => '「' + p + '」').join('') +
   '（只认「照上面「X」那一节的规矩」这一种形状）');
 console.log('');

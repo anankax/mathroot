@@ -28,14 +28,134 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-sc@5/700.css">
 
 <link rel="stylesheet" href="css/main.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 
-<!-- 第三方库（全部 CDN，本地不落 vendor） -->
-<script defer src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
-<script defer src="https://www.geogebra.org/apps/deployggb.js"></script>
+<!-- ============ 第三方库：多源兜底（2026-10-03） ============
+     ★★ 原来这里是五个 `<script defer>` + 一条 katex 的 `<link>`，**五个库全押
+       `cdn.jsdelivr.net` 这一个源**。为什么非改不可，是量出来的，不是猜的
+       （2026-10-03，这台机器这条网，curl 实录）：
+
+         https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js
+             → **25 秒只收到 62KB / 277KB**（约 2.5KB/s），超时。
+         https://fastly.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js
+             → 同一个文件，**0.83 秒**下完。
+
+       jsdelivr 的主边缘（Cloudflare）在这条网上被限速了，而它挂着的正好是
+       这一堆里**最重的一个文件**（277KB，其它四个都是 3~35KB）。
+     ★ 更要紧的是**它怎么坏**：`defer` 脚本会挡住 `DOMContentLoaded`——
+       而 `SR.main.boot()` 就挂在 `DOMContentLoaded` 上（见 js/main.js 末尾）。
+       所以上面这个 277KB 一被限速，**整页开机就一起等它**：
+       按 2.5KB/s 算要一分半，屏幕上从头到尾一片白。
+       改之前它没有上限、也不报错，看着就像"网站打不开"。
+     ★ 改法两条：
+       ① 每个库一条**源链**，一个源失败换下一个（jsdelivr 另一个边缘 → unpkg → bootcdn）。
+          ⚠ 第一档从 `cdn.jsdelivr.net` 换成 **`fastly.jsdelivr.net`**：同一个服务、
+            同一份文件，实测差 30 倍。留着原来那个当第一档，等于花钱买超时。
+       ② 开一个**闸门**：等这些库落定（或 8 秒到）再开机。宁可少个把库，
+          也不能让整页停在开机前——今天那条`defer`链就是"没有上限"的反面教材。
+     ★ `www.geogebra.org` 只有这一个源（`web.geogebra.org` 实测**域名都解析不了**），
+       但它在闸门里跟着一起等——这一条要保持原样：`GGBApplet` 必须在
+       `board.init()` 之前就位，否则画板会误报"没加载出来"。
+     ⚠ 这一段的**执行时机**是有讲究的：内联、在 head 里、不加 defer。
+       三个 `<link>`/`<script>` 的 onerror 回调随时可能触发，得比它们都早。
+     ⚠ 别把 `@fontsource` 那条字体 CSS（上面 :28）也并进来：它本来就设计成
+       "到不了就退回系统字"（见 :24-26），不参与闸门，也没必要占一条源链。 -->
+<script>
+window.SRlib = (function () {
+  // 每个库一条源链。★ 命中率往下排，不是按"名字好听"排：
+  //   fastly.jsdelivr.net —— 实测最快（同一个文件名下 0.83s）
+  //   unpkg.com            —— 另一家，不吃 jsdelivr 的故障
+  //   cdn.bootcdn.net      —— 国内（360），前两家一起被墙也还有它
+  // ⚠ bootcdn 是**按版本号**存的，路径跟 npm 不一样，改版本要照它的目录；
+  //   它上面 dompurify 没有 `@3` 这种浮动版本，只能写死 3.2.6（实测有）。
+  var 链 = {
+    'katex-css': ['https://fastly.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css',
+                  'https://unpkg.com/katex@0.16.9/dist/katex.min.css',
+                  'https://cdn.bootcdn.net/ajax/libs/KaTeX/0.16.9/katex.min.css'],
+    'marked':    ['https://fastly.jsdelivr.net/npm/marked@12/marked.min.js',
+                  'https://unpkg.com/marked@12/marked.min.js',
+                  'https://cdn.bootcdn.net/ajax/libs/marked/12.0.2/marked.min.js'],
+    'dompurify': ['https://fastly.jsdelivr.net/npm/dompurify@3/dist/purify.min.js',
+                  'https://unpkg.com/dompurify@3/dist/purify.min.js',
+                  'https://cdn.bootcdn.net/ajax/libs/dompurify/3.2.6/purify.min.js'],
+    'katex':     ['https://fastly.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js',
+                  'https://unpkg.com/katex@0.16.9/dist/katex.min.js',
+                  'https://cdn.bootcdn.net/ajax/libs/KaTeX/0.16.9/katex.min.js'],
+    'autorender':['https://fastly.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js',
+                  'https://unpkg.com/katex@0.16.9/dist/contrib/auto-render.min.js',
+                  'https://cdn.bootcdn.net/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js'],
+    'geogebra':  ['https://www.geogebra.org/apps/deployggb.js']
+  };
+  // ★ 顺序就是**依赖顺序**：auto-render 一执行就调 katex 的接口，必须排在它后面。
+  var 顺序 = ['katex-css', 'marked', 'dompurify', 'katex', 'autorender', 'geogebra'];
+  // ★ 起了飞之后还要等谁。没这一条会漏一个真的会发生的场景：
+  //   katex 第一个源失败、正在换第二个源，而 autorender 已经从第一个源到了——
+  //   它执行时 `katex` 这个全局还不存在。
+  var 依赖 = { autorender: 'katex' };
+
+  var 到的 = {}, 待飞 = 顺序.slice(), 剩 = 顺序.length, 开 = false, 等 = [];
+  function 开门() {
+    if (开) return;
+    开 = true;
+    for (var i = 0; i < 等.length; i++) 等[i]();
+    等 = [];
+  }
+  // "落定" = 这一项**有结论了**（某个源成功，或者所有源都试完）。
+  // ⚠ 每项只落定一次、只扣一个名额——不管它中途换了几个源。
+  //   抢先把名额扣掉的话，闸门会在某一项还在换源时就放行。
+  function 落定(name) {
+    if (到的[name]) return;
+    到的[name] = true;
+    if (--剩 <= 0) 开门();
+    起飞();
+  }
+  function 起飞() {
+    for (var i = 待飞.length - 1; i >= 0; i--) {
+      var n = 待飞[i];
+      if (!依赖[n] || 到的[依赖[n]]) { 待飞.splice(i, 1); 换源(n, 0); }
+    }
+  }
+  function 换源(name, k) {
+    var list = 链[name];
+    if (k >= list.length) {
+      if (window.console) console.warn('数根：' + name + ' 这条源链全试完了，都没到，这一项会缺。');
+      落定(name);
+      return;
+    }
+    var el;
+    if (name === 'katex-css') {
+      el = document.createElement('link'); el.rel = 'stylesheet'; el.href = list[k];
+    } else {
+      el = document.createElement('script'); el.src = list[k];
+      // ★ `async=false`：动态插进去的脚本默认是 async 的，会**乱序执行**。
+      //   写 false 才回到"按插入顺序执行"——这就是原来 `defer` 那批的顺序保证。
+      el.async = false;
+    }
+    el.onload = function () { 落定(name); };
+    el.onerror = function () { 换源(name, k + 1); };
+    document.head.appendChild(el);
+  }
+  起飞();
+
+  // ★ 兜底闸门：8 秒还没全落定就照常开机。
+  //   不设它的话，某家 CDN 半死不活（连得上、就是慢）会把整页钉在那儿，
+  //   而这一档恰恰是最常见的坏法——今天量到的那个 2.5KB/s 就是。
+  setTimeout(function () {
+    if (!开) {
+      var 缺 = [];
+      for (var i = 0; i < 顺序.length; i++) if (!到的[顺序[i]]) 缺.push(顺序[i]);
+      if (window.console) console.warn('数根：等了 8 秒还没到齐（' + 缺.join('、') + '），先开机。');
+      开门();
+    }
+  }, 8000);
+
+  return {
+    ready: 到的,
+    // ★ 已经开门就立刻叫，别漏了这一档：库很可能在 DOMContentLoaded 之前就齐了，
+    //   那时候调用方还没来登记。
+    whenReady: function (fn) { if (开) fn(); else 等.push(fn); }
+  };
+})();
+</script>
 
 <!-- 本项目（按依赖顺序） -->
 <script defer src="js/config.js"></script>
@@ -49,6 +169,11 @@
            仓库里那份只有 zhuawen.js——见 .gitignore 和 js/kb.js 顶上那段。） -->
 <script defer src="js/prompt-prep.js"></script>
 <script defer src="js/prompt-draw.js"></script>
+<!-- 作图那一格的收尾块：要模型在回复末尾写一个 ```想说 围栏，放三句**看着刚画的图**说的话。
+     ★ 单独一份、不并进 prompt-draw.js，是因为它的**位置**跟那份不挨着——api.js 是在
+       提示词和后头那两段附注都拼完之后才追加它的，占的是"最后一段"。放进 prompt-draw.js
+       里就成了正文中段，小模型读不到那儿，等于没写（api.js 那段有实测数字）。 -->
+<script defer src="js/prompt-say.js"></script>
 <script defer src="js/prompt-vary.js"></script>
 <!-- 出材料工位（这一版的主线）。★ 它只管"说话"那部分——套模板、出 docx
      由 js/tpl.js + js/produce.js 做，提示词里明说了不许它吐 XML。 -->
@@ -106,6 +231,13 @@
 <script defer src="js/memo.js"></script>
 <script defer src="js/landing.js"></script>
 <script defer src="js/chat.js"></script>
+<!-- 投影（见 js/project.js）。★ 排在 chat.js **后面**：台阶条末尾那颗「⛶ 投影」
+     是 chat.js 的 renderSteps 挂的，它要问 `SR.project.can()` 才决定画不画。
+     ⚠ 这个顺序反过来**也读得到**（两边都只在运行时互相找，谁也不在装载时用谁），
+        摆在这儿读起来跟上面那几条是同一套道理。
+     ★ 它读 SR.memo.log() / SR.parseChain / SR.parseStepBody / SR.render.renderInto，
+       那四件分别在 memo.js / chips.js / render.js —— 全都在它前面。 -->
+<script defer src="js/project.js"></script>
 <!-- 思维导图（见 js/mindmap.js）。
      ★ 排在 chips.js **后面**：它读 SR.parseRoutes / SR.parseStepBody / SR.absorbChain
        （"有几条岔路""每个环节里学生说了什么"），那几件全在 chips.js 里。
@@ -698,6 +830,39 @@
     <div class="row">
       <button type="button" class="tool primary" data-close="kblist">关了</button>
     </div>
+  </div>
+</div>
+
+<!-- ── 投影（2026-10-03）。上课现用的大字视图：**一屏只放一节**。 ──────────
+     ★ 治的是孔老师那句话：「投到教室字太小、步骤全露」。备课／讲评的链子一屏摆全，
+       在电脑上当草稿看正合适，投到教室就同时坏了两次——字小到后排看不清，
+       而且"学生大概会说"那行提前把答案亮在黑板上，这一节课的讲法就白设计了。
+     ★ 内容**一个字都不写在这儿**，由 js/project.js 从 `SR.memo.log()` 现读现画。
+       写死在这儿就是给链子开了第二个真源（同下面 `#works` 那条注释的道理）：
+       链子每往前走一节，这份死文本不会跟着动，而屏幕上看着完全正常。
+     ★ **一个字都不发给模型**：点开只是换一种放映方式，不产生调用、不花额度。
+
+     ⚠ 别往这里放画板（`#ggb`）。这一层是靠 `display:none` 开合的，而
+       `display:none` 会让 board.js 的 `fit()` 量到 0、图**静默**缩成 240×60
+       （同 index.html 抽屉那段里那条教训）。要在投影里看图得另开一块板。
+
+     ⚠ `tabindex="-1"` 是为了开的时候能把焦点收进来（Esc／左右键才有地方落）；
+       `aria-hidden` 交给 js/project.js 开合时写，别在这儿写死成 false。 -->
+<div class="proj" id="proj" data-proj="0" aria-hidden="true"
+     tabindex="-1" role="dialog" aria-modal="true" aria-label="投影">
+  <div class="projhead">
+    <div class="projmk">
+      <span class="projnum" id="projnum"></span>
+      <span class="projname" id="projname"></span>
+    </div>
+    <span class="projhint">← → 翻页</span>
+    <button type="button" class="projx" id="projx" title="退出投影（Esc）">退出<em>Esc</em></button>
+  </div>
+  <div class="projbody" id="projbody"></div>
+  <div class="projfoot">
+    <button type="button" class="projnav" id="projprev">← 上一节</button>
+    <div class="projdots" id="projdots"></div>
+    <button type="button" class="projnav" id="projnext">下一节 →</button>
   </div>
 </div>
 
