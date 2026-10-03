@@ -135,7 +135,14 @@ function 判(名, ok, 值) {
     console.log('  时间线：' + 序);
     console.log(TL.warnAt === null
       ? '  闸门：没走到兜底那条路（库落定时就开门了），正常'
-      : '  闸门：8 秒兜底先开了门（' + (TL.warnAt / 1000).toFixed(2) + 's），库后到 —— 网络慢，不是坏');
+      : '  闸门：8 秒兜底先开了门（' + (TL.warnAt / 1000).toFixed(2) + 's），库后到');
+    // ★★ 2026-10-04：上面那一行原来写的是「网络慢，不是坏」。**那句是错的**，
+    //   而且是我自己看着这条红注上去的——红的样子跟"产品坏了"长得一样，
+    //   这一次它**就是**坏了：闸门一开 boot() 就跑，board.init() 撞上没有 GGBApplet
+    //   的当口，老代码写一句「没加载出来，刷新试试」就 return，**再没人回来建 applet**，
+    //   画板整场死在那儿。慢网这一档是**必然**撞上的（闸门本来就是为慢网开的）。
+    //   下面那条断言当时只查到"开门那一刻库在不在"就收了，没往下问**板子最后起没起**——
+    //   所以补上「画板最后真起来了」那一条，它才是这件事的结论。
     if (TL.警告 && TL.警告.length) {
       console.log('  页面的 warn：' + TL.警告.map(x => (x.在 / 1000).toFixed(2) + 's ' + x.文.slice(0, 70)).join(' | '));
     }
@@ -146,6 +153,18 @@ function 判(名, ok, 值) {
       { GGBApplet: (TL.libs.GGBApplet / 1000).toFixed(2) + 's',
         开门: (闸门开在 / 1000).toFixed(2) + 's',
         走兜底: 走兜底 });
+    // ★ 上面那条红**不等于坏**：真坏了的样子是「板子没起来」。板子是**后果**，上面那个是**片头**。
+    //   所以这一条要独立量，且要等到它真起来（applet 本体那一包比 deployggb.js 晚得多）。
+    //   `board.init()` 在 boot 里是无条件跑的，跟抽屉开不开没关系，所以不用点开右栏。
+    let 板子 = null;
+    for (let i = 0; i < 60; i++) {
+      const g = await ev("(function(){try{return !!(window.ggbApplet&&window.ggbApplet.getAllObjectNames);}"
+        + "catch(e){return false;}})()");
+      if (g === true) { 板子 = ((i + 1) * 1.0).toFixed(0) + 's'; break; }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    判('画板最后真起来了（慢网兜底那一路也建得出 applet）', 板子 !== null,
+      { 起来于: 板子 === null ? '等了 60 秒还没起' : ('+' + 板子), 走兜底: 走兜底 });
   } else {
     判('拿到库的到达时间线', false, 'window.__tl 没装上');
   }
