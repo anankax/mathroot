@@ -1354,6 +1354,32 @@ SR.board = (function () {
     else { el.style.display = 'none'; }
   }
 
+  // ★★ 2026-10-04：等 GGBApplet 露面，来了就接着把 init 走完。
+  //   补的是**一个实测出来的缝**，不是假想的：
+  //     index.html 顶上那个闸门有个 8 秒兜底（`SRlib` 那一段，注释写着
+  //     "宁可少个把库，也不能让整页停在开机前"）。它的第一适用场景就是**网络慢**——
+  //     而网络慢的时候，`defer` 之外的那包 GeoGebra 往往**比 8 秒更晚**。
+  //     线上探针实录：`开门 10.35s` / `GGBApplet 11.34s`。
+  //   闸门一开，`boot()` 就按点跑了（它挂在 DOMContentLoaded 上），于是
+  //     `board.init()` 那一趟必落在"GGBApplet 还没到"的差里 ——
+  //   原来的写法是写一句"没加载出来，刷新试试"就 **return，再也不回来**：
+  //   板子这一场就废了，老师得自己想到去刷新。
+  //   index.html:57 那句"`GGBApplet` 必须在 `board.init()` 之前就位，否则画板会
+  //   误报'没加载出来'"，说的正是这个坑——原来只是"要求它别发生"，没有兜底。
+  // ⚠ 跟**真的加载失败**（源链全试完）是两回事，别混成一句：一个再等一秒就到，
+  //   一个等到天亮也不到。所以先分一个"还在等"的状态出来，等满 30 秒还不来才认输。
+  // ⚠ 只认第一次：`ready`/`api` 一旦立起来就立刻收手，免得给同一个 host 建出两个 applet。
+  function waitGGB(n) {
+    if (ready || api) return;
+    if (typeof GGBApplet !== 'undefined') { init(hostId); return; }
+    if (n * 300 >= 30000) {
+      note('没加载出来，刷新试试');
+      log('GeoGebra 脚本没加载出来（检查网络，或换用 https 打开）');
+      return;
+    }
+    setTimeout(function () { waitGGB(n + 1); }, 300);
+  }
+
   function init(containerId, h) {
     if (h) for (var k in h) if (h.hasOwnProperty(k)) hooks[k] = h[k];
     hostId = containerId;
@@ -1363,9 +1389,8 @@ SR.board = (function () {
     //   就是「画板　画板正在加载…」——截图核过，两个字重复得扎眼。
     note('正在加载…');
     if (typeof GGBApplet === 'undefined') {
-      // ★ 这一档跟"正在加载"要分开说：一个等一会儿会好，一个等到天亮也不会好。
-      note('没加载出来，刷新试试');
-      log('GeoGebra 脚本没加载出来（检查网络，或换用 https 打开）');
+      // ★ 这一档走**等**，不走"认输"——为什么，见上面 waitGGB 顶上那一段。
+      waitGGB(0);
       return;
     }
     var d = fit();
