@@ -136,6 +136,13 @@ SR.LS_BACKEND = 'mathroot_backend'; // 上次用的后端
 //   切过去就能画 Cube/Sphere/Cone/Cylinder/Plane/Rotate，切回 'G' 2D 一切正常。
 SR.GGB_APP = 'classic';
 SR.GGB_CMD_DELAY = 550;             // 每条 ggb 命令之间的间隔（毫秒）——图形"一点点长出来"的快慢
+// ★ 2026-10-03：上面那 550ms 是**给老师看**的。可板现在收在抽屉里，
+//   抽屉一关它就滑出屏幕外（实测 canvas 左边界 1475 > 视口 1440），
+//   那遍动画老师一个像素都看不见，却要为它多等好几秒——
+//   实测收流之后还要 6.2 秒图才出来。所以看不见的时候换成这一档：
+//   不隔（只留一个宏任务，好让 GeoGebra 自己的队列有机会排一下）。
+//   判"看不看得见"的尺子在 js/board.js 的 `onScreen()`，那儿有一段实测注释。
+SR.GGB_CMD_DELAY_OFFSCREEN = 30;
 SR.GGB_WIDTH = 560;
 SR.GGB_HEIGHT = 520;
 // 3D 视图的默认取景（x/y/z 各 -4..4，y 轴竖着放）

@@ -256,6 +256,50 @@ SR.board = (function () {
     }
   }
 
+  // ---- 板在不在屏幕上？（决定"一点点长出来"要不要慢慢来）----
+  //
+  // ★ 2026-10-03 实测（test/_q_boardvis.cjs）：新布局把整块画板收进了抽屉。
+  //   抽屉一关，`#ggb canvas` 的左边界是 1475、右边界 1974，而视口只有 1440 宽
+  //   ——**整块板在屏幕外**。可那时候 `run()` 还是每 550ms 发一条，
+  //   老师一个像素都看不见，却要等它"长"完（6 条命令 = 3.3 秒），
+  //   冻图那条路再借板重画一遍、又等一遍。两遍加起来，收流之后还要 6.2 秒图才出来。
+  //
+  //   所以：**看得见才慢慢长，看不见就一口气画完**。
+  //
+  // ★ 判"看不看得见"一律量 `getClientRects()` 和包围盒跟视口的关系，
+  //   **绝不读 `getComputedStyle().display`**——藏起来的是它的**爹**（抽屉），
+  //   孩子照样报 flex。而且这一处光靠 rects 真的分不开：抽屉开、关两态下
+  //   `#ggb` 的 `getClientRects().length` **都是 1**（`visibility:hidden`
+  //   照样有盒子，只是不画），唯一能分开两态的就是包围盒越没越过视口边界。
+  function onScreen() {
+    try {
+      var el = hostId && document.getElementById(hostId);
+      if (!el) return false;
+      if (!el.getClientRects().length) return false;    // 真没盒子（还没插进 DOM）
+      var r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 &&
+             r.right > 0 && r.left < window.innerWidth &&
+             r.bottom > 0 && r.top < window.innerHeight;
+    } catch (e) {
+      // 量不出来就按"看得见"办：宁可慢一点，也不要让老师看漏了那遍动画。
+      return true;
+    }
+  }
+
+  // ★ 借板干活的时候（`offscreenJob`）挂上它：**那一遍画不是给人看的**，
+  //   是给自己截图用的，所以哪怕板正摊在老师眼前也走快档。
+  //   不这么做的话，抽屉开着问一句，老师会看着**同一张图被慢慢画第二遍**
+  //   （先看当场那遍，再看冻图那遍），实测白等 2.9 秒。
+  var 借板中 = 0;
+
+  function cmdDelay() {
+    var fast = SR.GGB_CMD_DELAY_OFFSCREEN;
+    if (typeof fast !== 'number') fast = 30;
+    if (借板中 > 0) return fast;
+    if (onScreen()) return SR.GGB_CMD_DELAY;
+    return fast;
+  }
+
   // ★ 返回**这一批命令所属的世代号**（见上面 `gen` 那段）。等这张画完的人
   //   （`draw`）拿它当身份证：世代号变了就说明它等的那批活已经被作废了。
   function run(rawLines) {
@@ -272,6 +316,10 @@ SR.board = (function () {
     lastLines = rawLines.slice();          // 存原命令，"重画"重放这一份
     // 画板还没就绪，或者正在载入一份存档 → 排队等着，等能画了再放
     if (!ready || loading) { pendingLines = lines; return myGen; }
+    // 步长在**板刚要开始画的那一刻**量一次，这一批里就按它走。
+    //   （中途老师把抽屉拉开也不改口：换步长会把已经排好的定时器弄乱，
+    //    而这一批总共也就几秒，看得见的那一遍下次自然会慢。）
+    var 步长 = cmdDelay();
     queueLeft = lines.length;
     for (var k = 0; k < lines.length; k++) {
       (function (one, idx) {
@@ -285,7 +333,7 @@ SR.board = (function () {
           if (queueLeft === 0 && failedNow.length) {
             log('这一段里有 ' + failedNow.length + ' 条画板没认：' + failedNow.join(' ／ '));
           }
-        }, idx * SR.GGB_CMD_DELAY));
+        }, idx * 步长));
       })(lines[k], k);
     }
     return myGen;
@@ -640,12 +688,16 @@ SR.board = (function () {
       waitIdle(function (idle) {
         if (!idle) return done({ ok: false, back: false, why: '画板忙，没动它' });
         var back = snapshot();
-        fn(drawNow, function (res) {
+        // ★ 这一遍是"画给我自己截图看"的，不是"画给老师看"的 → 挂上快档。
+        //   `fn` 里那条 `drawNow` 是**同步**调 `run` 的，节奏在 run 里当场就定下来，
+        //   所以 try/finally 圈住这一下就够了（截图和还原都在回调里，不受影响）。
+        借板中++;
+        try { fn(drawNow, function (res) {
           if (!back) return done({ ok: true, back: false, res: res });
           restore(back, function (r) {
             done({ ok: r.ok, back: true, res: res, why: r.why });
           });
-        });
+        }); } finally { 借板中--; }
       });
     }, cb);
   }
@@ -1331,6 +1383,11 @@ SR.board = (function () {
     // ★ 为什么非要露这个口子：GeoGebra 有哪些接口、那几个样式命令到底叫什么名字，
     //   我**猜不出来**——猜错了 evalCommand 只是返回 false，一声不响，画板上看不出区别。
     //   有了这个口子，量具（test/_t9.cjs）能在真画板上一条条试、当场看返回值。
-    applet: function () { return api; }
+    applet: function () { return api; },
+    // ★ 露"板在不在屏幕上"这一把尺子，给量具用（test/probe_delay_vis.cjs）。
+    //   量具里会另写一遍同样口径的算法去量 DOM，再跟这里对——两把尺子对不上
+    //   就说明有一个错了，而不是"以代码自述为准"。
+    onScreen: onScreen,
+    cmdDelay: cmdDelay
   };
 })();
