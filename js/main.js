@@ -42,6 +42,16 @@ SR.main = (function () {
     //   （boot 时也走这儿，但那会儿 landing.js 还没 init，`els.box` 是空的，
     //    `hide()` 一拳打空、没有副作用；紧接着的 `SR.landing.init()` 会照常 show()。）
     if (SR.landing && SR.landing.hide) SR.landing.hide();
+    // ★★ 2026-10-03：「我按【X】办的（照…认的）」是**我替他归类**的结论，
+    //   只在"他没说办哪一件、我猜了一把"之后才算数。老师一旦亲手点了工位那一行，
+    //   那句话就过期了 —— 可它原来**没人撤**（`clearStrip` 只挂在 pick/rework/⟳ 三处，
+    //   而工位按钮走的是 applyWork，压根不经过 landing）。
+    //   实测症状（test/_sweep6.cjs 的截图）：工位行已经亮在【组卷】上、对话里也写着
+    //   「换到「组卷」」，底下那条却还挂着"我按【备课】办的" —— 一句和眼前自相矛盾的话，
+    //   而且因为它长得像状态栏，老师会当成"它其实还是按备课办的"。
+    //   ★ 放这儿不会把归类那条打掉：intercept() 那条路是 pick() 在前、strip() 在后，
+    //     写进去的时候这一下早过去了（见 js/landing.js 的 intercept）。
+    if (SR.landing && SR.landing.clearStrip) SR.landing.clearStrip();
     work = w;
     SR.chat.setWork(w);
     try { localStorage.setItem(SR.LS_WORK, w); } catch (e) {}
