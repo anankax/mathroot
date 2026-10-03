@@ -374,9 +374,12 @@ SR.chat = (function () {
       //   刷新之后内存缓存是空的，就先摆一块写着「图」的占位 —— **点一下才现画**。
       //   不这么做的后果是"刷新一次就把整场对话的图全重画一遍"，二十轮就是二十次
       //   借板+截图，老师会以为页面卡死了。
+      var gboxes = [];
       for (var gi = 0; gi < pr.ggb.length; gi++) {
-        attachFigure(b, pr.ggb, gi, (pr.ggbInfo && pr.ggbInfo[gi]) || '');
+        gboxes.push(attachFigure(b, pr.ggb, gi, (pr.ggbInfo && pr.ggbInfo[gi]) || ''));
       }
+      // ★ 每张图钉回它自己那道题下面（原文在 `t.t` 里；当场那条路在收流处做同一件事）
+      if (gboxes.length) placeFigures(b, t.t, gboxes);
       // ---- 卷子卡也要摆回来 ----
       attachMatCard(b, pr.matBody, ask);
       lastB = b;
@@ -658,6 +661,80 @@ SR.chat = (function () {
     });
     box.insertBefore(ph, box.firstChild);
     box.setAttribute('data-empty', '1');           // 还空着（图上那句"正在画…"也归这一档）
+  }
+
+  // ---- 把这一条回复里的几张图，各自钉回**它自己那道题下面** ----
+  //
+  // ★★ 2026-10-03 加（自己上网页走了一遍看出来的）。
+  //   原先几张图是**一股脑 append 在正文末尾**的：命题工位一轮出三个变式，
+  //   屏幕上就是"三段题面 + 答案"接"三张图"，而三张图还多半长得差不多
+  //   （都是数轴，只差几个点）。谁是谁全靠数第几张——老师要的是
+  //   "这一道题的图"，不是"第 2 张图"。
+  //
+  // ★ 做法只改**插在哪儿**，不动任何一块图的内容、也不重排正文。
+  //   拿原文当尺子，**不拿渲染好的 DOM 当尺子**——marked 会把 `**变式二**` 的星号
+  //   吃掉、把几行并进同一个 <p>，DOM 里的行跟原文的行对不上号；
+  //   而原文里"围栏从哪儿到哪儿"是确定的。
+  //
+  // ★ 锚点怎么定：**数它前面有几道变式**。
+  //   某张图在原文里，前面已经排了几道「变式」标题，它就属于第几道题；
+  //   要插的位置就是**再下一道变式的前面**（这一道的答案之后）。
+  //   所以只需要一个数 k = 该围栏之前出现过的「变式」标题个数，
+  //   落在正文里就是"第 k+1 块变式"（0 基下标 k）。
+  //
+  // ⚠⚠ 第一版是**拿标题的文字去 DOM 里找**同名的那一块（"找到第一个以
+  //   `变式二（改条件）`开头的块"）。拿真存档一量就破了：
+  //   命题工位一轮常常写**两组**变式（【第一种·题里有图】三个 + 【第二种·题里没图】三个，
+  //   实测 8 份存档里 7 份是这样），**两组的标题文字一模一样**——
+  //   于是"找第二组的变式二"永远找到第一组那一块，图被插到第一道题下面。
+  //   （存档 `test/_shot/vfC-8.txt` 就是这一格，`test/probe_figplace.cjs` 盯着它。）
+  //   改成**按序号对位**：正文里第 j 块"以变式开头"的块，就是原文里第 j 道题。
+  //   序号天然不会有歧义，而文字会重名。
+  //
+  // ★ 为什么必须数"原文里的标题"而不是"DOM 里的标题"：
+  //   【第一种…】【第二种…】那两行会被 render.js 规则四从**看得见的正文**里删掉，
+  //   所以 DOM 里根本没有"组边界"这个东西可锚。
+  //
+  // ⚠ 兜底两条，都是"宁可照老样子摆，也绝不把图弄丢"：
+  //   ① 对不上号（一道变式标题都没有 / 变式的标题和正文挤在同一个 <p> 里，
+  //      DOM 里压根没有"下一道变式"这一块可插）→ 退到「复制这段」那条 bar 前面；
+  //   ② 连 bar 都没有 → 原地不动（留在末尾）。
+  var RE_FENCE_GGB = /```[ \t]*ggb[ \t]*[^\r\n]*\r?\n[\s\S]*?```/g;
+  var RE_VHEAD = /(^|\n)[ \t>*#]*变式[一二三四五六七八九十0-9]+[^\n]*/g;
+  var RE_VBLOCK = /^变式[一二三四五六七八九十0-9]/;
+  // 两边都归一化再比：原文里有 `**变式二**`，DOM 里只剩 `变式二`，星号空格井号一律不算数
+  function normHead(s) { return String(s == null ? '' : s).replace(/[\s*>#]+/g, ''); }
+
+  function placeFigures(bubble, raw, boxes) {
+    if (!bubble || !raw || !boxes || !boxes.length) return 0;
+    var t = String(raw), ends = [], m, j;
+    RE_FENCE_GGB.lastIndex = 0;
+    while ((m = RE_FENCE_GGB.exec(t))) ends.push(m.index + m[0].length);
+    // 每个「变式」标题在原文里的位置（要按位置数，不能只看总数）
+    var 位 = [];
+    RE_VHEAD.lastIndex = 0;
+    while ((m = RE_VHEAD.exec(t))) {
+      if (normHead(m[0])) 位.push(m.index + m[0].indexOf('变'));
+      if (RE_VHEAD.lastIndex === m.index) RE_VHEAD.lastIndex++;   // 防零宽死循环
+    }
+    // 正文里"以变式开头"的那几块，按顺序排好 —— 第 j 块就是第 j 道题
+    var kids = bubble.children, domHeads = [];
+    for (j = 0; j < kids.length; j++) {
+      if (kids[j].classList && kids[j].classList.contains('figbox')) continue;
+      if (RE_VBLOCK.test(normHead(kids[j].textContent))) domHeads.push(kids[j]);
+    }
+    var cb = bubble.querySelector('.copybar'), moved = 0;
+    for (var i = 0; i < boxes.length; i++) {
+      var box = boxes[i];
+      if (!box || ends[i] == null) continue;
+      var k = 0, h;
+      for (h = 0; h < 位.length; h++) if (位[h] < ends[i]) k++;
+      var anchor = domHeads[k];          // 第 k 块 → 插在它前面（= 上一道题之后）
+      if (!anchor) { if (!cb) continue; anchor = cb; }
+      bubble.insertBefore(box, anchor);
+      moved++;
+    }
+    return moved;
   }
 
   // 打包的账本（js/pack.js）照记忆重建一份。
@@ -1545,6 +1622,10 @@ SR.chat = (function () {
         if (fl.length) {
           var boxes = [];
           for (var fi = 0; fi < fl.length; fi++) boxes.push(attachFigure(b, fl, fi, ''));
+          // ★ 每张图钉回它自己那道题下面（原文就是这一轮的 raw）。
+          //   注意此刻「复制这段」那条 bar 已经在里面了（上面 attachCopy 先跑），
+          //   所以"最后一张"能落到它前面 —— 见 placeFigures 里的兜底那一支。
+          placeFigures(b, msg.raw, boxes);
           freezeFences(fl, function (got) {
             for (var gi = 0; gi < fl.length; gi++) {
               if (got && got[gi] && boxes[gi]) fillFigure(boxes[gi], fl, gi, '');
