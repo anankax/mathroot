@@ -586,7 +586,7 @@ SR.chat = (function () {
   // 往**这一条气泡**里钉一块图。★ 一律 appendChild，**绝不重写 bubble.innerHTML**：
   //   重写会清掉已经摆好的 IMG、打乱 KaTeX 的排版，还废掉正文那条节流
   //   （正文靠 `v !== msg.lastVisible` 判断要不要重刷，见 paint 里那段）。
-  function attachFigure(bubble, fences, idx, info) {
+  function attachFigure(bubble, fences, idx, info, mode) {
     if (!bubble || !fences || idx < 0 || idx >= fences.length) return null;
     var box = document.createElement('div');
     box.className = 'figbox';
@@ -597,7 +597,7 @@ SR.chat = (function () {
       cap.textContent = info;
       box.appendChild(cap);
     }
-    fillFigure(box, fences, idx, info);
+    fillFigure(box, fences, idx, info, mode);
     var again = document.createElement('button');
     again.type = 'button';
     again.className = 'figagain';
@@ -621,10 +621,22 @@ SR.chat = (function () {
     return box;
   }
 
-  // 把图填进这块 `.figbox`：会话内有缓存就贴图，没有就先摆一个写着「图」的占位。
-  // ★ 占位可点：点它才现冻（刷新后重画那条路走的就是这儿，见 repaintLog）。
-  //   这样"刷新一次就把二十张图全重画一遍"这件事不会发生 —— 老师点到哪张才画哪张。
-  function fillFigure(box, fences, idx, info) {
+  // 把图填进这块 `.figbox`：会话内有缓存就贴图，没有就先摆一个占位。
+  //
+  // ★★ 占位分**两档**，靠 `mode` 分（2026-10-04 加，孔老师那句"要保证出图顺畅"）：
+  //   `mode === 'wait'` = "正有人去冻呢"。收流那条路（chat.js 底下那几十行）
+  //     在**摆框的那一刻**就用这一档，然后才去冻图。理由是一个实测的时序：
+  //     从借板到截图回来要 **13 秒上下**（探针量的：+10s 还占着位，+15s 真图才到）。
+  //     这十几秒里原先写的是「图 / 点一下画出来」——**没有在出图的信号**，
+  //     而且那句 title 反着指路，叫老师去点一个已经在跑的东西。
+  //   `mode` 缺省 = "没人管，点一下才画"（刷新后重画那条路走的就是这儿，
+  //     见 repaintLog；以及冻图**失败之后**回落到这一档，给老师留一条手动路）。
+  //     这样"刷新一次就把二十张图全重画一遍"这件事不会发生 —— 点到哪张才画哪张。
+  //
+  // ★ 两档都是 `.figph` 这个类名，只有 `pending` 这一个额外的类分档：
+  //   外面那些探针（probe_stream、_q_* 那一批）数的是 `.figph` 的**个数**，
+  //   "还没有真图"这件事在两档里都成立，所以它们量到的意思不变。
+  function fillFigure(box, fences, idx, info, mode) {
     var key = figKeyUpTo(fences, idx);
     var cached = figCache[key];
     var old = box.querySelector('.figimg, .figph');
@@ -636,6 +648,17 @@ SR.chat = (function () {
       im.alt = info || '这一轮的图';
       box.removeAttribute('data-empty');          // ★ 画出来了就把"还空着"这个标摘掉
       box.insertBefore(im, box.firstChild);
+      return;
+    }
+    if (mode === 'wait') {
+      // ★ 不给它挂 click，也不写 title：这一格此刻**不该被点**（点也只会被
+      //   `data-busy` 挡回来，反而更像坏了）。冻图那趟活儿跑完，调用方会拿
+      //   真结果再调一次本函数，那时要么贴图、要么落到下面那一档可点的。
+      var wph = document.createElement('div');
+      wph.className = 'figph pending';
+      wph.textContent = '正在出图…';
+      box.insertBefore(wph, box.firstChild);
+      box.setAttribute('data-empty', '1');         // 仍归"还空着"这一档
       return;
     }
     var ph = document.createElement('div');
@@ -1641,15 +1664,22 @@ SR.chat = (function () {
         var fl = msg.ggbAll || [];
         if (fl.length) {
           var boxes = [];
-          for (var fi = 0; fi < fl.length; fi++) boxes.push(attachFigure(b, fl, fi, ''));
+          // ★ 一律以 `'wait'` 那一档摆框：这几行**下面紧接着**就去冻图了，
+          //   所以从框出现的那一刻起，"有人正在出图"就是**真话**。
+          //   （实测这段要 13 秒上下，原先空白占位那 13 秒看着就是卡死了。）
+          for (var fi = 0; fi < fl.length; fi++) boxes.push(attachFigure(b, fl, fi, '', 'wait'));
           // ★ 每张图钉回它自己那道题下面（原文就是这一轮的 raw）。
           //   注意此刻「复制这段」那条 bar 已经在里面了（上面 attachCopy 先跑），
           //   所以"最后一张"能落到它前面 —— 见 placeFigures 里的兜底那一支。
           placeFigures(b, msg.raw, boxes);
           freezeFences(fl, function (got) {
             for (var gi = 0; gi < fl.length; gi++) {
-              if (got && got[gi] && boxes[gi]) fillFigure(boxes[gi], fl, gi, '');
-              // 没冻上的那几格留着占位（「图」），点一下会再试一次 —— 见 fillFigure。
+              // ★ 不管这一格冻上没有，**都要**回来刷一次：
+              //   冻上了 → 贴图；没冻上（借不到板 / 这条命令画不出来）→ 落回
+              //   那一档**可点**的「图」，老师手动点一下还有一条路。
+              //   漏了这一次的话，失败的那几格会永远停在"正在出图…"上 ——
+              //   那比原来那句「点一下画出来」更坏：它是一句永远不兑现的承诺。
+              if (boxes[gi]) fillFigure(boxes[gi], fl, gi, '', '');
             }
           });
         }
