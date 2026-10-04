@@ -220,6 +220,10 @@ window.SRlib = (function () {
 <!-- 云函数 gate 的前端那一半。★ 放在 api.js **前面**：api.js / flow.js 里那条
      "云上优先、本机兜底"要知道 SR.gate 在不在（见 js/flow.js 三、那段）。 -->
 <script defer src="js/gate.js"></script>
+<!-- 收敛保护（借自 GeoChat 的 nativeConvergenceInstruction，见文件顶上那段）。
+     ★ 放在 api.js **前面**：api.js 的 buildSystem 要读 SR.converge.note()，
+       board.js 的 `收尾` 要调 SR.converge.记坏()，两个都在它后面。 -->
+<script defer src="js/converge.js"></script>
 <script defer src="js/api.js"></script>
 <!-- 流水线的账本 + 面板。★ 排在 js/kb.js（分数线）和 js/gate.js 后面，
      再往后它要用的是 js/chat.js（面板上那个"重问一轮"）和 js/config.js 的 SR.WORKS，
@@ -613,17 +617,24 @@ window.SRlib = (function () {
              跟「几何画板」撞词：刚聊完"几何画板能不能接"，回头一看标题写着「画板」，
              根本分不清指哪个。它本来就有名字，直接写名字。 -->
       <span class="t"><span>GeoGebra</span><span class="ggbstate" id="ggbstate"></span></span>
-      <!-- 这一栏显示什么：平面 / 三维 / 导图。
-           ★「导图」是**第三个视角**，不是第七个工具按钮——同一条 `.viewsw`
+      <!-- 这一栏显示什么：平面 / 三维 / 空白 / 导图。
+           ★「导图」是**另一个视角**，不是第七个工具按钮——同一条 `.viewsw`
              里放的就是"这一栏显示什么"这**一件事**（见 css 里 `.viewbtn` 那段）。
-             而且 boardbar 这一行在 360px 上 5 个孩子已经占掉 311/331px，
-             再加一个工具按钮不是折行就是直接少一个。
            ★ 谁亮由 js/mindmap.js 的 syncSwitcher **一处**说了算：
-             导图一开就压过那两颗，不然切到导图了"三维"还亮着，
-             看着像是导图变成了三维。 -->
+             导图一开就压过那一排，不然切到导图了"三维"还亮着，
+             看着像是导图变成了三维。
+           ★★ 2026-10-05 加了「空白」（孔老师：「没有空白的没有坐标系的页面切换么」）：
+             一张没有坐标轴、也没有网格的干净纸，跟**刚开机那一张**长得一样。
+             讲"这两个量怎么一起变"、还没引到坐标系的时候，先把纸腾空。
+             ⚠ 它**不擦图**——换的是那张坐标纸，板上画好的东西一件不删。
+             ⚠ 宽度：这一排原来在 360px 上就只剩 12px 余量（见 css 里那段注释），
+               多一个两字按钮会把这行**顶折**（bar 高 49→88）。所以 css 那边
+               同步给 `.viewbtn` 在窄屏减了横向 padding —— 两边是一件事，改一处要想起另一处。 -->
       <div class="viewsw">
         <button type="button" class="viewbtn on" data-view="2d">平面</button>
         <button type="button" class="viewbtn"    data-view="3d">三维</button>
+        <button type="button" class="viewbtn"    data-view="blank"
+                title="一张没有坐标轴、也没有网格的干净纸（图不会没）">空白</button>
         <button type="button" class="viewbtn"    data-view="mm"
                 title="这一场备课的思维导图：几条岔路、走了哪条、摆到第几个环节">导图</button>
       </div>
@@ -640,6 +651,21 @@ window.SRlib = (function () {
          ★ 一页的时候整行藏起来（tabs.js 的 render 里控制 display）——
            一个标签的"标签条"不像话，而且那一行高度在手机上很贵。 -->
     <div class="tabs" id="tabs" style="display:none"></div>
+    <!-- 分步演示（见 js/board.js 里"分步"那一整段）。**自己一行**，理由跟上面的
+         tabs 一样：boardbar 那一行在 360px 上 5 个孩子已经占掉 311/331px，
+         再塞三个按钮不是折行就是少一个。
+         ★ 这里写了 inline 的 display:none，也跟 .tabs 一样——"显不显示"由
+           js 一处说了算（chat.js 的 onStepState：没有分步的图，这行整条收起来）。
+           ⚠ 别在 css 里再写一遍显示规则，那就是第二个真源。
+         ★ 为什么要有它：GGB 自带的 `If(t≥1, …)` 对**弧/圆/点**一律封死
+           （量过，见 board.js 那段），而尺规作图要一步步露的恰恰是弧——
+           所以分步只能由画板按 setVisible 自己走，按钮就是它的门面。 -->
+    <div class="stepbar" id="stepbar" style="display:none">
+      <button type="button" class="tool" id="btn-prev">◀ 上一步</button>
+      <span class="stepnum" id="stepnum"></span>
+      <button type="button" class="tool" id="btn-next">下一步 ▶</button>
+      <button type="button" class="tool" id="btn-reset">重置</button>
+    </div>
     <div class="boardwrap">
       <div id="ggb"></div>
       <!-- 思维导图（见 js/mindmap.js）。**盖在画板上**，不是替换画板：
@@ -657,10 +683,38 @@ window.SRlib = (function () {
            ★ 导图那一层自己烧了同一行署名（走的都是 board.js 的 mark），
              所以 mm 模式下这一处要收起来，不然同一行字出现两遍。 -->
       <div class="wm">KAX · 数根 mathroot</div>
+      <!-- 放大 / 缩小（2026-10-04，孔老师："也不能放大缩小"）。
+           ★ 放在 `.boardwrap` 这一层里，不放到上面那条 boardbar 上：
+             boardbar 那一行在 360px 上 5 个孩子已经占掉 311/331px，再加两颗
+             不是折行就是少一个（见那一段的注释）。而放这儿它还**跟着画板走**
+             ——「放大看」搬的是 `.boardbox` 整个盒子，这一层在里面，一起过去。
+           ★ 滚轮缩放和 Shift 拖拽其实是开着的（applet 的 `enableShiftDragZoom: true`），
+             这两颗是给"投影上要按一下给全班看"这个场面准备的，别删。
+           ★ 走的是 `SR.board.zoomBy`（board.js）。**不是** GeoGebra 的 ZoomIn／ZoomOut
+             —— 实测那两条命令在这个引擎里根本不存在，四条写法全返回 false。 -->
+      <div class="zoomctl">
+        <button type="button" class="zbtn" id="zoom-out" title="缩小一点" aria-label="缩小">−</button>
+        <button type="button" class="zbtn" id="zoom-in" title="放大一点" aria-label="放大">＋</button>
+      </div>
     </div>
     </div><!-- /.boardbox -->
   </aside>
 </main>
+
+<!-- 放大看：中央大窗（2026-10-04，孔老师提的）。
+     ★★ 这里面**不放画板**——板是**搬进来**的那一块，不是一个副本。
+     为什么：数根只有一块 applet（`#ggb`，board.js 里 `app.inject` 只喊一次）。
+     再开一块 = 两块板各画各的，老师在大窗里拨弄完，一关小窗还是老样子，
+     同一个问题两处给的答案不一样。搬家的做法见 js/main.js 的 openBigFig。 -->
+<div class="bigfig-scrim" id="bigfigscrim" hidden></div>
+<div class="bigfig" id="bigfig" data-bigfig="closed" role="dialog" aria-modal="true" aria-label="放大看">
+  <div class="bigfighead">
+    <span class="bigfigtitle">放大看</span>
+    <span class="bigfighint">整块画板搬过来的：平面／三维、播放、分步、清空、存图都在 · Esc 收回</span>
+    <button type="button" class="bigfigclose" id="bigfigclose" aria-label="收回">×</button>
+  </div>
+  <div class="bigfigbody" id="bigfigbody"></div>
+</div>
 
 <!-- 页脚（署名第二处）。★ 原来是一行居中小字——居中是"没安排"的形状，
      那篇里方舟的东西没有一件是居中的。改成贴着左边的一道细条，

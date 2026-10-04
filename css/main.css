@@ -581,6 +581,69 @@ main > .col { max-width: 1000px; margin: 0 auto; width: 100%; }
 .drawer-scrim[hidden] { display: none; }
 @keyframes scrimIn { from { opacity: 0 } to { opacity: 1 } }
 
+/* ---------- 放大看：中央大窗（2026-10-04） ----------
+   ★ 它是"把抽屉里那块板搬过来"的**落点**，不是第二块板 —— 见 js/main.js 的
+     openBigFig 和 index.html 里那段注释。
+   ★ 为什么不用 `.overlay` 那一套（关于／知识库）：那个是**居中的小盒子**，
+     宽度是给文字读的；这里要的是"给全班看一张图"，尺寸得按画板来。
+   ★ 尺寸取 `min(1180px, 94vw) × min(94vh, 980px)`：横向留一圈，老师
+     还看得见底下的对话"确实还在"，而不是整屏被吃掉（那样更像死机）。
+   ⚠ 高度故意几乎占满（94vh）：抽屉 `.drawer` 本来就是 `inset: 0 0 0 auto`
+     的**满高**面板（实测 874px），所以大窗要是只取 88vh，横向是宽了 2.3 倍、
+     **纵向反而矮了一截**（766 < 874）—— 板是拿来画几何的，少 100px 的高度
+     是实打实的亏。这条是探针量出来的，不是想出来的。
+   ⚠ 关着的时候用 `visibility: hidden` + `pointer-events: none`，**不是
+     `display: none`**：搬进来的板要在这一层里量尺寸，`display:none` 会让
+     `fit()` 量到 0×0，`setSize(0,0)` 之后 GeoGebra 那块就是一片空白
+     （同族：抽屉关着但仍有尺寸，见 `.drawer` 那条）。 */
+.bigfig {
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; flex-direction: column;
+  width: min(1180px, 94vw); height: min(94vh, 980px);
+  margin: auto;                                  /* inset:0 + margin:auto = 正中 */
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 26px 70px rgba(0, 0, 0, .28);
+  overflow: hidden;
+  transform: scale(.985); opacity: 0;
+  visibility: hidden; pointer-events: none;
+  transition: transform .2s ease, opacity .2s ease, visibility .2s;
+}
+.bigfig[data-bigfig="open"] {
+  transform: none; opacity: 1; visibility: visible; pointer-events: auto;
+}
+.bigfighead {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-bottom: 1px solid var(--line);
+}
+.bigfigtitle { font-weight: 700; font-size: 14px; }
+.bigfighint { font-size: 12px; opacity: .55; }
+.bigfigclose {
+  margin-left: auto; width: 30px; height: 30px; flex: 0 0 auto;
+  font: inherit; font-size: 17px; line-height: 1; cursor: pointer;
+  background: transparent; border: 1px solid var(--line); border-radius: 4px;
+}
+.bigfigclose:hover { background: rgba(0, 0, 0, .05); }
+/* 板就装在这一格里。★ `display: flex` + 子级自己的
+   `flex: 1 1 auto; min-height: 0` 正是它在抽屉里那套关系，照搬过来就不用改板。 */
+.bigfigbody { flex: 1 1 auto; min-height: 0; display: flex; }
+/* ★★ 2026-10-04：搬进来的从 `.boardwrap` 换成了 `.boardbox` **整个盒子**
+   （见 js/main.js 的 openBigFig——孔老师说大窗里"没有 geogebra 的功能"），
+   所以这一条也跟着换主子：`width:100%` 把 flex 基准从"内容宽度"改成"填满"。
+   ⚠ 不写它的话 `.boardbox` 的 `flex: 1 1 auto` 里那个 `auto` 是**内容**宽度，
+     而它的内容里有 `.boardbar`（会折行的一整条工具条），按内容算会**超出**窗口，
+     表现是右边被 `.bigfig` 的 `overflow:hidden` 切掉一块。 */
+.bigfig .boardbox { width: 100%; min-width: 0; }
+.bigfig-scrim {
+  position: fixed; inset: 0; z-index: 39;
+  background: rgba(0, 0, 0, .42); border: 0; padding: 0; margin: 0;
+  animation: scrimIn .18s ease;
+}
+.bigfig-scrim[hidden] { display: none; }
+/* 窄屏：四周那一圈留白就没意义了，直接铺满（手机上 94vw 里那块板能用的宽度太小） */
+@media (max-width: 620px) {
+  .bigfig { width: 100vw; height: 100vh; border-radius: 0; border: 0; }
+}
+
 /* ---------- 抽屉里：上产物、下画板 ---------- */
 /* ★ 为什么合成一栏而不是再开第三栏：出材料的时候这两样是**同屏要用**的——
    一边看生成的卷子、一边调题目要的图。1280 的屏再切一刀，对话栏就没法读了。
@@ -1250,6 +1313,37 @@ body[data-work="vary"] #send:hover { background: var(--alt-dark); }
   pointer-events: none; user-select: none; -webkit-user-select: none;
 }
 
+/* ---------- 放大 / 缩小（2026-10-04）----------
+   孔老师原话：「也不能放大缩小」——他在大窗里看那块板的时候说的。
+   ★ 为什么自己放两颗按钮，不用 GeoGebra 自带的 `showZoomButtons`：
+     那两颗是 applet 画在图形区角上的小控件，投影仪上就那么一丁点；
+     而这整页的按钮有自己的语言（`.tool` 那一套），再插一套进去就是
+     两种长得不一样的按钮摆在同一块板上。宽度 34px 是按"投影上看清"定的。
+   ★ 为什么挂在 `.boardwrap` 里、不挂在 `.boardbar` 上：boardbar 那一行在 360px 上
+     5 个孩子已经占掉 311/331px（见那一段的注释），再加两颗不是折行就是少一个。
+     挂在这儿它还**跟着画板走**——「放大看」把 `.boardbox` 整个搬进大窗，
+     这一层是它的后代，自然一起过去，不用两个地方各写一遍。
+   ★ 层级：`.boardwrap::after`（热点效应）是 4、水印 `.wm` 是 5 → 这一档用 6，
+     既要压在图上，也要压住水印。`.boardwrap::after` 是 `pointer-events: none`，
+     不会把点击挡住。
+   ★ `.mmon`（导图）时收起来：导图那一层盖着的是它自己的画布，这两颗按钮
+     在导图底下既点不着、又占着地方——留在屏幕上就是两颗"点了没反应"的按钮
+     （同族：按钮"存在、可点、唯独不可见"，比没有更坏）。 */
+.zoomctl {
+  position: absolute; left: 10px; bottom: 10px; z-index: 6;
+  display: flex; gap: 6px;
+}
+.boardwrap.mmon .zoomctl { display: none; }
+.zoomctl .zbtn {
+  width: 34px; height: 34px; padding: 0;
+  font: inherit; font-size: 17px; font-weight: 700; line-height: 1;
+  color: var(--ink-2); background: rgba(253, 254, 253, .88);
+  border: 1px solid var(--line); border-radius: 5px; cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .10);
+}
+.zoomctl .zbtn:hover { border-color: var(--brand); color: var(--brand); background: var(--panel); }
+.zoomctl .zbtn:active { transform: translateY(1px); }
+
 /* ---------- 思维导图（见 js/mindmap.js） ----------
    孔老师 2026-10-02 的原话：
      「没有形成思维导图那样的思维链条，无法做到思维链条可视化。
@@ -1314,6 +1408,36 @@ body[data-work="vary"] #send:hover { background: var(--alt-dark); }
 }
 .tabs::-webkit-scrollbar { height: 0; }
 .tabs .tab { scroll-margin: 0 14px; }
+
+/* ---------- 分步演示（见 js/board.js 里"分步"那一整段） ----------
+   摆的地方、只占一行、不折行——理由跟上面 `.tabs` 那段逐条一样，不重复。
+   ★ 按钮形状一律走 `.tool`（boardbar 上那几颗的形状），别在这儿新造一种：
+     「下一步」跟「重画」是同一类东西（对这块板做点什么），老师已经认识那个样子了。
+   ★ 只有 `.stepnum`（第 2 / 3 步）是新的：它是**读数**不是按钮，
+     照 `#status` 那条读数条的路子——小字、淡一点、别跟按钮抢眼。*/
+.stepbar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 6px;
+  padding: 6px 14px; background: var(--panel);
+  border-top: 1px solid var(--line);
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none;
+}
+.stepbar::-webkit-scrollbar { height: 0; }
+.stepbar .stepnum {
+  font-size: 12px; color: var(--ink-3); margin: 0 4px;
+  /* 「第 3 / 6 步」跳数的时候宽度会变，一窄一宽会让两边按钮左右横跳。
+     钉一个够放下「第 10 / 10 步」的宽度，数字跳的时候按钮不动。 */
+  min-width: 62px; text-align: center; white-space: nowrap;
+}
+/* 走不了的那一头按不动。★ 灰掉而不是藏掉：藏掉的话每走一步按钮都会左右挪位，
+   老师的手刚伸过去它就没了。 */
+.stepbar .tool[disabled] { opacity: .38; cursor: default; }
+/* 窄屏：`.tool` 本身在手机上的尺寸由别处管（见 `.boardbar .tool` 那段），
+   这里只把步数那一格收窄一点，别把「重置」挤出屏幕外。 */
+@media (max-width: 480px) {
+  .stepbar { padding: 5px 8px; gap: 4px; }
+  .stepbar .stepnum { min-width: 52px; font-size: 11px; }
+}
 
 /* ★ 形状照抄上面那颗「图 1/图 2」。不是偷懒——**它俩干的是同一件事**
    （`.figsw` 那段自己写着"画板只有一块，一轮出三张图就得有个门把它们叫回来"），
@@ -2312,6 +2436,12 @@ footer .r {
 p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
 /* 本机在气泡底下补的一句（不是模型说的）。压暗一档，跟气泡里的话区分开。 */
 .localnote { margin: 5px 0 0 2px; font-size: 11.5px; color: var(--ink-3); line-height: 1.6; }
+/* 跟在这句话后面的小按钮（"要不要照它重画一遍"）。做小、做轻——它不是主按钮，
+   是一句询问的落点；抢眼就等于逼老师点它，而这一步**本来该由他决定**。 */
+.localnote .lnbtn { margin-left: 6px; padding: 1px 8px; font: inherit; font-size: 11px;
+                    color: var(--brand); background: transparent; cursor: pointer;
+                    border: 1px solid currentColor; border-radius: 10px; opacity: .85; }
+.localnote .lnbtn:hover { opacity: 1; }
 .pvwrap .mth { font-family: 'Cambria Math', 'Times New Roman', serif; font-style: italic; }
 .pvwrap .mth sup, .pvwrap .mth sub { font-size: .72em; }
 /* 分数：预览里用上下叠的两行 + 一条横线，跟 Word 里那个形状对得上。
@@ -2470,12 +2600,43 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
        ⚠ 别顺手把 `.tool` 或 `.viewbtn` 再往 11px 收：12px 是这个高度上
          还能读清的下限（多页标签那段写过同一条，两处是同一个数）。
        ⚠ 402px 以上「导图」加进来是完全够的（402px 实测同样需要 319，
-         可用 373）——这档只为了 360px 那一台。 */
-  .boardbar { flex-wrap: wrap; row-gap: 6px; padding: 8px 10px; gap: 4px; }
+         可用 373）——这档只为了 360px 那一台。
+
+     ★★★ 2026-10-05 又收一档（第四次，这次是因为多了「空白」）。
+       `.viewsw` 从三颗变四颗（孔老师：「没有空白的没有坐标系的页面切换么」，
+       按钮在 index.html，谁是"空白"见 board.js 的 showBlank）。
+       多一颗两字按钮 ≈ +35px，上一版余量只有 12px —— 直接放就是**折行**。
+       这一版动的是**内边距，不是字号**（12px 是这条注释自己立的下限，没碰）：
+         · `.boardbar` 左右 padding 10 → 7，孩子间距 4 → 3
+         · `.boardbar .tool` 左右 padding 6 → 5
+         · `.viewbtn` 左右 padding 5 → 3
+       ★ 量过了（2026-10-05，`test/_viewsw_ab.cjs` + `_viewsw_loading.cjs`）：
+         402 / 390 / 360 三个宽度上**都是一行、栏高 49**，四颗按钮全在，
+         「平面/三维/空白/导图」各 30～31px，加起来 123px。
+         ⚠ 唯一没按住的：360px 上**加载中那几秒**会折成两行（49 → 84），
+           就绪后回到 49。原因和"为什么认了"写在下面 `.boardbar .t` 那一段里。
+         ★ 这一整段的规矩是"先量再动这儿，别凭感觉"；下面那条注释里还记了
+           一个**加了等于没加**的写法（`min-width: 0`），别再试第二遍。 */
+  .boardbar { flex-wrap: wrap; row-gap: 6px; padding: 8px 7px; gap: 3px; }
+  /* ★★ 2026-10-05 实测结论：加完「空白」这第四颗之后，**360px 上"加载中那几秒"
+     这条会折成两行**（bar高 49 → 84），就绪之后回到 49。这一条是量出来的，不是算的：
+       · `test/_viewsw_ab.cjs`（等 `#ggbstate` 清空再量）→ 402/390/360 全是一行 49px
+       · `test/_viewsw_loading.cjs`（手动往徽标里写回「正在加载…」）→ 360px 变 84px
+     账很直白：就绪时这一行右边缘已经到 353 / 可用 360，只剩 7px；
+     `.t` 平时 66px（那串 "GeoGebra"），`#ggbstate` 一写字就 +63px+6px 外边距 → 需要 422px。
+     ★ 试过、**没用**、已撤回的写法：给 `.t` 和 `.ggbstate` 加 `min-width: 0` +
+       `overflow: hidden`。多行 flex 是按每个孩子的**假想主轴尺寸**分行的，
+       收缩后的宽度它不认——加完再量，`.t` 还是 135px、bar 还是 84px。
+     ★ 为什么不干脆把徽标裁掉或藏掉换一行：**`#ggbstate` 是画板唯一报加载/报错的地方**
+       （board.js 的 note()，连"没加载出来，刷新试试"也走它）。手机上把它藏了，
+       等于把唯一的错误出口堵死——比折一行贵得多。
+     ★ 所以这一条**保持现状**：360px 上加载中两行、就绪后一行，认了。
+       真要治，得从"那 105px 的三颗工具按钮"或"标题+徽标"里挪地方，
+       那是另一次改动，别顺手在这儿改字号（12px 是这条注释自己立的下限）。 */
   .boardbar .t { margin-right: auto; white-space: nowrap; }
   .boardbar .t span { margin-right: 6px; }
-  .boardbar .tool { font-size: 12px; padding: 5px 6px; }
-  .viewbtn { font-size: 12px; padding: 5px 5px; }
+  .boardbar .tool { font-size: 12px; padding: 5px 5px; }
+  .viewbtn { font-size: 12px; padding: 5px 3px; }
   .boardbar b, .boardbar em { display: none; }   /* 手机上标题只留那一串名字本身 */
 
   /* ★ 状态条空着时收掉——**2026-10-03 起这是全站默认**（见上面 #status 那条），

@@ -149,6 +149,20 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   // 把这一页拿到最前面：后台标签页里 rAF 被节流，截图会**稳在同一帧**上，
   //   于是一张真会动的图会被量成"不动"——又一个是"稳的错值"。
   await send('Page.bringToFront', {});
+
+  // ★★ 2026-10-04 加：开跑前**验签**——把"这一页现在跑的是哪一份 render.js"打出来。
+  //   为什么要这一步：18:02 那份体检表里 #51 还漏着 ```想知道，我改的闸门却在文件里。
+  //   真因是**时序**——体检表是长跑，页面在**改文件之前**就加载好了，全程跑的是旧代码，
+  //   写完盘的时间戳(18:02)看着"在修复之后"，其实读数是修复前的。
+  //   ⚠ 这跟老账里那条同族：**时间戳是"什么时候写完的"，不是"什么时候读的"**。
+  //   所以这里不问"我改了吗"，直接问页面：`parseFences` 的源码里有没有那句闸门。
+  //   往后凡是改了 render.js / board.js 再跑体检，先看这一行是不是 ★在。
+  const 签 = await q('(function(){var s=String(SR.render.parseFences);'
+    + 'return {闸门:s.indexOf("RE_FENCEOPEN")>=0, 老规矩:s.indexOf("RE_TICKLINE")>=0}})()');
+  console.log('   [验签] 页面里的 render.js：新闸门 RE_FENCEOPEN ' + (签 && 签.闸门 ? '★在' : '✗不在——跑的是旧代码，读数一律作废')
+    + '　老规矩 RE_TICKLINE ' + (签 && 签.老规矩 ? '在' : '✗不在'));
+  if (!签 || !签.闸门) { console.log('   页面跑的不是当前源码，先停下——别拿旧代码的读数当结论'); process.exit(3); }
+
   const 框 = await q('(function(){var e=document.getElementById("ggb"); if(!e) return null;'
     + 'var r=e.getBoundingClientRect(); return {x:Math.round(r.left),y:Math.round(r.top),width:Math.round(r.width),height:Math.round(r.height)};})()');
   // ★★ "画板上这一眼"取的是**画板自己渲染的那张图**（`SR.board.toPNG()`，getPNGBase64），

@@ -399,6 +399,73 @@ SR.tabs = (function () {
     render();
   }
 
+  // ---- 把**眼前这一页**重画一遍 ----
+  //
+  // ★ 2026-10-04 加的，给「画板没认 → 让模型自己改一次」那条回路用（js/chat.js 的 试自修）。
+  //   为什么不能直接用 `drawHere`：那会**另开一页**，于是标签条上并排出现
+  //   "破了的那张"和"修好的那张"两个标签，老师不知道点哪个——而它们其实是同一道题。
+  //   也不能用 `cleared()`：那是「老师按了清空」，它会把这一页变回「空白页」、
+  //   把 `used` 抹掉，接着 `drawHere` 就会把修好的图**画到别处去**。
+  //   ⚠ 所以这儿只做一件事：**同一页，换一份行**。
+  //   存档（`pg.snap`）**故意不在这儿重拍**：它本来就是"离开这一页时才拍"（见 go()），
+  //   现在重拍反而会和画板正忙着的状态打架——等老师下次点走，拍的自然是修好之后那张。
+  //
+  //   ★★ 2026-10-04 夜：加了 `cb(ok)` —— **这一批真画完了没有，必须回话**。
+  //   为什么非有不可（实测在 test/_count3.cjs）：原来它是 `clear()` + `run()` 两下就返回，
+  //   而 `run()` 是**排队即返回**的（每条命令隔几百毫秒才放出去）。调用方（js/chat.js 的 去问）
+  //   只好拿 `isBusy()` 当"画完了没有"的秒表 —— 而刚排完队那一刻板并**不**忙，
+  //   于是它当场就读了一次板，读到的是**上一张图**的件数（7 件，正是改之前那张），
+  //   据此判"一件都没丢"、不回滚，补的话还说"改了一遍"。**数字没错，错的是它量的
+  //   是上一张图**（同族：按秒表读状态，会把"还没开机"读成"报错了"）。
+  //   真信号只有 `SR.board.draw(lines, cb)`：它有世代号（这批被作废了就回 false），
+  //   并且多留一帧（等 GeoGebra 真把东西画到画布上）。
+  function relines(lines, hint, cb) {
+    lines = (lines || []).slice();
+    if (!live || cur < 0) {                 // 多页没装起来 → 老路：当前板上重画
+      重画(lines, cb);
+      return;
+    }
+    var pg = pages[cur];
+    pg.lines = lines;
+    pg.used = true;
+    pg.blank = false;
+    pg.title = titleFor(lines.join('\n'), titlesExcept(cur), hint);
+    render();
+    重画(lines, cb);
+  }
+
+  // 清掉这一页、按给定的行重画，**画完回话**。
+  //   ★ 走 `SR.board.draw`（而不是 `clear()` + `run()`）还有一笔白得的好处：它在**串行链**里。
+  //     而 `run()` 是故意的"活路径"、要插队的（老师发一句话不该排到出材料的图后面）。这两条
+  //     撞在一起的实测后果见 js/board.js 里 `offscreenJob` 的 `自家世代` 那段：借板那一趟
+  //     收工把老图装回来，正好盖在这条重画上面。排进同一条链，次序就定死了。
+  //   ⚠ 链上等的是**画完**，不是"排上队"。所以 `cb(ok)` 里那个 `ok` 要当真：
+  //     false = 这批被作废了（别人又发了图／老师点了清空），或者超时没画完。
+  function 重画(lines, cb) {
+    SR.board.clear();
+    if (cb && SR.board.draw) { SR.board.draw(lines, function (ok) { cb(!!ok); }); return; }
+    SR.board.run(lines);
+    if (cb) cb(true);                       // 老板子没有 draw：只能照实说"我发下去了"
+  }
+
+  // 「把这一页记的行换回去，但**一根汗毛都不动板**」——给自修回滚用（js/chat.js 的 去问）。
+  //
+  // ★ 为什么不能拿 relines 顶替：relines 是 `clear()` + 重跑一遍，而回滚那一趟的板上
+  //   **已经**用存档还原成老师原来看见的那张了 —— 那是**像素级的复原**，连滑块的当前位置、
+  //   第几步都带回来。再拿命令重跑一遍，是"用命令去凑一张已经对了的图"，
+  //   模型当时写得别扭的地方（`#分步` 的名字、悬空的引用）反而会再坏一次。
+  //
+  // ★ 那为什么还要记这一笔：`pg.lines` 是"这一页画的是什么"的账（`go()` 在没有存档时
+  //   靠它重画）。账跟板不一致，下一次切页就会**悄悄换一张图**——
+  //   同族：按下标收快照，收回来的却是隔壁那一页。
+  function revertHere(lines, hint) {
+    if (!live || cur < 0) return;              // 多页没装起来时本来就没这份账，不用改
+    var pg = pages[cur];
+    pg.lines = (lines || []).slice();
+    pg.title = titleFor(pg.lines.join('\n'), titlesExcept(cur), hint);
+    render();
+  }
+
   function init(id) {
     hostId = id || 'tabs';
     // 画板那一包要从 geogebra.org 拉（冷缓存约 3 秒）。就绪之前 `snapshot()`
@@ -421,6 +488,8 @@ SR.tabs = (function () {
     shapeOf: shapeOf, titleFor: titleFor, clean: clean,
     // 页
     init: init, reset: reset, cleared: cleared, drawHere: drawHere,
+    relines: relines,
+    revertHere: revertHere,
     go: go, render: render,
     // 给测试和界面看的读数
     count: function () { return pages.length; },

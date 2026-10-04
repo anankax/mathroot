@@ -6,6 +6,22 @@ SR.chat = (function () {
   var els = {};
   var history = [];          // [{role, content}] —— 发给模型的上下文
   var busy = false;
+  // ★ 2026-10-04：「画板没认 → 让模型改一次」那一趟**每次提问只准跑一趟**（见 试自修）。
+  //   闸装在这一层、由 submit() 每轮开头置回 false —— 管的正是"**老师这一句话**
+  //   最多让它改几趟"。写成 msg 上的一个字段也行，但那样闸就散在几处，
+  //   而这个闸要拦的恰恰是"自修这一趟**又**没认 → 再自修"这条链。
+  var 自修过了 = false;
+  // ★★ 2026-10-04 夜：**局面数** —— 每一次"老师把这一局翻篇了"加一。
+  //   谁会让它加：清空按钮、换工位/重开（`reset`）、老师又发了一句话（`submit`）。
+  //   谁要看它：自修那一趟（`去问`）拿到存档、正等画板重画的那几秒里，如果这个数变了，
+  //   说明**等的那几秒里局面已经不是原来那一局了** —— 这时**一步都不许往回动**。
+  //
+  //   为什么非有不可：`restore(旧)` 在"改坏了"那一刻是解药，在"老师刚把板清了"那一刻
+  //   是**把垃圾搬回来**。它们在代码上长得一模一样（都是"把旧存档装回去"），
+  //   光看板的状态也分不出来（都是"板上的东西跟旧的不一样了"）——只有**有人告诉过我们**
+  //   局面翻篇了，才分得出来。同族：`find()` 抓第一个标签页、按秒表读状态，
+  //   读数都合情合理，量的却是**别人那一刻的**东西。
+  var 局面数 = 0;
   var work = SR.DEFAULT_WORK || 'prep';
   // 上下文条数的粗兜底。**真正管用的那道闸在 api.js 里**——免费通道只有 16K，
   // 得按 token 裁（trimHistory），按条数裁是挡不住"贴一道长题干"的。
@@ -139,10 +155,19 @@ SR.chat = (function () {
     //   他一走再回来，图自己又长回来了。他会以为"清空没生效"，
     //   然后连点三下——而那个 bug 长在别的地方，他怎么点都修不好。
     if (bc) bc.addEventListener('click', function () {
+      局面数++;          // ★ 老师亲手把板抹了 = 翻篇：自修那一趟不许再把老图"还回来"（见 局面数）
       SR.board.clear();
       if (SR.tabs) SR.tabs.cleared();
     });
     if (bpng) bpng.addEventListener('click', function () { saveBoardPNG(bpng); });
+
+    // 分步演示那三个（见 js/board.js 里"分步"那一整段）。**按钮只报"往哪走"**，
+    //   具体走几步、谁露谁藏，全在画板那边算——两边各算一份的话，
+    //   滑块驱动和按钮驱动早晚会说得不一样。
+    var bnext = $('btn-next'), bprev = $('btn-prev'), breset = $('btn-reset');
+    if (bnext) bnext.addEventListener('click', function () { SR.board.stepBy(1); });
+    if (bprev) bprev.addEventListener('click', function () { SR.board.stepBy(-1); });
+    if (breset) breset.addEventListener('click', function () { SR.board.stepReset(); });
 
     // 画板的注入不在这里——那是 main.boot 的活。这里只把两个回调交出去。
   }
@@ -179,6 +204,24 @@ SR.chat = (function () {
     if (!st.target) { bp.style.display = 'none'; return; }
     bp.style.display = '';
     bp.textContent = st.playing ? '⏸ 停' : '▶ 播放 ' + st.target;
+  }
+
+  // 画板说"这一张图有分步" → 把那条按钮亮出来，并把「第几/共几步」写上去。
+  //   ★ 走的线跟上面 onPlayState 一模一样（board 的 hooks.stepState → 这里），
+  //     不是两个来源：`#分步` 是模型写在围栏里的，只有画板知道有几个。
+  //   ★ 亮/灭用 display，跟 `.tabs` 一个规矩（见 index.html 那段注释）。
+  function onStepState(st) {
+    var bar = $('stepbar');
+    if (!bar) return;
+    if (!st || !st.max) { bar.style.display = 'none'; return; }
+    bar.style.display = '';
+    var num = $('stepnum');
+    if (num) num.textContent = '第 ' + st.now + ' / ' + st.max + ' 步';
+    // ★ 走到两头就把那一头**按死**（灰掉），别让它点了没反应——
+    //   点了没反应，老师会以为按钮坏了，然后连点三下。
+    var bp = $('btn-prev'), bn = $('btn-next');
+    if (bp) bp.disabled = st.now <= 0;
+    if (bn) bn.disabled = st.now >= st.max;
   }
 
   function setStatus(s) {
@@ -333,6 +376,10 @@ SR.chat = (function () {
     //   这三样是给最后一条准备的材料：它自己那份 ```想说、在哪个工位、
     //   是不是本场的第一次回复（`SR.fallbackChips` 里只有讲评那份认 `first`）。
     var lastSay = null, lastWork = '', lastFirst = false;
+    // ★ 这一屏里"有图要先摆着、摆完要自己补上"的那些（2026-10-04，见 补图 那段）。
+    //   攒在这儿、等整屏摆完再开跑 —— 摆的中间就开跑的话，`freezeFences` 会跟
+    //   `placeFigures`（还在往正文里挪框）抢 DOM，图会钉到没摆好的位置上。
+    var 待补 = [];
     // ★ 2026-10-04：作图那三颗兜底按钮要按"图上画的是立体还是平面"挑词
     //   （孔老师 2026-10-03 截图那三条"画个正方体／换成三维"，摆在一条数轴底下）。
     //   攒**每条助手回复的原文**——判据是"最近一条真画了图的回复说了算"，
@@ -384,6 +431,11 @@ SR.chat = (function () {
       for (var gi = 0; gi < pr.ggb.length; gi++) {
         gboxes.push(attachFigure(b, pr.ggb, gi, (pr.ggbInfo && pr.ggbInfo[gi]) || ''));
       }
+      // ★ 记进"待补"那一队：这一屏摆完之后**自己把它们补上**（2026-10-04，见 补图 那段）。
+      //   ⚠ 记的是**这条气泡的整串围栏 + 它的那几个框**，不是单个 `.figbox`：
+      //     `freezeFences` 冻的是"到这一张为止的累积状态"，一条气泡跑一趟就够了，
+      //     按框去跑会把同一串围栏反复借板（三个框 = 三趟，白等三份 13 秒）。
+      if (gboxes.length) 待补.push({ fences: pr.ggb, boxes: gboxes });
       // ★ 每张图钉回它自己那道题下面（原文在 `t.t` 里；当场那条路在收流处做同一件事）
       if (gboxes.length) placeFigures(b, t.t, gboxes);
       // ---- 卷子卡也要摆回来 ----
@@ -414,6 +466,14 @@ SR.chat = (function () {
       }), lastB);
     }
     scroll();
+    // ---- 整屏摆完了，这才开始补图（2026-10-04，见 补图 那段）----
+    // ★ 压在最后：这一屏该摆的框、该挪的位置（placeFigures）、该钉的按钮全钉完了，
+    //   才轮到"去冻图"这趟慢活儿开跑。早一步开跑，`fillFigure` 会跟
+    //   `placeFigures` 抢同一个 `.figbox` 的父级。
+    // ⚠ 它**不阻塞**这一行以后的任何东西 —— 补图是异步的，一屏摆完立刻返回，
+    //   老师马上就能接着打字。这一条是"图直接显示出来"的前提：要是等图补完
+    //   才让页面活过来，那就是拿一次十几秒的白屏换一张图。
+    补图(待补);
     return true;
   }
 
@@ -540,8 +600,28 @@ SR.chat = (function () {
   //   调用方（submit 收尾 / 点占位）各自借一次，边界清楚。
   var figCache = {};                       // 累计命令原文 → { url, w, h }
 
+  // 这一串围栏**到第 n 张为止**该按哪一维画：3 还是 2。纯函数，只读字。
+  //
+  // ★ 判据用 `SR.ggbLooks3D` —— 跟三个选项按钮（chips.js 的 `SR.dimFromTexts`）
+  //   **同一个函数**。那一处已经立过规矩：判文本、不判板子，理由是"刷新前后
+  //   拿到的得是同一份证据"。这里要的是同一件事，再写一个判法就又多一个真源。
+  // ★ 看的是**最后一张非空的围栏**，不是把前面拼起来：板是累积的，
+  //   后写的 `#平面` 必须压过先写的 `#三维`。拼起来判的话，一轮立体作图
+  //   会把这一轮后面每一张图都拽进三维。
+  // ★ 一张围栏都没有 → 平面。跟 chips.js 同一条取向（往平面偏），理由见那边。
+  function 该按哪维(fences, n) {
+    for (var j = n; j >= 0; j--) {
+      var t = String((fences && fences[j]) || '').trim();
+      if (t) return SR.ggbLooks3D(t) ? 3 : 2;
+    }
+    return 2;
+  }
+
   function figKeyUpTo(fences, upto) {
-    return SR.figures.key(fences.slice(0, upto + 1).join('\n'));
+    // ★★ 维度**算进缓存键里**（2026-10-04）。为什么非算不可：这张图长什么样
+    //   既取决于命令、也取决于"按哪一维拍"，只拿命令当键的话，
+    //   本会话里已经冻好的那张**错图**会被一直命中，改完也看不出改。
+    return SR.figures.key(该按哪维(fences, upto) + '\n' + fences.slice(0, upto + 1).join('\n'));
   }
 
   // 冻出这一轮的前 `upto+1` 张图（缓存命中就不重画）。回调拿到的数组跟 fences 等长，
@@ -575,6 +655,13 @@ SR.chat = (function () {
         if (figCache[key]) { i++; next(); return; }
         var lines = SR.figures.splitLines(fences[n]);
         if (n === 0) lines = ['#清空'].concat(lines);   // ★ 只第 1 张补清空，理由见上
+        // ★★ 摆正视角再画（2026-10-04）。借来的这块板是老师**眼前**那块，
+        //   它可能正停在三维上——那时候几句平面命令会照着三维视图画，
+        //   点全落在 z=0 的地平面上，冻出来一张"线段看不见"的立体图
+        //   （孔老师截图问"这什么意思，咋是这个图"的那张）。
+        //   ⚠ 用 `ensureView` 而**不是**往 lines 里塞 `#平面`：后者会顺带
+        //     重置取景和网格，那是另一件事（理由见 board.js 的 ensureView）。
+        if (SR.board.ensureView) SR.board.ensureView(该按哪维(fences, n) === 3);
         // ⚠ 一张张按顺序画，不并行：板只有一块，并行画 = 几张互相覆盖，
         //   每张截到的都是别人的半成品（pack.js 那边同一条）。
         draw(lines, function (ok) {
@@ -600,6 +687,103 @@ SR.chat = (function () {
     });
   }
 
+  // ---- 刷新之后，把屏幕上这些图**自己补上**（2026-10-04 加）----
+  //
+  // ★★ 孔老师原话：「还有就是为啥不让图直接显示出来，一定要我点一下才画出来」。
+  //   他这一条站得住。原先的做法（刷新后一律留「图」那个占位、点到哪张才画哪张）
+  //   是我为"别一次重画二十张把页面拖死"定的取舍，可代价是**图在那儿却不显示**——
+  //   等于白画，而且老师根本不知道那儿本来有图。
+  //
+  // ★ 改法不是"全自动重画"，是**从最新那张往回、一张一张补**：
+  //   ① 串行：`freezeFences` 本来就走 `offscreenJob` 那条串行链，一次只有一块板在借
+  //      （并行画会把几张图互相覆盖，board.js / pack.js 那边同一条）。
+  //   ② 从**最新**往回：最新那张通常正是屏幕上看的那张，先补它，老师一眼就有图；
+  //      更早的那些慢慢往回追，追不完也不影响他看眼前这一条。
+  //   ③ 已经在缓存里的**不借板**（`freezeFences` 第一段就查了缓存）——
+  //      所以"点 ⟳ 切工位"那种会话内重画几乎是白跑的，不花时间。
+  //
+  // ★★ 三条**收手**的闸，一条都不能少：
+  //   ① 换了代（`补图代`）—— 老师又问了别的、或者整屏重画了一次，
+  //      这一队就不作数了。不设这道闸的话，他刚问的新图会**排在一堆旧图后面**，
+  //      每条 13 秒上下，他会以为"这一轮卡死了"。
+  //   ② 板正在给老师看（抽屉开着 / 放大看开着）—— 别在他眼皮底下把板一借一还，
+  //      画板会一闪一闪。等他从板前走开再接着补。
+  //   ③ 追到头了 —— 老实停。
+  var 补图代 = 0;          // 换代 = 这一队作废（见上）
+  var 补图候 = null;       // 等的那个 setTimeout（重画/收手时要 clear，不然会攒一串）
+
+  function 停补图() {
+    补图代++;
+    if (补图候) { clearTimeout(补图候); 补图候 = null; }
+  }
+
+  // 板是不是正摆在老师眼前。★ 读的就是 `data-drawer` / `data-bigfig` 这两个属性本身 ——
+  //   它们是那两个开关的**唯一真源**（main.js 里写得很死："只写这一个属性，
+  //   开关长什么样全在 css 那两条里"），不是我从别处的状态推出来的二手读数。
+  function 板在眼前() {
+    var d = document.getElementById('drawer');
+    if (d && d.getAttribute('data-drawer') === 'open') return true;
+    if (SR.main && SR.main.bigFigOpen && SR.main.bigFigOpen()) return true;
+    return false;
+  }
+
+  function 补图(队) {
+    if (!队 || !队.length) return;
+    停补图();
+    var 代 = 补图代;
+    var i = 队.length - 1;                    // ★ 从最新那张往回
+    var 空转 = 0;                             // 连着让了几回没干活
+    // 等一等再回来。★ `空转` 只数**连续**的空转：每真补上一张就清零。
+    //   不清零的话，二十张图各让一次就撞了上限，后面十几张永远补不上，
+    //   而屏幕上看不出是"放弃了"还是"还在补"（同族：数够圈数当跑完了）。
+    //   上限 40 × 1.2s ≈ 48 秒 —— 追不上就老实放弃，不留一个永远在转的定时器
+    //   （那比没补图更难查：页面上什么都正常，只有个计时器在后台空转）。
+    // ★★ `下一步` 必须是**函数声明**（`function 下一步(){}`），**不能**写成
+    //   `(function 下一步(){}())` 那种具名函数表达式。2026-10-04 当场栽过一次：
+    //   写成表达式的话，`下一步` 这个名字只在自己**体内**有效，外层这个 `让一让`
+    //   的 `setTimeout(下一步, …)` 里它是**未定义**的 —— 一进定时器就抛
+    //   `ReferenceError`，而且死在定时器里：页面上不报错、不弹窗，探针量到的
+    //   就是"补图一声不吭、图一张没出来"（当场的红是"正在出图…"从没出现过）。
+    //   函数声明会提升，两个函数互相喊得到。
+    function 让一让() {
+      if (空转++ > 40) return;
+      补图候 = setTimeout(下一步, 1200);
+    }
+    function 下一步() {
+      补图候 = null;
+      if (代 !== 补图代) return;               // 闸① 换代了
+      if (i < 0) return;                       // 闸③ 追到头了
+      // 闸①′ 板还没就绪。★ 这道闸非有不可，而且是**最要命**的一道：
+      //   重画这条路在 `chat.init()` 里跑，而板（`board.init`，要等 GeoGebra
+      //   那个 CDN 脚本落地）**排在它后面**。这时就开跑的话，`freezeFences`
+      //   第二行的判据 `!SR.board.offscreenJob` 会当场 `done([])` ——
+      //   它不抛错、不重试、不留痕，只是**安安静静地什么都没做**。
+      //   于是这一屏的图会永远停在可点的占位上，而看代码看不出为什么
+      //   （同族：探针伪造出一份世上不存在的存档格式）。
+      if (!SR.board || !SR.board.isReady || SR.board.isReady() !== true) return 让一让();
+      if (板在眼前()) return 让一让();          // 闸② 老师正在看板
+      空转 = 0;
+      var it = 队[i--];
+      // 摆成"正在出图…"那一档（不是可点的那一档）：这一刻**真有人去冻了**，
+      // 说出这句才是实话。冻完这儿再调一次 fillFigure 换成真图。
+      for (var w = 0; w < it.boxes.length; w++) {
+        if (it.boxes[w]) fillFigure(it.boxes[w], it.fences, w, '', 'wait');
+      }
+      freezeFences(it.fences, function () {
+        if (代 !== 补图代) return;             // 等回来也可能换过代了
+        for (var k = 0; k < it.boxes.length; k++) {
+          // ★ 不管这一格冻上没有**都要**回来刷一次：冻上了贴图，没冻上落回
+          //   那一档**可点**的「图」——老师手动点一下还有一条路。
+          //   漏了这一次的话，失败的格子会永远停在「正在出图…」上，
+          //   那是一句永远不兑现的承诺（当场那条路同一条纪律，见上面 freezeFences 那段）。
+          if (it.boxes[k]) fillFigure(it.boxes[k], it.fences, k, '', '');
+        }
+        补图候 = setTimeout(下一步, 60);
+      });
+    }
+    下一步();                                  // ★ 头一下是靠这一句点着的（不是 IIFE）
+  }
+
   // 往**这一条气泡**里钉一块图。★ 一律 appendChild，**绝不重写 bubble.innerHTML**：
   //   重写会清掉已经摆好的 IMG、打乱 KaTeX 的排版，还废掉正文那条节流
   //   （正文靠 `v !== msg.lastVisible` 判断要不要重刷，见 paint 里那段）。
@@ -618,14 +802,33 @@ SR.chat = (function () {
     var again = document.createElement('button');
     again.type = 'button';
     again.className = 'figagain';
-    again.textContent = '再摆弄';
+    // ★★ 2026-10-04 改名（孔老师原话：「也不应该叫"再摆弄"，这个说法太随意了」）。
+    //   改成「放大看」的理由：这个按钮在课上就干**一件事**——把这块板弄大、
+    //   弄到全班看得见。名字照着那件事说，别用一个只有我自己懂的词。
+    again.textContent = '放大看';
     again.addEventListener('click', function () {
-      // ★ 摆的是**这一条为止的累积状态**，不是光这一张：老师点图上的「再摆弄」，
+      // ★ 摆的是**这一条为止的累积状态**，不是光这一张：老师点图上的按钮，
       //   要的是"这张图当时那块板"，接着往下弄。只放最后一张围栏的话，
       //   他会看到"连接 AB"里没有 A、B —— 跟图不一致。
       var lines = SR.figures.linesOf(fences.slice(0, idx + 1).join('\n'));
-      if (SR.main && SR.main.openDrawer) SR.main.openDrawer();
-      if (SR.board && SR.board.run) SR.board.run(lines);
+      // ★★ 2026-10-04：从"拉开右边抽屉"改成"中央蹦一个大窗"（孔老师提的）。
+      //   原来的问题是侧栏只有 min(520px, 42vw)，投影到教室那头屏幕上，
+      //   图里的点、标注全小得看不清 —— 而老师点这个按钮的**唯一**理由
+      //   就是要给学生看。开大窗这一步只搬板、不动这块板上的内容
+      //   （见 js/main.js 的 openBigFig：搬的是 `.boardwrap` 那一块本身）。
+      if (SR.main && SR.main.openBigFig) SR.main.openBigFig();
+      // ★★ 摆正视角再画（2026-10-04，跟上面 freezeFences 那条同一个病）：
+      //   这几句命令是**平面**的，而板可能正停在三维上——照着三维画，
+      //   点全落在 z=0 的地平面上，老师在大窗里看到的是一张"线段不见了"的立体图。
+      //   点「放大看」的这条跟冻图那条是两处独立的作画，所以两处都得摆。
+      if (SR.board && SR.board.ensureView) SR.board.ensureView(该按哪维(fences, idx) === 3);
+      // ★★ 这一遍走**快档**（`{快:true}`），别按 550ms 一条慢慢长（2026-10-04）。
+      //   孔老师原话：「打开大窗口以后，之前的图也没有出来啊，就是一个空白的画板啊。」
+      //   量出来的病根就在步长（`test/_enlarge.cjs`，走的是他这个按钮、不是我调 openBigFig）：
+      //     点之前 板上 [] 墨 0 → +1s 大窗已经开了，画布**全白**（墨 0）
+      //     → +2s 才见 A、B → +4s 才见 s、m。中间那一两秒，就是"空白的画板"。
+      //   他要的是**点开就看见图**，不是再看它长一遍 —— 慢慢长那遍他在聊天里已经看过了。
+      if (SR.board && SR.board.run) SR.board.run(lines, { 快: true });
       if (SR.tabs && SR.tabs.reset) SR.tabs.reset();   // 这一块板从此是老师在弄，页签重记
     });
     box.appendChild(again);
@@ -795,6 +998,7 @@ SR.chat = (function () {
 
   function reset(newWork, opts) {
     work = newWork || work;
+    局面数++;          // ★ 换工位／点 ⟳ = 翻篇了：自修那一趟要等的"原来那一局"没了（见文件开头 局面数）
     // ★★ 只有 ⟳ 走这一条（main.js 传 {wipe:true}）。
     //   切工位、刷新页面**都不许清**——清空是一个动作，不是切工位的副作用。
     //   （见 js/memo.js 顶上那三条。孔老师的原话：「除非我靠一个刷新按钮给他清了」。）
@@ -1399,6 +1603,326 @@ SR.chat = (function () {
     scroll();
   }
 
+  // 气泡底下补一句 + 一个按钮（同样**不是模型说的**）。给"这一步要不要做、你说了算"用。
+  // ★ 按钮点过就摘掉：它是"再问一次"，留着会让人以为还能反悔第二次。
+  // ★ 回一句**那个 `<p>`**：有的补话过一会儿就不成立了（比如"板上没有播放键"，
+  //   而自修那一趟正把这一页换掉），得能把它整个收回来。见 说播放这一茬。
+  function noteBtnUnder(el, text, 按钮话, onclick) {
+    if (!el) return null;
+    var p = document.createElement('p');
+    p.className = 'localnote';
+    p.appendChild(document.createTextNode(text));
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'lnbtn';
+    b.textContent = 按钮话;
+    b.onclick = function () { if (b.parentNode) b.parentNode.removeChild(b); onclick(); };
+    p.appendChild(b);
+    el.appendChild(p);
+    scroll();
+    return p;
+  }
+
+  // 「这一行算不算真给画板递了一条命令」——**一条判据，两处用**。
+  //   `paint` 那边本来内联着同一段（数"真画了东西的条数"，拿它判"模型是不是只发了个
+  //   光秃秃的 #清空"），自修那道闸也要用，就抽到这儿。
+  // ⚠ 别在闸那边另写一份：两处各写一份就是两份规则，早晚会漂——漂的那天，
+  //   自修会按另一套口径开合，而它开合的直接后果是**老师眼前那张图被换掉**。
+  // `#清空`/`#分步` 是指令不是对象；`清空()/隐藏()/显示()` 同样不往板上添东西。
+  function 数实条(lines) {
+    var n = 0;
+    for (var i = 0; i < lines.length; i++) {
+      var s = String(lines[i]).trim();
+      if (s && s.charAt(0) !== '#' && !/^(清空|隐藏|显示)/.test(s)) n++;
+    }
+    return n;
+  }
+
+  // ============================================================
+  //  「画板没认」→ 让模型自己改一次
+  // ============================================================
+  //
+  // ★★ 2026-10-04 加的。**产品本来缺了半条回路**：板上没落地的命令，
+  //   `SR.board.failed()` 一直存着、状态条也照实说了（老师看得见），
+  //   可**模型自己看不见** —— 于是它下一轮还会照原样错一遍，或者干脆不明白老师为什么说"没画出来"。
+  //   （实测：问"转出六份铺成一圈"，12 轮里 11 轮都写出了名字或参数不对的命令，
+  //    最典型的一条是 `旋转(三角形, α*A, A)` —— 第二格该放**数**，它把第三格那个点名字薅了过去。
+  //    见 test/probe_rotate.cjs 与 js/prompt-draw.js 顶上那段。）
+  //
+  // ⚠ 只做**一次**，不追第二回。理由不是省 token：第二回是在"第一回也没改对"之后，
+  //   那说明这一轮的问题不是手滑，是模型就没懂这道题——再问一遍只是让老师多等两轮。
+  //   宁可把剩下没认的照实说清楚，让他自己决定是补一句还是手画（他本来就会用 GeoGebra）。
+  //
+  // ⚠ 判据取 `msg.ggbDone > 0`（这一轮**真给画板递过命令**），不取工位名：
+  //   六个工位里能画图的不止 draw 一个，按工位名写死就会漏、而且以后加工位还得回来改。
+
+  // ---- 正文里让你「点播放键」，可这一页的板上**根本没有播放键** ----
+  //
+  // ★ 来历：孔老师 2026-10-03 的截图。气泡里写着
+  //   「现在，点播放键，圆就会绕着点 A 旋转，可以看到它的侧面。」，
+  //   而同一份围栏里**一条 `#播放` 都没有**（命令还写坏了：`旋转中心=点旋转`）。
+  //   他去画板上找那颗键 —— 那颗键是**暗的**。
+  //
+  // ★ 为什么是"暗的"这件事**量得出来**、不用猜：
+  //   `board.js` 的 `canPlay()` 取的是模块级的 `playTarget`，而 `playTarget`
+  //   **只有一个地方会赋值** —— `markPlayable(name)`，它由 `#播放 X` 那一条指令触发
+  //   （见 js/board.js:1603 与 :3018）。没有 `#播放`，它就一直是个 null。
+  //
+  // ★ 为什么写成**本机补话**、而不是提示词里再添一条规则：
+  //   这一档失败是**确定性的**（正文说了播放 vs 板上有没有走过 `#播放`），
+  //   量得出来就不该交给模型自觉。而且 2026-10-04 实测过：
+  //   往作图提示词的尾块里加"别忘了写 #播放"这类规则，六项判据**一起变差**。
+  //   （同族的教训见 [[prompt-must-do-at-tail]]：位置比字句要紧，加字要慎。）
+  //
+  // ⚠ 只**说一句 + 给一颗按钮**，绝不擅自重画：板上可能真有一张能动的图
+  //   （`#播放` 写在另一页上），也可能图本身是好的、只是没做动。
+  //   换不换这一页，是老师说了算 —— 跟他定过的那条规矩一致
+  //   （"不清楚我意图的时候先问，别立马就开始画"）。
+  var 播放话 = /(点|按|点一下|按下)[^。！？\n]{0,6}播放|播放键|播放按钮/;
+
+  function 说播放这一茬(el, msg) {
+    if (SR.NO_SELF_REPAIR) return;              // 跟自修同一把总闸（探针排查用）
+    if (!el || !msg || !SR.board || !SR.board.canPlay) return;
+    // ⚠ 看的是**老师在气泡上看得见的那一份**，跟「复制这段」取的是同一个东西。
+    //   取 `msg.raw` 的话，被 render.js 删掉的那些画板命令行会一起参与判断 ——
+    //   而"说了播放"是给**人**看的，就该只按人看得见的那些字判。
+    var 文 = String(msg.lastVisible || '');
+    if (!播放话.test(文)) return;
+    // 等板子停下来再问"到底能不能播"——正画着的时候 `playTarget` 还没被赋上，
+    // 那时读到的 false 只是"还没轮到那条指令"，不是"没有这条指令"。
+    // （老账：按秒表读状态会把"还没开机"读成"报错了"。）
+    var 等 = 0;
+    (function 看板子() {
+      if (SR.board.isBusy && SR.board.isBusy() && 等++ < 60) { setTimeout(看板子, 250); return; }
+      if (SR.board.canPlay()) return;           // 板上有播放键（哪怕指着的不是滑块）→ 不插话
+      var 那张 = noteBtnUnder(el, '提醒一句（不是模型说的）：这一段让你点播放键，'
+        + '可这一版的画板上没有播放键——那颗是暗的，按不动。'
+        + '要让它真动起来，得先有一行滑块，再写一条 #播放。',
+        '让它加个滑块，重画这一版', function () {
+          teacherSays('这一版没有播放键。请加一行滑块 t=Slider(0, 2*pi, 0.05)，'
+            + '再写一条 #播放 t，然后把整份 ggb 围栏重写一遍（已经对了的行照原样带上）。');
+        });
+      // ★ 这一句**可能过一会儿就不成立了**：右栏的图是稍后才冻上的，
+      //   而"画板没认"那道自修闸可能正在后台把这一页**整张换掉**
+      //   （见 试自修 的 去问 —— 它重画的就是这一页）。换了之后新图要是
+      //   带了 `#播放`，屏幕上就挂着一句"没有播放键"的假话。
+      //   所以留一个**过后再看一眼**的检查：板子一旦能播了，就把这句话收回去。
+      //   ⚠ 撤的是整条 `<p>`（连按钮），不是只撤按钮 —— 这话本身已经不真了。
+      //   窗口给到 2 分钟：自修那一趟是一次模型往返，实测常见 20~40 秒。
+      if (那张) {
+        var 看几回 = 0;
+        var 再看 = setInterval(function () {
+          if (!那张.parentNode) { clearInterval(再看); return; }
+          if (SR.board.canPlay()) { 那张.parentNode.removeChild(那张); clearInterval(再看); return; }
+          if (++看几回 > 40) clearInterval(再看);      // 40 × 3s = 2 分钟，够了
+        }, 3000);
+      }
+    })();
+  }
+
+  function 试自修(el, msg) {
+    if (SR.NO_SELF_REPAIR) return;                          // 探针/排查用：在控制台置真就整条回路关掉
+    if (自修过了) return;
+    if (!msg || !msg.ggbDone) return;                       // 这一轮没碰画板
+    if (!SR.board || !SR.board.failed || !SR.tabs || !SR.tabs.relines) return;
+    if (!SR.api || !SR.api.ready || !SR.api.ready()) return; // 没 Key 就别硬发
+    if (busy) return;                                        // 还有人（老师）在发东西
+    自修过了 = true;
+
+    // 等板子停下来再问"到底哪几条没认"——正画着的时候 `failedNow` 还在往里攒。
+    // ★ 有上限：板子卡住时不能把这条回路吊死在这儿（超时就当没认，照实说）。
+    var 等 = 0;
+    (function 看板子() {
+      if (SR.board.isBusy && SR.board.isBusy() && 等++ < 60) { setTimeout(看板子, 250); return; }
+      var 没认 = SR.board.failed() || [];
+      if (!没认.length) return;                              // 全落地了，什么都不用说
+
+      // ★★ 2026-10-04 夜加的第二道闸：**一条没认 ≠ 图坏了，先别急着改**。
+      //
+      //   这是 A/B 量出来的，不是想出来的（test/probe_repair.cjs 4）：
+      //   第 1 轮"自修关"那一臂板上是 **面 7／异点 14** —— 六份转得整整齐齐，
+      //   **同时也有一条没认**。原来这道闸只看"有没有没认"，于是把这张好图
+      //   `relines` 清板重画，换成模型当场瞎试出来的坏图（它开始写
+      //   `Rotate[三角形, A, α*t]` 这种方括号、参数顺序乱掉、还引入了一个
+      //   从没定义过的 `t`）。读数当场翻过来：**自修开 0/4、自修关 2/4**，
+      //   关着比开着好——因为开着的那一臂会主动把好图换成坏图。
+      //
+      //   病根不是"回喂"这个想法，是**判据太粗**：一条没认 ≈ 图坏了，这个等号不成立。
+      //   一条没认可以是"多写了半句"（图早画好了），也可以是"整张图就靠这一条"
+      //   （画板上只有个三角形）——**从 failed() 那个条数上看不出是哪种**。
+      //
+      //   换一个量得出的判据：**递过去的命令条数 vs 板上对象数**。
+      //   这套 DSL 里每一条实命令至少落成板上一个对象（点、多边形、滑块都算），所以：
+      //     · 板上对象 **少于** 命令条数 → 有命令根本没落地 → 图是**缺的** → 自动改，值得；
+      //     · 板上对象 **不少于** 命令条数 → 那几条没认的是**添头**（重复行、给中间量
+      //       起的名字），图该出来的都出来了 → **不自动改**，改成问一句，老师点一下才改。
+      //   ⚠ 量的是**这一页**：多围栏的轮次是一页一张图（`tabs.drawHere`），所以只数
+      //     **最后那个围栏** —— 它进的就是最新那页，也就是老师正看着的这页。
+      var 全 = (msg.ggbAll && msg.ggbAll.length) ? msg.ggbAll[msg.ggbAll.length - 1] : '';
+      var 递 = 数实条(String(全 || '').split('\n'));
+      var 旧 = SR.board.snapshot ? SR.board.snapshot() : null;
+      // 存档拿不到就**不走自动那条路**：回滚的本钱就是这张存档，没有它，
+      // "改坏了"就没有退路。宁可只剩按钮，也不拿他眼前的图去赌。（snapshot 忙时返回 null。）
+      if (旧 && 递 > 旧.n) { 去问(el, msg, 没认, 旧); return; }
+      问一声(el, msg, 没认, 旧, 递);
+    })();
+  }
+
+  // 图看着是好的、只有零头没认 → 不擅自动板，问一句。
+  // ★ 这条正是他定的那条规矩（"大模型不清楚我意图的时候…问我是否正确，而不是立马就开始画"）：
+  //   自动改只在**图确实缺东西**时出手；图是好的而它想换一张，那是"换"，得他说了算。
+  function 问一声(el, msg, 没认, 旧, 递) {
+    var 因 = 旧 ? ('板上现在有 ' + 旧.n + ' 件，你递过去 ' + 递 + ' 条 —— 该出来的看着都出来了')
+                : '画板这会儿存不下底档，我不敢自动改';
+    noteBtnUnder(el, '有 ' + 没认.length + ' 条画板没认，但' + 因 + '。要照它重画一遍吗？（重画会换掉这一页的图）',
+      '让数根改一次', function () {
+        if (busy) return;
+        var 旧2 = SR.board.snapshot ? SR.board.snapshot() : null;   // 点的时候再存一次，取最新的
+        去问(el, msg, 没认, 旧2 || 旧);
+      });
+  }
+
+  function 去问(el, msg, 没认, 旧) {
+    // ★ 没有底档就**一步都不动**。这一条在函数最前头，不在后面某处：
+    //   回滚的**全部本钱**就是这张存档，"改了还能还回去"这句话只有拿得到它才成立。
+    //   它拿不到（板正忙 / 还没起好 / getBase64 失败）的时候，最坏的选择就是
+    //   "先改了再说"——那等于拿老师眼前那张图去赌模型这一趟会不会写对。
+    if (!旧) {
+      noteUnder(el, '画板这会儿存不下底档，这一趟我不动它 —— 没认的还是那 '
+        + 没认.length + ' 条，你可以换个说法再问一句，或者自己在板上手画。');
+      setStatus('没认：' + 没认.slice(0, 3).join(' ／ '));
+      return;
+    }
+    // 原来那一份的行和说明 —— 回滚时要把这一页的账（`pg.lines` / 标题）按原样写回去。
+    var 原份 = (msg && msg.ggbAll && msg.ggbAll.length) ? msg.ggbAll[msg.ggbAll.length - 1] : '';
+    var 原行 = 原份 ? String(原份).split('\n') : null;
+    var 原标题 = (msg && msg.ggbInfoAll && msg.ggbInfoAll.length) ? msg.ggbInfoAll[msg.ggbInfoAll.length - 1] : '';
+
+    var 清单 = '';
+    for (var i = 0; i < 没认.length && i < 8; i++) 清单 += '　' + 没认[i] + '\n';
+    if (没认.length > 8) 清单 += '　…（还有 ' + (没认.length - 8) + ' 条）\n';
+
+    noteUnder(el, '有 ' + 没认.length + ' 条命令画板没认，我让它照着改一遍……');
+    setStatus('正在让它把没认的几条改对…');
+    busy = true; els.send.disabled = true;
+
+    // ★ 清单里那几条是**画板看到的形态**：认识的中文命令名已经被换成英文了
+    //   （`旋转(q, α*A, A)` 到那儿就成了 `Rotate(q, α*A, A)`，实测 test/_failedlist.cjs），
+    //   参数一个没动 —— 而错就错在参数上。
+    //   ⚠ 所以必须说一句"这是画板那边的样子"。不说的话，模型会照着它**没写过**的一行去改，
+    //     轻则当成新命令重写一遍，重则反问"我没写这个"。
+    var 请 = '★ 画板刚才有这几条**没认**（命令行不通，或者它跑完板上什么都没多）：\n\n'
+      + 清单 + '\n（这几行是**画板那边的样子** —— 你写的中文命令名被它翻成英文了，'
+      + '方括号里的参数是原样，**错就错在参数上**。）\n\n'
+      + '请你把这几条改对，然后**把整份 ```ggb 重写一遍**'
+      + '（已经对了的那几行照原样带上，我这边会照你这份重画，不会叠起来）。';
+
+    var 收 = '';
+    SR.api.ask({
+      work: work,
+      history: history.slice(),          // 含刚推入的那条（模型自己那份），它得看见自己写了什么
+      text: 请,
+      parts: [],
+      onChunk: function (piece) { 收 += piece; }
+    }).then(function (res) {
+      busy = false; els.send.disabled = false;
+      var 还 = [];
+      if (res && res.error) {
+        noteUnder(el, '想让它改一遍，可这一趟没发出去（' + res.error + '）。没认的还在状态条上。');
+        setStatus('没认：' + 没认.slice(0, 3).join(' ／ '));
+        return;
+      }
+      var p = SR.render.parseFences(String(res.text || ''), { stripAssign: !!((SR.WORKS[work] || {}).stripAssign) });
+      var 行 = (p.ggb && p.ggb[0]) ? p.ggb[0].split('\n') : null;
+      if (!行 || !行.length) {
+        noteUnder(el, '让它改，它这一趟没给画板指令。没认的还是原来那 ' + 没认.length + ' 条。');
+        setStatus('没认：' + 没认.slice(0, 3).join(' ／ '));
+        return;
+      }
+      // ★ 走 `relines`：**同一页重画**，不另开一页（另开会变成标签条上并排两张，
+      //   老师以为出了两张图，其实同一道题）。见 js/tabs.js 的 relines。
+      //
+      // ★★ 2026-10-04 夜改在这里：**等它回话，不再按秒表**。
+      //   原来是 `relines()` 之后拿 `isBusy()` 轮询当"画完了没有"——而 `relines` 末尾那句
+      //   `run()` 是**排队即返回**的（每条命令隔几百毫秒才放出去），刚排完队那一刻板并**不**忙，
+      //   于是判据当场就读了一次板，读到的是**改之前那张**的件数。实测（test/_count3.cjs）：
+      //     +1364ms 这一趟刚 `#清空`、正按新命令重画
+      //     +1457ms `setBase64 ← restore ← board.js:2098 ← next ← chat.js:612 ← fin`
+      //             —— 借板那一趟（`freezeFences` 冻图）收工，把**改之前**的存档装回来了
+      //     +1490ms 板上人名单 0 → 7|A,B,C,q,c,a,b（**一声 evalCommand 都没有**）
+      //   也就是说"件数掉了就还回去"这道闸**从来没合上过**（读完永远是"一件都没丢"），
+      //   补的话还说"改了一遍，还剩 6 条"。数字没错 —— 错的是它量的是**别人那一刻的板**。
+      //   现在这个回话是真信号：有世代号（这批被作废 → false）＋多留一帧（等真画上去）。
+      var 我这局 = 局面数;
+      SR.tabs.relines(行, (p.ggbInfo && p.ggbInfo[0]) || '', function (ok) {
+        // ★ 等这几秒里**局面翻篇了没有** —— 翻篇就一步都不动。
+        //   · `局面数` 变了：老师把板清了／换了工位／又发了一句。他刚抹掉的东西不该被我"还回来"。
+        //   · 板正忙着：有别人在画，谁在画谁说了算。
+        //   这一条跟下面那道"改坏了还回去"是**同一行代码的两面**：`restore(旧)` 对"改坏了"
+        //   是解药，对"老师不想要了"是**把垃圾搬回来**。光看板的状态分不出这两种
+        //   （都是"板上跟旧的不一样了"），只有有人告诉过我们翻篇了才分得出。
+        if (局面数 !== 我这局 || (SR.board.isBusy && SR.board.isBusy())) {
+          noteUnder(el, '刚要重画这一页，你又发了东西（或者把板清了），这一趟我就停在半路，'
+            + '不往回还了 —— 这会儿板上的才是你要的。');
+          setStatus('没认：' + 没认.slice(0, 3).join(' ／ '));
+          return;
+        }
+        还 = SR.board.failed() || [];
+
+        // ★★ 2026-10-04 夜加的第三道闸：**这一改是不是还不如原来**。
+        //   上面那道闸挡住的是"本来就不该改"，这道挡的是"改了反而更坏"——
+        //   实测那一轮就是这么坏的：原来那张**面 7／异点 14**（好图），
+        //   改完成了**面 1**（模型瞎试出来的），而这两份在 `failed()` 上
+        //   都是"1 条没认"，**从那个条数上分不出来**。分得出来的是**板上有多少东西**。
+        //
+        //   判据取**对象数变少**、并且**没认的条数没跟着变少**：
+        //     · 件数少了、没认的也少了 → 它是一份**更紧凑而确实改对了**的重写
+        //       （比如五条 `旋转` 换成一个 `序列`），认；换掉了也算学到东西。
+        //     · 件数少了、没认的还是那么多 → **没换来任何好处，却丢了板上的东西**，不认，还回去。
+        //   存不住新存档（`snapshot` 忙时返回 null）时也**按坏的算**：量不到就不赌。
+        //   ★ `!ok` 也算坏：这一批压根没画完（超时／半路被作废）—— 板上多半是半张图，
+        //     拿它当"改好了"是拿老师眼前那张图去赌。
+        var 新 = SR.board.snapshot ? SR.board.snapshot() : null;
+        if (!ok || !新 || (旧 && 新.n < 旧.n && 还.length >= 没认.length)) {
+          var 由 = !ok ? '这一趟画到一半就断了（超时，或者半路被作废）'
+                       : (!新 ? '量不出改完那份有多少东西'
+                              : ('板上从 ' + 旧.n + ' 件掉到 ' + 新.n + ' 件，而没认的还是 ' + 还.length + ' 条'));
+          SR.board.restore(旧, function (r) {
+            if (!r.ok) {
+              noteUnder(el, '这一改还不如原来（' + 由 + '）。我想把原来那张还回来，可它没还成（'
+                + (r.why || '不说明原因') + '）——你按 ⟳ 重画一次吧。');
+              setStatus('没认：' + 没认.slice(0, 3).join(' ／ '));
+              return;
+            }
+            // 板已经**像素级**还原回老师原来看见的那张了，所以这一页记的行也得换回去——
+            // 两本账不一致的话，下次切页/导出看到的就是另一张。（只换账，不重跑命令：
+            // 重跑就是拿命令去凑一张已经对了的图。见 js/tabs.js 的 revertHere。）
+            if (SR.tabs.revertHere) SR.tabs.revertHere(原行, 原标题);
+            // ⚠ 状态条按**原来那几条**说，不按刚读到的 `还`：restore 不动 `failedNow`，
+            //   此刻它里面装的是**被丢掉那份**的没认，拿它说话就是拿另一张图的账报这一张图。
+            noteUnder(el, '这一改还不如原来（' + 由 + '），我把原来那张**还回来了**。'
+              + '没认的还是那 ' + 没认.length + ' 条，图上其它部分照旧。');
+            setStatus('没认：' + 没认.slice(0, 3).join(' ／ '));
+          });
+          return;
+        }
+
+        if (!还.length) {
+          noteUnder(el, '改好了 —— 板上现在是重画过的那一份。');
+          setStatus(SR.api.usageText());
+        } else {
+          noteUnder(el, '改了一遍，还剩 ' + 还.length + ' 条没认（' + 还.slice(0, 3).join(' ／ ')
+            + '）。你可以把这句话再换个说法补一句，或者自己在画板上手画——两条路都在。');
+          setStatus('没认：' + 还.slice(0, 3).join(' ／ '));
+        }
+      });
+    }).catch(function (e) {
+      busy = false; els.send.disabled = false;
+      noteUnder(el, '想让它改一遍，没发成（' + (e && e.message || e) + '）。');
+      setStatus('没认：' + 没认.slice(0, 3).join(' ／ '));
+    });
+  }
+
   // ---- 收流：正文、围栏、chips 一起更新 ----
   function paint(msg) {
     // ★ 备课／讲评多删一档"整行就是一条画板赋值"的行（掉围栏时漏出来的 A=(-2,0)）。
@@ -1411,6 +1935,9 @@ SR.chat = (function () {
     //   而这份清单只有解过围栏才知道。在这儿顺手挂一份，收完流那边就不用
     //   把同一段正文再解一遍——**解两遍就是两份规则，早晚会漂**。
     msg.ggbAll = p.ggb;
+    // ★ 同上，说明那一份（```ggb 后面方括号里那句）也留一份：自修回滚时要把
+    //   这一页的标题按原样写回去（见 去问 里那条回滚路），没它标题就只能瞎猜一个。
+    msg.ggbInfoAll = p.ggbInfo;
 
     // 正文
     var v = p.visible;
@@ -1505,10 +2032,7 @@ SR.chat = (function () {
       // ★ 另外数一份"真画了东西的条数"：只有 #清空 的围栏不算画了图。
       //   实测带图那轮模型就爱发一个光秃秃的 ```ggb ⏎ #清空 ⏎ ```（它没东西可画）。
       //   要是拿 ggbDone 去判"它画没画"，就会以为它画了，本地补空数轴那条路会被顶掉。
-      for (var li = 0; li < lines.length; li++) {
-        var s = lines[li].trim();
-        if (s && s.charAt(0) !== '#' && !/^(清空|隐藏|显示)/.test(s)) msg.ggbReal++;
-      }
+      msg.ggbReal += 数实条(lines);   // 判据在 数实条 那儿，别在这儿另写一份
       msg.ggbDone++;
     }
 
@@ -1527,6 +2051,14 @@ SR.chat = (function () {
   // ---- 发一条 ----
   function submit(forced) {
     if (busy) return;
+    // ★★ 老师一开口，"补图"那一队立刻作废（2026-10-04，见 补图 那段）。
+    //   为什么非收不可：补图是**借板**干活的（一趟十几秒），而老师这一问后面
+    //   多半跟着一张要画的图 —— 不收手的话，他等的那张图会**排在一堆旧图后面**，
+    //   屏幕上就是"问了半天没反应"，看着像卡死。
+    //   ⚠ 位置必须在 `busy = true` 之前、也就是**最前头**：这一句下面紧跟着
+    //     `SR.landing.intercept()` 和一堆早退的分支，挂在后面那些分支里
+    //     就有"某些问法不收手"的窟窿。
+    停补图();
     var text = forced != null ? forced : els.input.value.trim();
     var parts = pendingParts;
     if (!text && !parts.length) return;
@@ -1556,6 +2088,19 @@ SR.chat = (function () {
 
     busy = true;
     els.send.disabled = true;
+    // ★ 收敛保护翻篇（2026-10-04，见 js/converge.js）：老师又发了一句 = **上一轮到此为止**，
+    //   在这儿结算它（上一轮有画没落地 → 连败+1；全须全尾 → 清零），然后开新的一轮。
+    //   ⚠ 位置钉死在 `busy = true` 这一句旁边，两个理由：
+    //     ① 走到这儿 = 这句话**真要发**了。前面那些 return 都是"没发送成"
+    //        （没配 Key、首屏拦下、空话），拿那些去结算老师的轮次是错的。
+    //     ② 它必须**早于**这一趟的 buildSystem —— buildSystem 读的就是结算后的数，
+    //        顺序反了就会少算一轮（design 的命门，也写在 converge.js 顶上括号③）。
+    if (SR.converge) SR.converge.翻篇();
+    自修过了 = false;                 // 新的一问 → 自修那一趟重新有资格跑（见 试自修）
+    // ★ 老师又发了一句 = 翻篇：上一句的图**还在板上**（板是累积的，见 freezeFences 那一段），
+    //   但"这一页该是什么样"已经由新这一句说了算。上一句的自修那一趟要是还悬在半路，
+    //   它拿着的旧存档就是**上一道题**的了 —— 装回去等于把新题顶掉（见 局面数）。
+    局面数++;
     if (forced == null) { els.input.value = ''; autoGrow(); }
     clearChips();
     pendingParts = [];
@@ -1604,6 +2149,7 @@ SR.chat = (function () {
       for (var qi = 0; qi < parts.length; qi++) if (parts[qi].kind === 'image') { hadImg = true; break; }
       SR.chat.lastMeta = { model: res.model || '', image: hadImg, work: work, error: res.error || '' };
       if (res.error) {
+        msg.出错 = true;                 // 这一轮压根没答成 → 别去自修（见文件末尾 试自修 那一句）
         paint(msg);
         // 免费通道排队排空了，别只说一句"再等等"——直接给一条出路：
         // 点一下切到自己的 Key，填完自动把这一轮重发，不用重新打字。
@@ -1771,6 +2317,7 @@ SR.chat = (function () {
       }
     }).catch(function (e) {
       msg.streaming = false;
+      msg.出错 = true;
       b.innerHTML = '<span class="err">出错了：' + SR.render.esc(e.message || e) + '</span>';
     }).then(function () {
       busy = false;
@@ -1794,6 +2341,17 @@ SR.chat = (function () {
       //   （挂 bar、刷导图、写状态栏、paintDone 都在它前头），出错那条路也一并照顾到。
       //   跟本文件别处一样**无条件贴底**——每一段新字都是这么滚的，不另立一套规矩。
       scroll();
+      // ---- 「画板没认」→ 让模型自己改一次 ----
+      // ★ 位置就在这儿（收工那一刻）：板子这时才开始画、而且 `busy` 刚放下来，
+      //   所以 试自修 里那道"还有人（老师）在发东西"的闸是有意义的。
+      //   它自己会等板子停下来再动手，不在这儿阻塞。
+      // ⚠ 放在 `scroll()` **后面**：它一上来就 `noteUnder` 补一句、要贴底，
+      //   反过来的话那句会被上面这次没算上它的 scroll 顶到屏幕外面去。
+      if (!msg.出错) 试自修(el, msg);
+      // ⚠ 它排在 试自修 **后面**：自修那一趟可能正把这一页换掉，
+      //   而这条补话要读的正是"换完之后板上有不有播放键"。
+      //   两条都挂在同一条气泡底下（各自一句），互不挡道。
+      if (!msg.出错) 说播放这一茬(el, msg);
     });
   }
 
@@ -1887,6 +2445,7 @@ SR.chat = (function () {
     //   点得动就回 true；空话回 false，导图那边据此什么也不做。
     say: teacherSays,
     onPlayState: onPlayState,          // 交给 board.init 当回调
+    onStepState: onStepState,          // 同上：画板登记完 `#分步` 会回头喊一声
     setStatus: setStatus,
     setWork: function (w) { work = w; },
     getWork: function () { return work; },
@@ -1917,6 +2476,11 @@ SR.chat = (function () {
     //   是让探针能**直接问它"你冻出什么了"** —— 图没冻上时屏幕上只留一块空占位，
     //   从 DOM 上根本看不出是"板忙"还是"命令画不出来"还是"截图为空"。
     __freeze: freezeFences,
-    __figCache: function () { return figCache; }
+    __figCache: function () { return figCache; },
+    // 「正文里让人点播放键」这条判据（test/probe_playclaim.cjs）。
+    // ★ 导出它是因为**这一档失败没法靠真模型复现**：它写不写"点播放键"是随机的，
+    //   而这一条闸要防的恰恰是"它写了、板上却没有"。让探针能直接拿好/坏两段原文
+    //   喂进来验判据，比等模型赏脸可靠 —— 也才查得出"尺子本身是不是瞎的"。
+    __说播放这一茬: 说播放这一茬
   };
 })();

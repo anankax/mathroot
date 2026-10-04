@@ -593,7 +593,15 @@ SR.mm = (function () {
   // ============================================================
   //  五、装机（右栏那一块）
   // ============================================================
-  var canvas = null, host = null, L = null, open = false, is3D = false, vs = [];
+  var canvas = null, host = null, L = null, open = false, vs = [];
+  // ★★ 2026-10-05：**画板此刻是哪一档** —— '2d' / 'blank' / '3d'。
+  //   原来这儿是个布尔 `is3D`，只有平面/三维两档时装得下。孔老师要了「空白」
+  //   之后就是三档，布尔装不下了：切到空白，按钮会亮"平面"（因为 is3D 是 false），
+  //   老师看着亮的和板上的对不上。所以换成档名，跟 board.js 的 `现在视角()` 同一套词。
+  //   ⚠ 初值给 'blank' 不是 '2d' —— 板子**开机就是一张干净纸**（无轴无网格，
+  //     见 board.js 里 `关轴()` 跟 appletOnLoad 那一段）。而 init() 里会拿
+  //     `SR.board.viewDim()` 对一次真账，这个初值只是万一板子还没起来时的兜底。
+  var dim = 'blank';
 
   // 真实测宽：拿画板上那块 ctx 量真字。★ 别退回 estW 兜底——估算差几个像素，
   //   边角上就是"字压出框外"，而那只有导出来才看得见。
@@ -637,13 +645,14 @@ SR.mm = (function () {
     SR.chat.say('先走第 ' + (i + 1) + ' 条路。', { viaMm: true });
   }
 
-  // 三颗按钮谁亮：**只有这一处说了算**。
-  // ★ main.js 的 view 钩子会把"画板切平面/三维"这件事喊过来（模型自己写 #三维 也算），
-  //   导图一开就压过那两颗——不然切到导图了，"三维"还亮着，看着像导图变成了三维。
+  // 那几颗按钮谁亮：**只有这一处说了算**。
+  // ★ main.js 的 view 钩子会把"画板切档"这件事喊过来（模型自己写 #三维 也算），
+  //   导图一开就压过那一排——不然切到导图了，"三维"还亮着，看着像导图变成了三维。
+  //   ★★ 2026-10-05：从"两档比真假"改成"三档比名字"。改这一行的原因见 `dim` 那段。
   function syncSwitcher() {
     vs.forEach(function (b) {
       var v = b.getAttribute('data-view');
-      b.classList.toggle('on', open ? v === 'mm' : (v === (is3D ? '3d' : '2d')));
+      b.classList.toggle('on', open ? v === 'mm' : (v === dim));
     });
   }
 
@@ -662,7 +671,7 @@ SR.mm = (function () {
   //   一个名字、三处调用（chat.js 收围栏、tabs.js 点标签、main.js 的 view 钩子），
   //   比让每个调用方各自去猜"现在该不该切回去"稳。
   //   产品那条规矩在这儿落地：**新东西出来了，直接切过去看，别抢了又不说。**
-  function yieldToBoard() { if (open) show(is3D ? '3d' : '2d'); }
+  function yieldToBoard() { if (open) show(dim === '3d' ? '3d' : '2d'); }
 
   function init(hostId) {
     host = document.getElementById(hostId);
@@ -683,6 +692,17 @@ SR.mm = (function () {
     // 「导图」那一颗就会同时走两条路（一条 show('mm')、一条 setView('mm')），
     // 而 2d/3d 那两颗会被喊两遍视角。这里只**认下**它们，用来点灯。
     vs = Array.prototype.slice.call(document.querySelectorAll('.viewsw .viewbtn'));
+    // ★★ 2026-10-05：**开局先跟画板对一次账**。
+    //   板子一开机就是"空白"（appletOnLoad 里那句 `关轴()`），可那一声通知
+    //   大概率比 mindmap.init 早 —— 那会儿我还不在，听不见。不主动问一句，
+    //   顶上就会默认亮着 HTML 里写死的 `class="viewbtn on"`（平面），
+    //   而板子明明是空的：老师一进来看见"平面"亮着、板上没轴，第一次就对不上。
+    //   ⚠ 只认 '2d'/'blank'/'3d' 三个值，别把没认出来的东西吃进来
+    //     （同族：参数名写错不报错，只是静默换了个量法）。
+    try {
+      var d = SR.board && SR.board.viewDim ? SR.board.viewDim() : '';
+      if (d === '2d' || d === 'blank' || d === '3d') dim = d;
+    } catch (e) {}
     syncSwitcher();
   }
 
@@ -698,8 +718,17 @@ SR.mm = (function () {
     init: init, refresh: refresh, show: show, syncSwitcher: syncSwitcher,
     isOpen: function () { return open; },
     yieldToBoard: yieldToBoard,
-    // main.js 的 view 钩子把"画板现在是几维"喂进来（导图让开时要回到对的那一边）
-    set3D: function (v) { is3D = !!v; syncSwitcher(); },
+    // main.js 的 view 钩子把"画板现在是哪一档"喂进来（导图让开时要回到对的那一边）。
+    // ★★ 2026-10-05：原来是 `set3D(v)` 收一个真假，现在收**档名** '2d'/'blank'/'3d'。
+    //   ⚠ 认不出来的值一律**不采信**，保住上一档 —— 别退回"不是 3d 就当 2d"那种
+    //     想当然（那正是这次要改掉的老毛病：新档名掉进 else 里被静默当成平面）。
+    setDim: function (v) {
+      if (v === '2d' || v === 'blank' || v === '3d') dim = v;
+      syncSwitcher();
+    },
+    // 兼容旧名字：万一还有别处在喊 set3D（现在仓库里没有了，2026-10-05 全量搜过）
+    set3D: function (v) { this.setDim(v ? '3d' : '2d'); },
+    __dim: function () { return dim; },
     __layout: function () { return L; }
   };
 })();

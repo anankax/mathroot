@@ -438,6 +438,82 @@ SR.main = (function () {
     document.body.setAttribute('data-drawer', 'closed');
   }
 
+  // ============================================================
+  //  放大看：中央大窗（2026-10-04）
+  // ============================================================
+  // 孔老师原话：「点再摆弄……应该是这个 geogebra 窗口直接就在中央的位置蹦出来
+  //   一个放大的窗口，然后也可以叉掉的那种，这样子才可以在学生面前展示一个
+  //   比较大的窗口。」抽屉那种 520px 的侧栏，投影上看不清。
+  //
+  // ★★ 它是**搬家**，不是开第二块板。数根只有一块 applet（board.js 里
+  //   `app.inject` 只喊一次，`#ggb` 是那块板的宿主）。开第二块的话：
+  //   老师在大窗里接着拨弄，关掉一看侧栏那块还是老样子 —— 同一个问题
+  //   两处给的答案不一样，比没有大窗更坏。
+  //
+  // ⚠⚠ 搬的是 `.boardbox` **整个盒子**，不是只搬 `.boardwrap`（2026-10-04 改）。
+  //
+  //   ★ 为什么从 `.boardwrap` 改成 `.boardbox`：孔老师打开大窗，截图过来说
+  //     「放大的窗口还没有平面和3d两种模式了。也不能放大缩小。没有 geogebra
+  //     的功能在里面，这怎么行呢」。
+  //     量下来原因很单纯：`.boardbar`（平面/三维/导图、播放、重画、清空、存图）、
+  //     `.tabs`（分步标签）、`.stepbar`（上一步/下一步/重置）都是 `.boardwrap` 的
+  //     **兄弟**，而搬家只搬了弟弟——所以大窗里只有光秃秃一块画板。
+  //     这不是"大窗少了几个按钮"，是**同一块板在两个地方功能不一样**，
+  //     比没有大窗更坏（老师在大窗里弄完，回到抽屉发现那条工具条又"回来了"）。
+  //   ★ 为什么不是只搬 `#ggb`：见下一条，`fit()` 量的是它的**父级**。
+  //
+  // ⚠ 为什么必须连 `.boardwrap` 里的东西一起搬：理由在 board.js 的 `fit()` 那段——
+  //   它量的是 `#ggb` 的**父级**。只搬 `#ggb` 的话，它量到的还是抽屉里那个盒子，
+  //   `setSize` 算出来的尺寸跟看到的盒子对不上 —— 板会缩在大窗左上角一小块。
+  //   `.boardbox` 是 `.boardwrap` 的爹，搬爹把这一条一起兜住了。
+  //
+  // ⚠ 原位留一个**注释节点**当书签，不留空 `<div>`：注释没有盒子，
+  //   不占位、不改 `.boardbox` 的排版（那个盒子是 flex 列，多一个空 div
+  //   会分走 `flex: 1 1 auto` 的高度）。
+  var 板书签 = null;
+  function bigFigOpen() { return !!板书签; }
+
+  function openBigFig() {
+    var box = document.querySelector('.boardbox');
+    var body = $('bigfigbody'), layer = $('bigfig');
+    if (!box || !body || !layer) return;
+    if (板书签) return;                       // 连点两下 / 两个按钮都点：第二下什么都不做
+    板书签 = document.createComment('board-home');
+    box.parentNode.insertBefore(板书签, box);
+    body.appendChild(box);                    // appendChild 对已经在文档里的节点就是**搬家**
+    layer.setAttribute('data-bigfig', 'open');
+    layer.setAttribute('aria-hidden', 'false');
+    var sc = $('bigfigscrim'); if (sc) sc.hidden = false;
+    refitBoard();
+  }
+
+  function closeBigFig() {
+    if (!板书签) return;
+    var home = 板书签.parentNode;
+    var box = document.querySelector('.boardbox');
+    if (home && box) home.insertBefore(box, 板书签);
+    if (板书签.parentNode) 板书签.parentNode.removeChild(板书签);
+    板书签 = null;
+    var layer = $('bigfig');
+    if (layer) { layer.setAttribute('data-bigfig', 'closed'); layer.setAttribute('aria-hidden', 'true'); }
+    var sc = $('bigfigscrim'); if (sc) sc.hidden = true;
+    refitBoard();
+  }
+
+  // ★★ 搬完**必须**喊 refit，而且喊两次。
+  //   为什么必须：`inject()` 把尺寸写成了 `#ggb` 上的**行内样式**，而
+  //   `setSize()` 只改它自己那套 DOM、不回头改这行样式（board.js 的 syncHost
+  //   那段写得很清楚）。不重算的话，板按抽屉里那个尺寸画，到大窗里就是
+  //   左上角一小块，右边底下空着。
+  //   为什么两次：`refit` 自带 220ms 防抖，而且这一层刚 `visibility: visible`
+  //   （从 hidden 变可见），版式settle 有一拍。第一下让它开始算，第二下兜住
+  //   "量的时候尺寸还没稳"那一拍 —— 不然会栽在**稳的错值**上。
+  function refitBoard() {
+    if (!SR.board || !SR.board.refit) return;
+    SR.board.refit();
+    setTimeout(function () { if (SR.board && SR.board.refit) SR.board.refit(); }, 340);
+  }
+
   function boot() {
     // ★ 第一件事：把工位那一行画出来。理由见 paintWorks 上面那段——
     //   下面 SR.memo.init()、.workbtn 接线、最后的 applyWork 全都踩在这几颗按钮上。
@@ -460,6 +536,7 @@ SR.main = (function () {
     SR.chat.init();
     SR.board.init('ggb', {
       playState: SR.chat.onPlayState,
+      stepState: SR.chat.onStepState,   // 分步那条按钮条（见 js/board.js 里"分步"那段）
       log: SR.chat.setStatus,
       // 画板切了维度（老师点按钮，或者模型自己在围栏里写 #三维 / #平面）
       //
@@ -470,9 +547,14 @@ SR.main = (function () {
       //   这边再点一次就是第二个真源，两个真源早晚会在某一刻说得不一样。
       // ★ yieldToBoard：**模型把画板切了视角，就是把导图让开**——
       //   跟 chat.js 收到围栏、tabs.js 点某页标签是同一个动作、同一个名字。
-      view: function (is3d) {
+      // ★★ 2026-10-05：这个钩子收的东西**从真假换成了档名** —— '2d' / 'blank' / '3d'。
+      //   多出「空白」这一档之后，布尔装不下了（切到空白 is3D 还是 false，
+      //   顶上会亮"平面"）。board.js 那边改在 `现在视角()` / `报视角()` 一处。
+      //   参数名也跟着从 `is3d` 改成 `d` —— 名字还叫 is3d 会让人（包括我）
+      //   以为收的仍是真假，那就是"参数名写错不报错，只是静默换了个量法"那一族。
+      view: function (d) {
         if (!SR.mm) return;
-        SR.mm.set3D(is3d);        // 它自己会 syncSwitcher，这儿不用再喊一次
+        SR.mm.setDim(d);          // 它自己会 syncSwitcher，这儿不用再喊一次
         SR.mm.yieldToBoard();
       }
     });
@@ -705,22 +787,41 @@ SR.main = (function () {
       nb.addEventListener('click', function () { SR.chat.reset(work, { wipe: true }); });
     }
 
-    // ---- 平面 / 三维 / 导图（这一排是"右栏显示什么"，见 js/mindmap.js）----
-    // ★ 三颗按钮的监听**只在这一处**。mindmap.js 装的时候只认下它们用于点灯，
+    // ---- 平面 / 三维 / 空白 / 导图（这一排是"右栏显示什么"，见 js/mindmap.js）----
+    // ★ 这一排的监听**只在这一处**。mindmap.js 装的时候只认下它们用于点灯，
     //   不自己绑一遍——绑两遍的话「导图」会同时走 show('mm') 和 setView('mm') 两条路，
-    //   setView 那头认不出 'mm'，`if (v === '3d') ... else showPlane()` 会把它当平面。
+    //   setView 那头认不出 'mm'，会把它当平面。
+    //   ★★ 2026-10-05：setView 那边已经**把三档逐条列全**了（不再用 else 兜底），
+    //     但"不在这儿绑第二遍"这条规矩照旧——一个按钮一个监听，多绑早晚出两个真源。
     document.querySelectorAll('.viewbtn').forEach(function (b) {
       b.addEventListener('click', function () {
         var v = b.getAttribute('data-view');
         // 「导图」不开视角，只是把自己的那层盖到画板上。
         if (v === 'mm') { if (SR.mm) SR.mm.show('mm'); return; }
-        // 平面／三维：**先把导图让开**，再真切视角。
+        // 平面／三维／空白：**先把导图让开**，再真切档。
         // ★ 这一句不能省，也不能只靠 board 的 view 钩子：画板**已经在平面**时
         //   点「平面」，board.js 的 to2D 是 `if (!api || !is3D) return`——
         //   一个钩子都不发。少了这一句，老师点了「平面」，导图还盖在那儿，
         //   看着就是"这个按钮坏了"。（点了没反应比反应错更难查。）
         if (SR.mm) SR.mm.show(v);
         SR.board.setView(v);
+      });
+    });
+
+    // ---- 放大 / 缩小（2026-10-04。孔老师：「也不能放大缩小」）----
+    // ★ 一次点一步，倍数固定 1.25：这两颗按钮的用处是"投影上当着全班的面推一下"，
+    //   点两下就到 1.56 倍，够用了；做成滑块或者连续缩放反而要老师盯着屏幕调。
+    // ★ 走 `SR.board.zoomBy`——**不是** GeoGebra 的 ZoomIn／ZoomOut：
+    //   实测那两条命令在这个引擎里根本不存在（四条写法全返回 false，
+    //   见 board.js 的 zoomBy 那段）。所以这不是"绕一圈"，是唯一一条路。
+    // ★ 收工**不看返回值**：在真画板上"返回 false"不一定等于没生效
+    //   （见 board.js 里 `#隐藏坐标轴` 那一段）。对不对由 test/probe_zoom.cjs
+    //   读 `invXscale` 说话，不在这儿猜。
+    [['zoom-in', 1.25], ['zoom-out', 1 / 1.25]].forEach(function (pair) {
+      var b = $(pair[0]);
+      if (!b) return;
+      b.addEventListener('click', function () {
+        if (SR.board && SR.board.zoomBy) SR.board.zoomBy(pair[1]);
       });
     });
 
@@ -732,8 +833,19 @@ SR.main = (function () {
     (function () {
       var sc = $('drawerscrim');
       if (sc) sc.addEventListener('click', closeDrawer);
+      // ---- 放大看那层也跟着挂上（2026-10-04）----
+      // ⚠ Esc **先**管大窗、再管抽屉，而且是 `return`：大窗开着的时候它多半
+      //   压在最上面，一下把两层一起收掉，老师看到的是"按了 Esc，画面跳了两下"。
+      //   放在这同一个监听里、不另起一个：两处各挂一个的话，谁先跑全看注册顺序，
+      //   而注册顺序以后随便挪一行就变了（同族：`find()` 抓第一个标签页那种活）
+      //   —— 这类"靠顺序默默生效"的东西以后没人看得出来。
+      var bc = $('bigfigclose');
+      if (bc) bc.addEventListener('click', closeBigFig);
+      var bs = $('bigfigscrim');
+      if (bs) bs.addEventListener('click', closeBigFig);
       document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape') return;
+        if (bigFigOpen()) { closeBigFig(); e.preventDefault(); return; }
         var d = $('drawer');
         if (d && d.getAttribute('data-drawer') === 'open') { closeDrawer(); e.preventDefault(); }
       });
@@ -769,7 +881,11 @@ SR.main = (function () {
   }
 
   return { boot: boot, needKey: needKey, applyWork: applyWork, applyBackend: applyBackend, useOwnKey: useOwnKey,
-           openDrawer: openDrawer, closeDrawer: closeDrawer };
+           openDrawer: openDrawer, closeDrawer: closeDrawer,
+           // 放大看（2026-10-04）。见上面 openBigFig 那段：
+           //   `openBigFig` 由聊天里那块图上的「放大看」按钮喊（chat.js 的 attachFigure），
+           //   `bigFigOpen` 给探针量"现在开着没有"用。
+           openBigFig: openBigFig, closeBigFig: closeBigFig, bigFigOpen: bigFigOpen };
 })();
 
 // ★★ 2026-10-03：开机前面加一道**第三方库的闸门**（见 index.html 那段注释）。
