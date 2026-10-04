@@ -204,6 +204,19 @@ SR.render = (function () {
     var RE_BOX = /【[^】]{0,30}】/;
     var RE_ECHOWORD = /题里有图|题里没图|一个围栏都不写|每题配一个围栏|每题一个围栏/;
     var RE_ECHOHEAD = /^(完整的回复是|先数一数|题里有图|题里没图|一个围栏都不写|每题配一个围栏|每题一个围栏)/;
+    // 规则五：整行是**模型把 few-shot 里的对话标签抄了回来**。
+    //   来历（2026-10-04 实测，间歇 ~1/6，8 次里撞见 1 次）：js/prompt-draw.js 结尾那三段范例
+    //   为了让小模型认清"哪句是老师问的、哪句才是回答"，写成了对话体的
+    //       老师：「画个图形」   ← 标签行
+    //       我按「长方形」画的。 ← 示范回答
+    //   模型偶尔把**标签那一行**当正文抄出来（实测抄出来的是「老师：「」」这种空引号），
+    //   老师一打开就看见我写给模型看的内部格式。
+    //   ★ 判据卡死在"**整行只有这个标签**"上：顶格一个「老师：」+ 一对引号，行内没有别的话。
+    //     不做"看见 老师：「 就删"——正文里完全可能有半句转述，那种删掉就是凭空少一行，
+    //     跟抄标签一样难看。（同族教训：[[scanner-numbers-are-not-what-they-claim]]）
+    //   ⚠ 只认「老师：」这一种——提示词里**只用过这一种标签**（js/prompt-draw.js 那五处），
+    //     顺手把「我：」也加进来就是"想多拦一点"。拦到的第一样东西不是抄的标签，是正文。
+    var RE_ECHOLABEL = /^老师\s*[:：]\s*[「『][^「」『』]{0,60}[」』]\s*[。！？…]?$/;
     visible = visible.split('\n').filter(function (ln) {
       var s = ln.trim();
       if (RE_MARK0.test(s) || RE_MARK1.test(s)) return false;
@@ -211,6 +224,7 @@ SR.render = (function () {
       if (stripAssign && RE_ASSIGN.test(s)) return false;
       if (RE_BOX.test(s) && RE_ECHOWORD.test(s)) return false;
       if (RE_ECHOHEAD.test(s)) return false;
+      if (RE_ECHOLABEL.test(s)) return false;
       return true;
     }).join('\n');
 

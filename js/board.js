@@ -58,7 +58,56 @@ SR.board = (function () {
   var CMD_MAP = {
     '中垂线': 'PerpendicularBisector', '垂直平分线': 'PerpendicularBisector',
     '交点': 'Intersect', '直线': 'Line', '线段': 'Segment', '射线': 'Ray',
-    '向量': 'Vector', '半圆': 'Semicircle', '多边形': 'Polygon', '圆弧': 'CircularArc',
+    // ★★ 2026-10-04 孔老师问「画个三角形沿着一点旋转」，出来的是**一张空图**。
+    //   量出来的（test/_tri.cjs）：模型写的 `三角形(A,B,C)` 一条都没建出来，
+    //   连带 `旋转(三角形(A,B,C), α, A)` 跟着死——因为第二行是拿第一行的结果当对象，
+    //   第一行没了它必然没了。画板上只剩 A/B/C 三个点和一个 α。
+    //
+    //   病根：模型说的是**人话**（"三角形"），而底下只认 `多边形`。
+    //   translateBare 的闸是"中文名紧跟 ( 才算命令"，`三角形` 不在表里 →
+    //   一个字不翻，原样喂给 evalCommand，而它只认英文命令名 → 返回 false、什么都不建。
+    //   跟 2026-10-03 `函数 f(x)=…` 那次是同一个病（见上面兜底三那段）。
+    //
+    //   ★ 加名是零风险的：translateBare 要求名字**前面不是汉字**，
+    //     所以 `平行四边形(A,B,C,D)` 里那个"四边形"在"行"后面，切不出来。
+    '向量': 'Vector', '半圆': 'Semicircle', '多边形': 'Polygon',
+    '三角形': 'Polygon', '四边形': 'Polygon', '五边形': 'Polygon', '六边形': 'Polygon',
+    '圆弧': 'CircularArc',
+    // ★★ 2026-10-04 作图体检表补的一批——**每一条都先问过真 applet 才敢写**，
+    //   问法见 test/_cmdchk.cjs（喂命令、读 return 和 getObjectType）。
+    //   为什么非要先问：加 CMD_MAP 是**替模型猜命令名**。猜错了 evalCommand 只返回
+    //   false、错误弹窗又是关的——画板上少一块，谁都看不见。文档里写着的名字，
+    //   这个 applet 里不一定有（下面 外接圆 那条就是当场被打脸的）。
+    '角平分线': 'AngleBisector',   // 实测建出 line。A 基本图形第4题；尺规作角平分线的落笔
+    '弧': 'CircularArc',           // 实测建出 conic。★ 尺规作图里模型更爱写「弧」而不是「圆弧」
+    '内切圆': 'Incircle',          // 实测建出 conic
+    '正多边形': 'Polygon',         // Polygon(A,B,5) 三参形式 = 正五边形，实测建出 polygon
+    // ★★ `外接圆` 这条是**反面教材**：GeoGebra 文档里有个 `Circumcircle`，
+    //   我差点照文档写进去——测出来它**在这个 applet 里不存在**（返回 false、什么都没建）。
+    //   真能用的是 `Circle(A,B,C)` 三点式（实测 conic）。所以这里翻成 Circle，
+    //   而 `圆` 本来也是 Circle——同一个命令，两条中文路都通到它。
+    '外接圆': 'Circle',
+    // 长方形/矩形都归 Polygon：`Polygon(A,B,C,D)` 四参形式实测建出 polygon。
+    // ⚠ 只在模型**把四个顶点都给全**时才对（`Polygon(A,B)` 会失败）；
+    //   这条得靠提示词那边教"先写四个点"，光靠翻译救不了。
+    '长方形': 'Polygon', '矩形': 'Polygon',
+    // ★★ 统计图这一批（2026-10-04 第二轮问画板，test/_chk2.cjs + _chk3.cjs）。
+    //   量法是**两把尺子**：先看 evalCommand 收不收，再把画板冻成 PNG **用眼睛看**。
+    //   两把尺子缺一不可——`Histogram` 就是"收了但画不出东西"的那一个（见下面）。
+    //   ⚠ 条形图**只认两个列表**：`BarChart(L1)` 一个列表实测返回 false；
+    //     必须 `BarChart(类目, 高度)`。提示词那边照这个教，不然模型会写单列表。
+    '条形统计图': 'BarChart', '柱状图': 'BarChart',
+    '扇形统计图': 'PieChart', '饼图': 'PieChart',
+    '箱线图': 'BoxPlot', '折线图': 'LineGraph',
+    // ★ 这里**故意没有** `直方图 → Histogram`：实测它 `evalCommand` 返回 **true**、
+    //   画板上还新建了一个对象，可冻出来的 PNG **一张空网格，什么都没有**
+    //   （test/_shot/stat_直方图.png，同一批的其它五张都画出来了，对照多边形也正常）。
+    //   翻成英文只会更糟：现在是"中文没认、状态条会说一句"，翻了就变成
+    //   "英文也没认、可板上一声不响"——老师看见的是空白，还以为是模型没干活。
+    //   要画直方图，提示词那边教模型改用 `条形统计图(分界点, 频数)`。
+    // ★ 这里**故意没有** `展开图 → Net`：`Net` 在这个 applet 里同样不存在
+    //   （test/_cmdchk.cjs 里试了 Net(cube)/Net(pr)/Net(Cube(...)) 三种，全 false）。
+    //   立体展开图得靠提示词教模型**自己把每个面当多边形画出来**，没有一步到位的命令。
     '扇形': 'CircularSector', '垂线': 'PerpendicularLine', '中点': 'Midpoint',
     '平行线': 'Line', '切线': 'Tangent', '角度': 'Angle', '角': 'Angle',
     '距离': 'Distance', '长度': 'Distance', '面积': 'Area', '周长': 'Perimeter',
@@ -130,13 +179,38 @@ SR.board = (function () {
   function dropLead(s) { return s.replace(DROP_LEAD, '$1'); }
 
   // 只在"没被引号包住"的地方动手，免得把 文本("x轴上的点") 里的字给替了
+  // ---- 后缀式长度：`DC长度` → `Distance(D,C)` ----
+  //
+  // ★★ 2026-10-04 体检表第 48 号实测。老师要的是「长方形 ABCD 中 P 沿 AB 运动，
+  //   画出三角形 PCD 的面积变化」，模型写的是：
+  //     `三角形面积=0.5*(DC长度)*(AP长度)`
+  //   它把「DC长度」当成一个现成的函数在用。可 CMD_MAP 是按 `名(` 匹配的
+  //   （`长度(A,B)` → `Distance(A,B)`），**后缀形式接不住**——这一整行就废了，
+  //   而动点题里「求 AP 的长度」几乎是每道题都要写的一句。
+  //
+  // ⚠ 这一条必须**窄**。第一版想法是 `([A-Za-z])([A-Za-z])长度`，但那会误伤小写名字：
+  //   `alpha长度` 里紧挨着「长度」的是 `ha`，会被拆成 `alpDistance(h,a)` 那种东西。
+  //   所以只认**两个大写字母**——几何里的线段名本来就都是大写（AB、DC、AP、EF）。
+  //
+  // ⚠ 还有一条更随手的：**不能吃到它前面的字母**。用 `(^|[^A-Za-z])` 兜住左边，
+  //   否则 `xAB长度` 这种会从中间切开。
+  //
+  // ⚠ 放在 translate 的**最前面**（拆分引号之前也安全——它换出来的 `Distance(...)`
+  //   里没有引号，不会打乱 parts 的奇偶）。翻完就不必再过 CMD_MAP 了。
+  var RE_SUFFIX_LEN = /(^|[^A-Za-z])([A-Z])([A-Z])\s*长度/g;
+  function 修后缀长度(s) {
+    return String(s).replace(RE_SUFFIX_LEN, function (_, 前, a, b) { return 前 + 'Distance(' + a + ',' + b + ')'; });
+  }
+
   function translate(line) {
     var parts = String(line).split(/("(?:[^"\\]|\\.)*")/);
     // ★ 引词只在**整行的行首**削，所以只动 parts[0]（行首那一段）。
     //   不放进 translateBare：那里是逐段跑，parts[2]、[4] 也是各自那一段的"开头"，
     //   可它们前面还跟着引号里的内容 —— 那不是行首。
     if (parts.length) parts[0] = dropLead(parts[0]);
-    for (var i = 0; i < parts.length; i += 2) parts[i] = translateBare(parts[i]);
+    // ★ 逐段（只跑引号外那几段）地修后缀长度：`文本("AP长度是 5")` 里那句
+    //   是给老师看的字面量，一个字都不许动——它落在奇数段，本来就不进这个循环。
+    for (var i = 0; i < parts.length; i += 2) parts[i] = translateBare(修后缀长度(parts[i]));
     return fixTextPos(parts.join(''));
   }
 
@@ -160,6 +234,38 @@ SR.board = (function () {
   //   只削行首、且后面紧跟「变量名 =」的那种，`中点(A,B)`、`中点(…)` 一律不碰。
   function stripPointPrefix(s) {
     return s.replace(/^(\s*)点\s*(?=[A-Za-z]\w*\s*=)/, '$1');
+  }
+
+  // ---- 兜底四：行内注释 ----
+  //
+  // ★★ 2026-10-04 作图体检表第 17 号（「轴对称·点」）**画板上一个对象都没建出来**。
+  //   模型写的是：
+  //       l = 直线(0,0,1,1)  # 经过原点斜率为1的直线
+  //       A = (-1,0)          # 点A在直线上方
+  //       A_prime = 反射(A, l)  # 点A关于直线l的对称点
+  //   四行**全部**没认。可 `A = (-1,0)` 本身一点毛病没有——把它单独喂给
+  //   evalCommand 是成功的（test/_cmdchk.cjs 量过：带注释的返回 false、不带返回 true）。
+  //   病根就是尾巴上那句中文注释：**GeoGebra 不认 `#`**。
+  //   ⚠ 这条比"某个命令名没翻"更毒：命令名没翻是一行死，注释是**整行**死，
+  //     而且模型越认真、注释写得越多，死得越多。
+  //
+  // ★ 一个字符都不能多削。两道闸：
+  //   ① 整行以 `#` 打头的**一律不动**——那是我们自己的 marker（`#清空`/`#隐藏 α`/`#播放 t`），
+  //      削下去整批动画就没了。
+  //   ② `#` 前面必须是空白，且它**不在引号里**。
+  //      为什么非要加引号这条：颜色字面量、`文本("第 #3 题")` 里都有 `#`，
+  //      而 `文本("…")` 削掉半个字符串会连括号都不配对——比不削更糟。
+  function stripComment(s) {
+    var t = s.trim();
+    if (t.charAt(0) === '#') return t;
+    var i = t.indexOf('#');
+    while (i > 0) {
+      var 前有空白 = /\s/.test(t.charAt(i - 1));
+      var 在引号外 = (t.slice(0, i).split('"').length - 1) % 2 === 0;
+      if (前有空白 && 在引号外) return t.slice(0, i).trim();
+      i = t.indexOf('#', i + 1);
+    }
+    return t;
   }
 
   // ---- 兜底二：`文本` 的位置词 ----
@@ -266,10 +372,65 @@ SR.board = (function () {
     return m ? (m[1] + ' = Point({' + m[2] + '})') : s;
   }
 
+  // ---- 兜底五：`名字 = 式子 = 式子` 改成 `名字: 式子` ----
+  //
+  // ★★ 2026-10-04 作图体检表第 5 号（三线八角）。模型写的是：
+  //       a = y = 0
+  //       b = y = 1
+  //       c = y = -1
+  //       同位角1 = 角(截线, a, b)
+  //   四条**一条都没建出来**，画板上只剩那条空数轴。
+  //   test/_cmdchk.cjs 逐条问过真 applet：`a = y = 0` 返回 **false**、
+  //   `a: y = 0` 返回 **true**（建出 line）、`y = 0` 也 true。差别就在那个冒号。
+  //
+  //   GeoGebra 的规矩：等号左边**只有**一个名字时才叫"给这个对象起名"；
+  //   写成 `a = y = 0`，它把它读成"a 等于（y 等于 0）这个真值"，
+  //   于是既不是点也不是线，evalCommand 直接 false。
+  //   模型这么写不是笨——**中文里"设 a 为直线 y=0"翻成式子就是 `a = y = 0`**，
+  //   很自然；提示词里也从没写过"起名要用冒号"。
+  //
+  // ⚠ 只在**顶层**恰好有**两个以上** `=` 时才动，而且第一个 `=` 左边必须长得像个名字：
+  //   · `A=(-1,0)`      一个 = → 原样（本来就是对的）
+  //   · `f(x)=a*x^2`    一个 = → 原样
+  //   · `S=三角形(P,C,D)` 一个 = → 原样（问题在右边，不在等号）
+  //   · `f(x)=a*x+b=0`  两个 =，可左边是 `f(x)`、带括号 → **不动**，
+  //     宁可让它继续报"没认"，也别把一条真的联立式改坏（那种要的是 Solve，不是起名）
+  //   ⚠ 括号深度要算：`P=(中点(A,B))=(1,1)` 这种假想写法里，两个 = 都在顶层，
+  //     但左边 `P` 像名字、右边会变成 `(中点(A,B))=(1,1)` —— 冒号之后它仍然是不合法的，
+  //     不过那本来就该报错，改不改都一样；而误伤 `f(x)=…` 的代价大得多，所以闸设在左边。
+  function fixEqName(s) {
+    var depth = 0, 引号 = false, eqs = [];
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charAt(i);
+      if (ch === '"') { 引号 = !引号; continue; }
+      if (引号) continue;
+      if (ch === '(' || ch === '[' || ch === '{') depth++;
+      else if (ch === ')' || ch === ']' || ch === '}') depth--;
+      else if (ch === '=' && depth === 0) {
+        // `==`、`<=`、`>=`、`!=` 都不是"起名"那个等号，跳过
+        if (s.charAt(i + 1) === '=' || s.charAt(i - 1) === '=' ||
+            s.charAt(i - 1) === '<' || s.charAt(i - 1) === '>' || s.charAt(i - 1) === '!') continue;
+        eqs.push(i);
+      }
+    }
+    if (eqs.length < 2) return s;
+    var 名 = s.slice(0, eqs[0]).trim();
+    // 左边得像"一个名字"：字母/下划线/汉字打头，后面只接字母数字下划线汉字。
+    // 带括号、带运算符、带空格的一律放行（那不是在起名）。
+    if (!/^[A-Za-z_一-龥][\w一-龥]*$/.test(名)) return s;
+    return 名 + ': ' + s.slice(eqs[0] + 1).trim();
+  }
+
   // ---- 关键字 → 真实命令 ----
   // 提示词里教模型用的就是这几个词，别改词面，改了模型就不认了。
   function expand(cmd) {
-    var c = stripPointPrefix(cmd.trim());
+    // ⚠ 顺序：**先削注释再削「点」前缀**。反过来的话，`点 A = (-2,0)  # 说明`
+    //   会先被 stripPointPrefix 看成"行首的点字后面紧跟变量名"（它确实跟了），
+    //   削完再削注释——结果一样，但那是巧合。真正要这个顺序的原因是 stripComment
+    //   会 trim：`  点 A = (-2,0)` 削完前导空白还在，stripPointPrefix 的 `^(\s*)点`
+    //   仍能对上（它自己带 \s*）；可万一哪天 stripPointPrefix 改成只认行首，
+    //   这里就静默失灵了。先削注释，两条路都稳。
+    var c = stripPointPrefix(stripComment(cmd));
     if (!c || c.charAt(0) === '/' ) return [];
     if (c === '#清空') return ['__NEW__'];
     // 数轴／坐标系走真 API，不走 evalCommand。
@@ -282,24 +443,172 @@ SR.board = (function () {
     if (c === '#三维' || c === '三维' || c === '#3D') return ['__3D__'];
     if (c === '#平面' || c === '平面' || c === '#二维' || c === '二维' || c === '#2D') return ['__2D__'];
     var m;
-    if ((m = c.match(/^#隐藏\s+(.+)$/))) return ['__HIDE__' + translate(m[1].trim())];
-    if ((m = c.match(/^#显示\s+(.+)$/))) return ['__SHOW__' + translate(m[1].trim())];
-    if ((m = c.match(/^#播放\s+(.+)$/))) return ['__PLAY__' + m[1].trim()];
+    // ★★ 2026-10-04 体检表里 `#隐藏坐标轴` 落进了"画板没认"。两个毛病叠在一起：
+    //   ① 模型**不写那个空格**（`#隐藏坐标轴`），而这里的闸原来是 `\s+`——对不上，
+    //      就漏到下面当成一条普通命令，evalCommand 一声不响地返回 false。
+    //   ② 就算写成 `#隐藏 坐标轴`，`setVisible('坐标轴')` 也是个**不存在**的对象名
+    //      （GeoGebra 里两条轴叫 xAxis/yAxis，而且它们压根不是普通对象）。
+    //   所以这里既放宽空格，也把"整条坐标轴/网格"接到 **applet 自己的开关**上
+    //   ——`setAxesVisible`/`setGridVisible` 是 showPlane() 已经在用的接口，不猜。
+    if ((m = c.match(/^#(隐藏|显示)\s*(.+)$/))) {
+      var 要显 = m[1] === '显示', 名 = m[2].trim();
+      if (/^(坐标轴和网格|网格和坐标轴)$/.test(名)) {
+        return [要显 ? '__AXES1__' : '__AXES0__', 要显 ? '__GRID1__' : '__GRID0__'];
+      }
+      if (/^坐标轴$/.test(名)) return [要显 ? '__AXES1__' : '__AXES0__'];
+      if (/^网格$/.test(名)) return [要显 ? '__GRID1__' : '__GRID0__'];
+      return [(要显 ? '__SHOW__' : '__HIDE__') + translate(名)];
+    }
+    if ((m = c.match(/^#播放\s*(.+)$/))) return ['__PLAY__' + m[1].trim()];
     if (c === '#暂停' || c === '#停止') return ['__STOP__'];
+    // ★★ 2026-10-04 加的：走到这里还以 `#` 打头的，就是我们**不认识的整行注释**，
+    //   当注释丢掉，别再往下当命令送进画板。
+    //   实测（体检表第 51 号）：模型自己写了一行 `#点D在AB上运动` 当说明——
+    //   它的意图是注释，可它没匹配上面任何一个标记，于是漏到 `evalCommand`，
+    //   板上一声不响地返回 false，状态条却多报一条「画板没认」。
+    //   老师看到的是"好像有条命令没成功"——其实那条根本不是命令。
+    //   位置放在**所有标记判断之后**：真标记（清空／数轴／三维／隐藏／播放…）
+    //   上面都拦掉了，剩下的按注释处理是安全的。也不吭声——注释不算「没认」。
+    if (c.charAt(0) === '#') return [];
     // ★ 顺序要紧：**先 translate 再兜底**。translate 把认得的中文命令名翻成英文，
     //   兜底那条正是靠"名字还是中文"来判断"这不是个真命令"的。
-    return [fixBareNamePoint(translate(c))];
+    return [fixBareNamePoint(fixEqName(translate(c)))];
+  }
+
+  // ---- 这一条到底**落地了没有** ----
+  //
+  // ★★ 2026-10-04 作图体检表第二轮挖出来的**更阴的一种没认**：
+  //   上面那条判据是 `evalCommand(one) === false`，可**返回 true 不等于建出了东西**。
+  //   实测（`O` 这个名字从头到尾没定义过）：
+  //       Ray(O,A)     → 返回 **true**，板上**一件没多**（那条射线悄没了）
+  //       Circle(O,2)  → 返回 **true**，板上多出 `c = 圆周((0,0), 2)` ——
+  //                      GeoGebra **把没建过的名字顶成了原点**：图看着"画出来了"，位置是错的。
+  //   两条都返回 true，于是**状态条一个字都不说**，老师看见的是"少一块／歪一块"。
+  //   ★ 这就是 CMD_MAP 里 `直方图` 那段注释写下的那句话的**另一半**：
+  //     「翻了就变成'英文也没认、可板上一声不响'」——现在轮到**翻得动的那一批**了：
+  //     命令名认得出，参数里那个名字认不出。
+  //   ★ 判据要挑**会变的那个量**：不问"它报错没有"，问"**板上的东西真多了吗**"。
+  //     · 自己起了名的（`c = Circle(...)` / `f(x) = …`）→ 问 **c／f 建出来没有**
+  //     · 没起名的（`Ray(O,A)`）                 → 问 **件数多了没有**
+  //   ⚠ 一律用件数会冤枉"再来一遍 `A=(0,0)`"（件数不变，可它是对的——覆盖同名点）；
+  //     一律用名字又盖不住无名命令。所以两档分开。
+  //   ⚠ `evalCommand` 返回 true 时板上的东西**也可能比原来少**（同名的被顶掉），
+  //     所以匿名那档只比"多了没有"，不比相等。
+  function 起了名的命令(s) {
+    var m = /^\s*([^\s=(,]+)\s*=/.exec(s);
+    if (m) return m[1];
+    m = /^\s*([A-Za-z_\u0370-\u03ff][\w\u0370-\u03ff]*)\s*\([^()]*\)\s*=/.exec(s);
+    return m ? m[1] : null;
+  }
+  // ★ 只有"本来就是用来**造东西**的命令"才查——不然 `SetValue(...)`／`ZoomIn()`
+  //   这类本来就不添对象的会被一条条冤枉。
+  //   名单直接取 CMD_MAP 的**值**：凡是我们敢替模型翻成英文的中文命令，翻出来都是要造一个对象的。
+  var 造物命令 = { Point: 1 };   // Point 是 fixBareNamePoint 造出来的，不在 CMD_MAP 里
+  for (var _ck in CMD_MAP) { if (CMD_MAP.hasOwnProperty(_ck)) 造物命令[CMD_MAP[_ck]] = 1; }
+  function 该造物(s) {
+    if (起了名的命令(s)) return true;                 // 起了名的，一律要求它真建出来
+    var m = /^\s*([A-Za-z][A-Za-z0-9_]*)\s*\(/.exec(s);
+    return !!(m && 造物命令[m[1]]);
+  }
+  // ---- 命令里用到了**板上没有**的名字 ----
+  //
+  // ★★ 为什么 `试一次` 那两档（件数／有个名字）**都盖不住**这一种（2026-10-04 实测）：
+  //       c1 = Circle(O,2)   → c1 **建出来了**，只不过圆心被顶到了原点（O 从没定义过）
+  //       P  = (t, f(t))     → 同上，t 从没定义过
+  //   两条 `evalCommand` 都返回 true、对象也都"在"，`试一次` 一问一个准——可图上那
+  //   一块是**歪的**：GeoGebra 拿原点顶替了那个没建过的名字，而老师看见的是一张
+  //   "画出来了"的图。这是 [[scanner-numbers-are-not-what-they-claim]] 那一族里最阴的一档：
+  //   **不报错、静默换了个量法**，量出来的正好还是"成功"。
+  //   能分开它们的只有一件事：**这行用到的名字，板上到底有没有。**
+  //
+  // ⚠ 三个讲究：
+  //   ① 只能在**一批跑完之后**问（见 收尾），不能在 exec 里问：模型经常先用在先、
+  //      定义在后（第 26／30 号那种，那正是"补跑"存在的理由）——exec 那一刻问，
+  //      等于把一大批本该好的命令全冤枉一遍。反控比正控要紧：这把尺子一旦爱叫，
+  //      老师每张图都得看一句废话，那它就跟没有一样。
+  //   ② 已经进了 `没认` 的不再报第二遍（`Ray(O,A)` 那种是两条都中，说一次就够）。
+  //   ③ 命令名自己不算"名字"（`Circle(` 的 `Circle`），`f(x)=…` 里的 `x` 是**形参**
+  //      不是板上的对象，`y = 0` 这种方程里的 `y` 是坐标变量——都得先摘掉，
+  //      不然它们会一个个跳出来当假名字。
+  var 坐标变量 = { x: 1, y: 1, z: 1 };
+  var 恒定名 = { xAxis: 1, yAxis: 1, zAxis: 1, xOyPlane: 1, yOzPlane: 1, zOxPlane: 1,
+    true: 1, false: 1, pi: 1, e: 1 };
+  function 提到的名字(s) {
+    if (String(s).indexOf('__') === 0) return [];          // #隐藏/#播放/清空 这些伪命令，不是画板上的东西
+    // 引号里的字是给老师看的文本，不是名字
+    var 体 = String(s).replace(/"[^"]*"/g, ' ').replace(/'[^']*'/g, ' ');
+    var 自名 = 起了名的命令(体);
+    if (自名) 体 = 体.replace(自名, ' ');
+    var 形参 = {};
+    var pm = /^\s*[^\s=(,]+\s*\(([^()]*)\)\s*=/.exec(String(s));
+    if (pm) pm[1].split(',').forEach(function (p) { p = p.trim(); if (p) 形参[p] = 1; });
+    var out = [], re = /[A-Za-z_\u0370-\u03ff][A-Za-z0-9_\u0370-\u03ff]*/g, m;
+    while ((m = re.exec(体))) {
+      var t = m[0];
+      if (形参[t] || 坐标变量[t] || 恒定名[t]) continue;
+      // 后面紧跟着 `(` 的是**命令名/被调用的函数名**，不是"引用了一个点"
+      if (/^\s*\(/.test(体.slice(m.index + t.length))) continue;
+      // `2x` 这种贴在前一个数字后面的，是乘法省略写法（`2*x`），不是独立名字
+      if (m.index > 0 && /[0-9.]/.test(体.charAt(m.index - 1))) continue;
+      if (out.indexOf(t) < 0) out.push(t);
+    }
+    return out;
+  }
+  // 这一批里"用到了没建过的名字"的那些条（收尾时一次性说清楚）
+  function 找悬空名(行们) {
+    var 缺 = {}, 条数 = 0;
+    for (var i = 0; i < 行们.length; i++) {
+      var one = 行们[i];
+      if (failedNow.indexOf(one) >= 0) continue;           // ② 已经算"没认"了，不再报一遍
+      var ns = 提到的名字(one), 这行缺 = [];
+      for (var j = 0; j < ns.length; j++) {
+        var ok = true;
+        try { ok = !!api.exists(ns[j]); } catch (e) { ok = true; }   // 问不出来就当它有，宁可不说
+        if (!ok) 这行缺.push(ns[j]);
+      }
+      if (这行缺.length) { 条数++; for (var k = 0; k < 这行缺.length; k++) 缺[这行缺[k]] = 1; }
+    }
+    if (!条数) return null;
+    var 名单 = [];
+    for (var n in 缺) if (缺.hasOwnProperty(n)) 名单.push(n);
+    return { 条数: 条数, 名单: 名单 };
+  }
+
+  // ---- 跑一条，并判它到底成没成（exec 跟 收尾的补跑**必须用同一把尺子**）----
+  //   ★ 两处口径不一致的话，补跑那一步会把刚判出来的"空转"当成成功、静默丢掉。
+  function 试一次(one) {
+    var 前 = null;
+    try { 前 = api.getAllObjectNames(); } catch (e) { 前 = null; }
+    var 回;
+    try { 回 = api.evalCommand(one); } catch (e) { return true; }
+    if (回 === false) return true;
+    if (!该造物(one) || 前 === null) return false;
+    var 后;
+    try { 后 = api.getAllObjectNames(); } catch (e) { return false; }
+    if (!后) return false;
+    var 名 = 起了名的命令(one);
+    return 名 ? 后.indexOf(名) < 0 : 后.length <= 前.length;
   }
 
   // ---- 单条执行 ----
   function exec(one) {
     if (!api) return;
     try {
-      if (one === '__NEW__') { api.newConstruction(); stopPlay(); return; }
+      // ★ `#清空` 跟 clear() 一样，是"上一张图没了"——播放目标得**忘掉**，不能只暂停。
+      //   用 stopPlay() 的话，`playTarget` 会跨题活着（见 forgetPlay 那段实测）。
+      if (one === '__NEW__') { api.newConstruction(); forgetPlay(); return; }
       if (one === '__NUMLINE__') { showNumLine(); return; }
       if (one === '__PLANE__') { showPlane(); return; }
       if (one === '__3D__') { show3D(); return; }
       if (one === '__2D__') { showPlane(); return; }
+      // ★ 整条坐标轴/网格的开关：走 applet 自己的 API，不走 setVisible。
+      //   理由见 expand() 里那段（`setVisible('坐标轴')` 是个不存在的对象名——
+      //   GeoGebra 里两条轴叫 xAxis/yAxis，而且它们压根不是普通对象）。
+      //   这里跟 showPlane()/showNumLine() 用的是同一对接口，不是另猜的。
+      if (one === '__AXES0__') { try { api.setAxesVisible(false, false); } catch (e) {} return; }
+      if (one === '__AXES1__') { try { api.setAxesVisible(true, true); } catch (e) {} return; }
+      if (one === '__GRID0__') { try { api.setGridVisible(false); } catch (e) {} return; }
+      if (one === '__GRID1__') { try { api.setGridVisible(true); } catch (e) {} return; }
       if (one.indexOf('__HIDE__') === 0) { api.setVisible(one.slice(8), false); return; }
       if (one.indexOf('__SHOW__') === 0) { api.setVisible(one.slice(8), true); return; }
       if (one.indexOf('__PLAY__') === 0) { markPlayable(one.slice(8)); return; }
@@ -309,7 +618,11 @@ SR.board = (function () {
       //   这件事，老师和我们都看不见。老师看见的只是一张空白图，
       //   会以为模型没干活（他 2026-10-03 就是这么来问的："这也没成功啊"）。
       //   单条不吭声（免得刷屏），攒着，等这一批跑完在状态条上一次性说清楚。
-      if (api.evalCommand(one) === false) failedNow.push(one);
+      //
+      // ★★ 2026-10-04 起改走 `试一次()`：除了"返回 false"，**返回了 true 可板上一件没多**
+      //   也算没落地（`Circle(O,2)` 那种"名字没建过、GeoGebra 拿原点顶替"就藏在这儿）。
+      //   exec 跟 收尾 的补跑必须是同一把尺子，所以判据收到了 `试一次` 一处。
+      if (试一次(one)) failedNow.push(one);
     } catch (e) {
       failedNow.push(one);
     }
@@ -390,6 +703,144 @@ SR.board = (function () {
     return fast;
   }
 
+  // ---- 兜底六：`滑块(A, B)` ——「线段上的动点」 ----
+  //
+  // ★★ 2026-10-04 作图体检表第 48 号（矩形里的动点）、第 51 号（相似里的动点）
+  //   两条都死了，死的还是**同一条写法**：
+  //       48:  P = 滑动条(A, B, 0.1)   → 没认  P = Slider(A, B, 0.1)
+  //       51:  D = Slider(A, B)        → 没认
+  //   模型想说的是"一个点在 AB 上滑动"——动点题里**最常见的那一句**。
+  //   可 GeoGebra 的 `Slider` **只认数字区间**，`Slider(A,B)` 这种形式压根不存在
+  //   （test/_cmdchk.cjs 量过：两参、带步长的三参，全返回 false、什么都不建）。
+  //   "点在线上滑"得自己用参数表示。
+  //
+  //   实测能用的写法（test/_cmdchk.cjs 里两行都 true，读的是 getObjectType）：
+  //       u = Slider(0, 1, 0.01)
+  //       P = A + u*(B - A)
+  //   ——u 是滑块，P 是那个动点。P 是**真点**，后面 `三角形(P,C,D)` 照用不误。
+  //
+  //   所以这里替模型铺一层：把 `X = Slider(A, B[, 步长])` 拆成上面两行，
+  //   滑块临时名自己起，并把 `#播放 X` 改指向那个滑块。
+  //   ★ 改指向这一步不能漏：`#播放` 只能播**滑块**，播一个点是不动的。
+  //     第 50 号就是这么死的（模型写了 `#播放 t`，而 t 从头到尾没定义）。
+  //
+  // ⚠ 闸开得很窄，只认**整行恰好是** `名字 = Slider(参数1, 参数2[, 步长])`，
+  //   而且参数 1 **不能是纯数字**——不然 `u = Slider(0, 1, 0.01)`（提示词里教的
+  //   正确写法）会被自己吃掉，那才是真的事故。
+  var RE_SEGSLIDER = /^([A-Za-z_一-龥][\w一-龥]*)\s*=\s*Slider\s*\(/;
+  function 切参(s) {                 // 按**括号外的**逗号切，元组里的逗号不算
+    var out = [], cur = '', depth = 0, 引号 = false;
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charAt(i);
+      if (ch === '"') { 引号 = !引号; cur += ch; continue; }
+      if (!引号) {
+        if (ch === '(' || ch === '[' || ch === '{') depth++;
+        else if (ch === ')' || ch === ']' || ch === '}') depth--;
+        else if (ch === ',' && depth === 0) { out.push(cur); cur = ''; continue; }
+      }
+      cur += ch;
+    }
+    out.push(cur);
+    return out;
+  }
+  function fixSegSliders(lines) {
+    var 名已用 = {};
+    for (var i = 0; i < lines.length; i++) {
+      var m = /^([A-Za-z_一-龥][\w一-龥]*)\s*=/.exec(lines[i]);
+      if (m) 名已用[m[1]] = 1;
+    }
+    var 映射 = {}, out = [];
+    for (var k = 0; k < lines.length; k++) {
+      var one = lines[k];
+      if (one.indexOf('__') === 0) { out.push(one); continue; }
+      var m2 = RE_SEGSLIDER.exec(one);
+      if (!m2) { out.push(one); continue; }
+      var 开 = one.indexOf('(', one.indexOf('Slider'));
+      var 闭 = one.lastIndexOf(')');
+      if (开 < 0 || 闭 < 开) { out.push(one); continue; }
+      var args = 切参(one.slice(开 + 1, 闭));
+      if (args.length < 2 || args.length > 3) { out.push(one); continue; }
+      var a1 = args[0].trim(), a2 = args[1].trim(), 步 = (args[2] || '0.01').trim();
+      // ★ 纯数字的第一参 = 正常的数字滑块（`Slider(0,1,0.01)`、`Slider(-5,5,0.1)`）
+      //   → 一个字都不许动。这条闸是整段里最要紧的一条。
+      if (!/^[A-Za-z_一-龥(]/.test(a1)) { out.push(one); continue; }
+      if (!a2) { out.push(one); continue; }
+      var 名 = m2[1];
+      // 给滑块起个撞不上的名字，名字里带着"这是替谁铺的"，出错时一眼能认出来
+      var u = 't_' + 名, n = 0;
+      while (名已用[u]) { n++; u = 't_' + 名 + n; }
+      名已用[u] = 1;
+      映射[名] = u;
+      out.push(u + ' = Slider(0, 1, ' + 步 + ')');
+      out.push(名 + ' = ' + a1 + ' + ' + u + '*(' + a2 + ' - ' + a1 + ')');
+    }
+    if (!Object.keys(映射).length) return lines;
+    for (var q = 0; q < out.length; q++) {
+      if (out[q].indexOf('__PLAY__') === 0) {
+        var 目 = out[q].slice(8);
+        if (映射[目]) out[q] = '__PLAY__' + 映射[目];
+      }
+    }
+    return out;
+  }
+
+  // ---- 收尾：**把没认的照着原样再发一次** ----
+  //
+  // ★★ 体检表第 26 号、第 30 号是**同一种死法**，而且都不是"命令名不认识"：
+  //     26:  g(x) = f(x) + t     ← 写在 `t = Slider(-5,5,0.1)` **前面**
+  //     30:  f(x) = a*x^2        ← 写在 `a = Slider(-2,2,0.1)` **前面**
+  //   画板一条条往下走，走到这行时 t／a 还不存在 → evalCommand 返回 false →
+  //   整行丢掉；可**下一行**马上就把它们建出来了。**差的就是个先后**。
+  //   （这两条挂在"没认"清单里，看着像语法错——其实语法一点没错。属于
+  //    "数字本身没错，错的是它量的那个东西"那一族。）
+  //
+  //   治它不用求模型改脾气：等一批跑完，把没认的**原样再发一次**，
+  //   这时候依赖的对象都已经在板上了。补完还不行，那才是真的没认。
+  //
+  // ⚠ 三处讲究：
+  //   ① 只在**批次跑完**时补一次（`补过` 挡着），不然无限循环；
+  //   ② 补之前清空 `failedNow`、补完把**还不行**的装回去——状态条上那句话
+  //      要是说了"N 条没认"而实际已经补上，那就是在骗老师（括号里第 ② 条
+  //      跟 board.js 顶上"不弹模态框"是同一个立场：宁可不说，不许说错）；
+  //   ③ 补的动作也吃 `myGen`——老师已经问了下一句的话，这一段是旧世代的活，
+  //      一条都不许再往板上发（跟 run 里那条 guard 同一个理由）。
+  function 收尾(myGen, 补过) {
+    // ★ 三句都可能要说：没认的（图上缺了一块）、悬空名的（画歪了／少一笔）、
+    //   playWarn（按下去不会动）。谁在都不能提前 return——见 playWarn 那段"不许互相盖"。
+    if (myGen !== gen) return;
+    if (!补过.v) {
+      补过.v = true;
+      var 待补 = failedNow.slice();
+      failedNow = [];
+      for (var i = 0; i < 待补.length; i++) {
+        // ★ 补跑跟 exec 用**同一把尺子**（`试一次`）。原来这里只认 `=== false`，
+        //   于是"返回 true 但没人落地"的那一批在**第一次**判出来、又在补跑这一步
+        //   被当成成功丢掉——两处口径不一致，等于白判。
+        if (试一次(待补[i])) failedNow.push(待补[i]);
+      }
+      slimPoints();
+    }
+    // ★★ 悬空名**只能在补跑之后问**（见 `找悬空名` 那段讲究①）：模型常常先用在先、
+    //   定义在后，补跑刚把那一批救回来，这时候板上的名字才是**这一批最终**的样子。
+    //   放在补跑之前问，第 26／30 号那种"先后颠倒"会被当成悬空名冤枉一遍。
+    var 悬空 = 找悬空名(批内行);
+    if (!failedNow.length && !playWarn && !悬空) return;
+    var 段 = [];
+    if (failedNow.length) 段.push('这一段里有 ' + failedNow.length + ' 条画板没认：' + failedNow.join(' ／ '));
+    // ★ 措辞是被实测**逼出来**的：不能写"这几笔会少掉/落到别处"。
+    //   同一个"板上没这个名字"，GeoGebra 有两种完全不同的顶替法，都实测过：
+    //     `Circle(O,2)`  → c 建出来了，圆心被**顶到原点**（少不掉，是歪的）
+    //     `P=(t,f(t))`   → P 被当成**一条参数曲线** `曲线((t,f(t)), t, -10, 10)`
+    //                      （不是少一笔，是整条曲线——`t` 被当成了曲线的参数）
+    //   两件事的共同点只有一句真话：**画板上没有叫这个名字的东西，GeoGebra 自己猜了一个顶上**。
+    //   ⚠ 当初我照第 15 号的形状写成"会少掉/落到别处"，拿到第 50 号上就是**错的**——
+    //     结论对、理由是假的，比不报更坏（[[scanner-numbers-are-not-what-they-claim]]）。
+    if (悬空) 段.push('这一段里还有 ' + 悬空.条数 + ' 条用到了画板上没有的名字（' + 悬空.名单.join('、')
+      + '）：画板会自己拿原点或者一条曲线顶上，那几笔多半不是你要的 —— 看看是不是漏了「= …」');
+    if (playWarn) 段.push(playWarn);
+    if (段.length) log(段.join('  '));
+  }
+
   // ★ 返回**这一批命令所属的世代号**（见上面 `gen` 那段）。等这张画完的人
   //   （`draw`）拿它当身份证：世代号变了就说明它等的那批活已经被作废了。
   function run(rawLines) {
@@ -397,12 +848,20 @@ SR.board = (function () {
     var myGen = gen;
     clearTimers();
     failedNow = [];                        // 这一批里画板没认的命令，见 exec
+    playWarn = '';                         // 这一批里"`#播放` 指着的不是滑块"那句提醒，见 收尾
     var lines = [];
     for (var i = 0; i < rawLines.length; i++) {
       var exp = expand(rawLines[i]);
       for (var j = 0; j < exp.length; j++) lines.push(exp[j]);
     }
+    // ★ 展开完再做一道**成批**的加工：`滑块(A,B)` 得拆成"滑块 + 动点"两行，
+    //   而且拆分要看整批的名字（起个撞不上的滑块名、把 `#播放` 改指向它），
+    //   所以只能在这里做，不能塞进逐行的 expand。
+    lines = fixSegSliders(lines);
     if (!lines.length) return myGen;
+    // ★ 存一份**这一批最终要发出去的整串行**：`收尾` 里判"悬空名"要回头看整批
+    //   （单独一条看不出"这个名字后面才定义"），见 `找悬空名`。
+    批内行 = lines;
     lastLines = rawLines.slice();          // 存原命令，"重画"重放这一份
     // 画板还没就绪，或者正在载入一份存档 → 排队等着，等能画了再放
     if (!ready || loading) { pendingLines = lines; return myGen; }
@@ -411,6 +870,7 @@ SR.board = (function () {
     //    而这一批总共也就几秒，看得见的那一遍下次自然会慢。）
     var 步长 = cmdDelay();
     queueLeft = lines.length;
+    var 补过 = { v: false };     // "收尾补一次"这一批只用一次（第 26/30 号那种先后颠倒）
     for (var k = 0; k < lines.length; k++) {
       (function (one, idx) {
         pending.push(setTimeout(function () {
@@ -418,11 +878,10 @@ SR.board = (function () {
           exec(one);
           slimPoints();                // 新点子生出来就是小的，别等画完再集体缩一圈
           queueLeft--;                 // ★ 跑一条减一条，"在画"才收得住
-          // 这一批跑完了、又有没认的 → 在状态条上说一句。
-          // 说这句话是**为了老师**：空白的画板和不吭声的画板，是两回事。
-          if (queueLeft === 0 && failedNow.length) {
-            log('这一段里有 ' + failedNow.length + ' 条画板没认：' + failedNow.join(' ／ '));
-          }
+          // 这一批跑完了 → 先把没认的**补一次**（依赖颠倒的能救回来），
+          // 补完还不行才在状态条上说一句。说这句话是**为了老师**：
+          // 空白的画板和不吭声的画板，是两回事；可**说错数**比不说更糟。
+          if (queueLeft === 0) 收尾(myGen, 补过);
         }, idx * 步长));
       })(lines[k], k);
     }
@@ -431,6 +890,16 @@ SR.board = (function () {
 
   var pendingLines = null;
   var failedNow = [];
+  // ★ 这一批最终发出去的那串行（展开+拆滑块之后）。`收尾` 判"悬空名"要回头整批看，见 `找悬空名`。
+  var 批内行 = [];
+  // ★★ 这一批里"`#播放` 指着一个不是滑块的东西"那句提醒（见 markPlayable / 不是滑块）。
+  //   为什么非得**存起来、等收尾一起说**，而不是当场 log 一句就算：
+  //   状态条只有**一行**，而收尾那句「N 条画板没认」是**后说的**——
+  //   当场 log 出去会被它盖掉。实测（test/_chk5.cjs ⑥b，体检表第 50 号的形状：
+  //   `#播放 t` 而 t 从头到尾没建过）就是这么被吃掉的：状态条上只剩没认那句，
+  //   那句真正解释"为什么按下去不动"的话一个字都没留下。
+  //   两句都得说，就拼成一行说——**不许互相盖**。
+  var playWarn = '';
 
   // 画板上还有没有活。★ 只留**这一处**定义，导出给外面的 `isBusy` 和 draw() 内部
   //   判"画完了没有"用的是同一个函数。
@@ -455,15 +924,53 @@ SR.board = (function () {
     gen++;                     // ★ 清空也是"新一代"：正等着画完的人要听到 false，别听到 true
     clearTimers();
     if (api) { api.newConstruction(); }
-    stopPlay();
+    forgetPlay();              // ★★ 见下面 forgetPlay 那段：这里**不能**用 stopPlay()
   }
   function redraw() { if (lastLines.length) run(lastLines); }
 
   // ---- 动点播放 ----
+  //
+  // ★★ 2026-10-04：`#播放 α` 里的 α **不一定是个滑块**。
+  //   作图体检表 11 条动图里有 4 条"图有、能播、就是不动"，查下去**三条是同一个病**：
+  //   提示词教的是 `t=Slider(0,5,1)` 和 `α=60°` **一对搭档**
+  //   （滑块那行 + 常数那行 + `旋转(…, α*t, A)` + `#播放 t`），
+  //   模型交上来只剩后一半：`α=60°` + `旋转(…, α, A)` + `#播放 α`——
+  //   **留下了那个看得见的 60°，丢掉了那行滑块**，再把 `#播放` 指向一个常数。
+  //   画板上于是：图有、播放键**亮着**、按下去**一动不动**。
+  //   孔老师原话「这画的啥玩意儿，也动不了」，这是其中一面；
+  //   "键该暗的时候还亮着"（playTarget 残留）是另一面，见 forgetPlay 那段。
+  //
+  //   ★ 判据是**量出来的**，不是照文档猜的（test/_chk6.cjs，真画板）：
+  //     `getObjectType() === 'numeric'` 一个人分不出来——普通数 `k=2` 也是 numeric。
+  //     得**再加一条** `getDefinitionString() === ''`：滑块的定义串是空的
+  //     （它是个自由变量），`k=2` 的定义串是 `"2"`，角 `α=60°` 干脆连类型都是 `angle`。
+  //     11 条正反样本（含下界不为 0 的滑块、以及两条**故意写来当反面**的巧合规则）
+  //     上误报 0 / 漏报 0。以后要改这条规则，回 _chk6 再量一遍。
+  //
+  //   ⚠ 只**提醒**，不拦：`setAnimating` 对"路径上的点"这类对象也有效，
+  //     那种写法这一轮**没量过**，拦下去会把本来能动的东西弄哑。
+  //     宁可多亮一个键，也不能弄哑一个真能播的图——提示一句，老师自己看得见。
+  function 不是滑块(n) {
+    try {
+      // ★ 头一条 `exists` 是**单独量过**才加的，不是顺手写的：
+      //   名字没建过的对象上，`getObjectType('t')` 返回的是**空字符串**（不抛），
+      //   `getDefinitionString('t')` 也返回空——**跟滑块长得一模一样**。
+      //   光靠下面那条判据，二者只有"类型是不是 numeric"这一个字之差能分开，
+      //   太薄了。（实测：test/_chk5.cjs ⑥b 打出 {"类型":"","定义串":""}，exists=false。）
+      if (!api.exists(n)) return true;      // 压根没这个对象（体检表第 50 号就是这档）
+      return !(api.getObjectType(n) === 'numeric' && String(api.getDefinitionString(n)) === '');
+    } catch (e) { return false; }   // 量不了就当它能播——宁可少说一句，也别冤枉一张真能动的图
+  }
   function markPlayable(name) {
     playTarget = name; playing = false;
     if (hooks.playState) hooks.playState({ target: name, playing: false });
-    log('可以播放：' + name);
+    if (不是滑块(name)) {
+      // ★ 先存着，等这一批跑完跟"画板没认"那句拼成一行再说（见 playWarn 那段）。
+      //   当场 log 会被收尾那句盖掉——实测过，别改回去。
+      playWarn = '⚠ 「#播放 ' + name + '」指着的 ' + name + ' 不是滑块（是个固定的数或根本没建过），按下去不会动。';
+    } else {
+      log('可以播放：' + name);
+    }
   }
   function togglePlay() {
     if (!api || !playTarget) return;
@@ -479,6 +986,31 @@ SR.board = (function () {
     try { if (api && playTarget) api.setAnimating(playTarget, false); } catch (e) {}
     playing = false;
     if (hooks.playState) hooks.playState({ target: playTarget, playing: false });
+  }
+
+  // ★★ 2026-10-04 加的：**把"能播"这件事整个忘掉**，不是"暂停一下"。
+  //   为什么非得单开一个：`stopPlay()` 只把 `playing` 置 false，
+  //   **从来不动 `playTarget`**，而 `playTarget` 是模块级的全局变量。
+  //   于是它一旦被某张图设上，就跨 `#清空`、跨下一张图**一直活着**——
+  //
+  //   实测（test/_chk5.cjs，真画板，三处都量了）：
+  //     画一张有 `#播放 t` 的 → canPlay() 真、播放键亮
+  //     `#清空` 之后再画一张**根本没有滑块**的 → canPlay() **还是真**，
+  //       键上还写着「▶ 播放 t」。
+  //   老师看见的就是「这图的播放键亮着，按下去什么都不动」——
+  //   他原话「这画的啥玩意儿，也动不了」，有一半是这么来的。
+  //   ⚠ 而且这不是 applet 那一层的残留：单独调 `ggbApplet.newConstruction()`
+  //     清不掉它（⑤b 那条对照量到了），它住在 board.js 自己的全局变量里。
+  //
+  //   ★ 为什么 `stopPlay()` 自己不改：`#暂停`（__STOP__）也走 stopPlay，
+  //     但"暂停"要**留着**那个目标——老师点了暂停还想再点播放接着看。
+  //     只有"换了一张图"（clear / __NEW__）才该忘掉。
+  function forgetPlay() {
+    try { if (api && playTarget) api.setAnimating(playTarget, false); } catch (e) {}
+    playing = false; playTarget = null;
+    // ★ target 传 null：js/chat.js 的 onPlayState() 看到 target 为空就把键收起来。
+    //   （别传空字符串——那边判的是 `!st.target`，0/''/null 都收，但传 null 最明白。）
+    if (hooks.playState) hooks.playState({ target: null, playing: false });
   }
 
   // ---- 导出图片（答辩材料用）----
@@ -1664,6 +2196,29 @@ SR.board = (function () {
     gen: function () { return gen; },
     hold: lock,                     // 排进串行链（探针拿它测"换页和作画会不会互相踩"）
     translate: translate,           // 给测试用：看中文命令翻成了什么
+    // 给测试用：**一行中文**进 expand 之后到底变成了哪几条操作。
+    //   为什么光有 translate 不够：削行内注释、`名字 = 式子 = 式子`→`名字: 式子`、
+    //   把 `#隐藏坐标轴` 接到 applet 开关上 —— 这三件都发生在 translate **之后**，
+    //   是 expand 干的。隔着一层，probe_translate 那把纯 node 的便宜尺子就量不到它们，
+    //   只能等五十分钟一场的浏览器体检表。露出来，改一行一秒就能验。
+    expand: expand,
+    // 给测试用：**一整批**中文命令进画板之前长什么样（expand 逐行 + 成批加工 fixSegSliders）。
+    //   为什么还要这一把：`滑块(点A,点B)` 拆成"滑块 + 动点"两行、`#播放 X` 改指向
+    //   那个滑块——这两件都是**看整批**才做得了的（得起个撞不上的名字），
+    //   逐行的 expand 量不到。它同样是纯函数，所以同样能一秒验。
+    toOps: function (rawLines) {
+      var out = [];
+      for (var i = 0; i < rawLines.length; i++) {
+        var e = expand(rawLines[i]);
+        for (var j = 0; j < e.length; j++) out.push(e[j]);
+      }
+      return fixSegSliders(out);
+    },
+    // 给测试用：**这一批里有哪几条命令画板没认**（exec 里攒的那份 failedNow）。
+    //   为什么要露：画板没认的命令是**一声不响**的——evalCommand 只返回 false，
+    //   画板上少了个对象，可到底少了哪一条，光看板看不出来。做图型体检表时
+    //   "这条命令没认"和"模型就没写这条命令"是两回事，不能混成一个数。
+    failed: function () { return failedNow.slice(); },
     // 给测试用：把 applet 本体交出去。
     // ★ 为什么非要露这个口子：GeoGebra 有哪些接口、那几个样式命令到底叫什么名字，
     //   我**猜不出来**——猜错了 evalCommand 只是返回 false，一声不响，画板上看不出区别。
