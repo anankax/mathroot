@@ -1379,7 +1379,19 @@ SR.board = (function () {
     //   改后 -6…6 每个整数都标出来。
     //   ⚠ 顺序不能反 —— 必须排在 setCoordSystem **之后**，否则会被它重置回去。
     //   ⚠ 包在 try 里：三维视角底下这条未必认，不认就随它去，别为一个刻度把整个视角切换搞崩。
-    try { api.setAxisSteps(1, 1); } catch (e) {}
+    //   ⚠⚠ **三个参数，第一个是视图号**：setAxisSteps(viewNo, xStep, yStep)。
+    //     验收靠 paperOn 里那句 `setAxisSteps(1, stepX, stepY)` —— 那里一直是三参，是对的。
+    //     原来这里写的是**两参** `setAxisSteps(1, 1)`：视图 1、x 步长 1、y 步长 undefined
+    //     → 纵轴 tickDistance 被设成 **NaN**。2026-10-04 实测：
+    //       setAxisSteps(1,1)   → {x轴:"1", y轴:"NaN"}
+    //       setAxisSteps(1,1,1) → {x轴:"1", y轴:"1"}
+    //       setAxisSteps(1,5,5) → {x轴:"5", y轴:"5"}   ← 三个参数才认
+    //     NaN 不抛错、也不白屏，GeoGebra 只是**退回自己挑**——纵轴于是每 2 一个刻度
+    //     （2、4、6…），跟横轴的每 1 一个不一致；正是他抱怨的那个症状，只是跑到了纵轴上。
+    //     量后果的法子：板子在 DOM 里是在屏幕外的，截屏截不到，得走 applet 自己渲染
+    //     （产品现成的 SR.board.toPNG()）——
+    //       test/_shot/y-现状NaN.png 纵轴 2,4,6,… ；test/_shot/y-补上1.png 纵轴 1,2,3,…
+    try { api.setAxisSteps(1, 1, 1); } catch (e) {}
   }
 
   // ---- 平面 / 三维 两个视角 ----
