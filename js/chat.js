@@ -333,12 +333,18 @@ SR.chat = (function () {
     //   这三样是给最后一条准备的材料：它自己那份 ```想说、在哪个工位、
     //   是不是本场的第一次回复（`SR.fallbackChips` 里只有讲评那份认 `first`）。
     var lastSay = null, lastWork = '', lastFirst = false;
+    // ★ 2026-10-04：作图那三颗兜底按钮要按"图上画的是立体还是平面"挑词
+    //   （孔老师 2026-10-03 截图那三条"画个正方体／换成三维"，摆在一条数轴底下）。
+    //   攒**每条助手回复的原文**——判据是"最近一条真画了图的回复说了算"，
+    //   规则本身在 js/chips.js 的 SR.dimFromTexts 里（纯函数，探针量得到）。
+    var dimTexts = [];
     for (var i = 0; i < list.length; i++) {
       var t = list[i];
       // t.w = 说这句话的时候在哪个工位。变了就插一条分界线。
       if (t.w && prev && t.w !== prev) addDivider(t.w);
       if (t.w) prev = t.w;
       if (t.r === 'u') { ask = t.t; addUser(t.t, []); continue; }
+      dimTexts.push(String(t.t || ''));     // 助手回复的原文——挑兜底按钮用（见上面 dimTexts）
       // ★ 2026-10-03 起用 restoreParts（`restoreText` 是它的薄包装）：
       //   重画这条路**不只要正文了** —— 每条回复底下还要钉回它自己那块冻图，
       //   那需要 `ggb` 那几份命令原文。
@@ -394,13 +400,18 @@ SR.chat = (function () {
     //   三颗可点的话。二十轮全摆回来的话，一屏里横着二十排按钮，那不是对话。
     // ★ 模型没写 ```想说 的那几轮，当场是**本地兜底**顶上的；重画这条路也得照做，
     //   不然会出现"刷新之后最后那三颗不见了"——看着像按钮丢了，其实是没人重算。
-    //   兜底只需要 work 和 first 两样（`SR.fallbackChips` 里其实只用到这两个，
-    //   另外两个参数是旧写法留下来的）。判据跟当场同源：同一条 `pr.say`、
-    //   同一个 `SR.fallbackChips`，所以两处不会给出不一样的三句话。
+    //   判据跟当场同源：同一条 `pr.say`、同一个 `SR.fallbackChips`，
+    //   所以两处不会给出不一样的三句话。
+    //   ⚠ 2026-10-04：这句话原来是"兜底只用到 work 和 first 两样"。**现在不止了**——
+    //     作图那一档还要 `is3D`（就是上面攒的 dimTexts），少了它，刷新之后
+    //     一张立体图的底下会换成平面那三句。两处**必须传同一个东西**，
+    //     跟"当场与重画不给两套答案"是同一条规矩。
     if (lastB) {
       var sl = (lastSay && lastSay[0]) ? lastSay[0].split('\n') : [];
       sl = SR.filterCopiedChips(sl);
-      showChips(sl.length ? sl : SR.fallbackChips({ work: lastWork, first: lastFirst }), lastB);
+      showChips(sl.length ? sl : SR.fallbackChips({
+        work: lastWork, first: lastFirst, is3D: SR.dimFromTexts(dimTexts)
+      }), lastB);
     }
     scroll();
     return true;
@@ -578,6 +589,12 @@ SR.chat = (function () {
       // ★ 判据看的是 `r.res` 在不在，不是 `r.ok`：`ok` 说的是"板**还回去了**没有"，
       //   图冻出来没有是另一回事。这一趟活儿真跑完了就照收，别因为板没还原把图扔了。
       if (r && r.res) { done(all()); return; }
+      // ★★ 2026-10-04：重试是给**转瞬即逝**的原因准备的（就是上面那条"画板忙，没动它"——
+      //   发起的那一刻 paint 正把围栏一排排推给画板）。而 `死路` 那一档是**板卡死了**
+      //   或者**这条路炸了**，重试没有意义：只会把同一个等待再赔进去四遍
+      //   （原来的写法配上看门狗就是"转 30 秒 → 重试 → 再转 30 秒"×5 = 两分半白等）。
+      //   死路就直接认输，让老师马上看到"图没画出来"，而不是再等两分半。
+      if (r && r.死路) { done([]); return; }
       if (tries < 4) { setTimeout(function () { freezeFences(fences, cb, tries + 1); }, 900); return; }
       done([]);                       // 重试到头了还是借不到 → 老实留占位，等老师点
     });
@@ -1285,10 +1302,27 @@ SR.chat = (function () {
         // 错开入场的序号——CSS 那边是 `animation-delay: calc(var(--i) * 28ms)`。
         // 一排四个选项同时淡入，看着是"这一块换了"；错开才像"一件件摆上来"。
         b.style.setProperty('--i', idx);
+        // ★★ 2026-10-04 孔老师：「提示词点了应该是出现在我的输入框里面，我可以
+        //   添加内容输入，而不是点一下就直接问出去了。这样我没法修改话语。」
+        //   → 这一颗**只负责填**，发不发由老师自己按（回车 / 发送）。
+        //
+        // ⚠ 别在这儿 `clearChips()`：那三颗是**一份菜单**，填了一颗就把菜单撤了，
+        //   老师想换一颗（"不对，问的是这个"）得整轮重问一遍。要撤由 submit() 撤
+        //   ——它自己收工时会撤（见 submit 里那句 clearChips）。
+        // ⚠ 也别 `els.input.value = txt` 了事：输入框是靠 'input' 事件长高的
+        //   （`autoGrow` 挂在那一档上，见 init）。直接赋值不发事件，框不长高，
+        //   长建议的最后一行会被压在框外面看不见——填进去了，老师却以为没填上。
+        // ⚠ 框里已经有字就**接在后面**，不覆盖：老师常常先打了半句，再点一颗
+        //   当尾巴（"这道题" + "换个章节，题型不变"）。覆盖等于把他刚打的字删了，
+        //   而删掉的东西**看不见**——他只知道自己打过的字没了，不知道是被谁删的。
         b.addEventListener('click', function () {
           if (busy) return;
-          clearChips();
-          submit(txt);
+          var cur = String(els.input.value || '');
+          els.input.value = cur.trim() ? (cur.replace(/\s+$/, '') + ' ' + txt) : txt;
+          els.input.dispatchEvent(new Event('input', { bubbles: true }));   // 让它自己长高
+          els.input.focus();
+          // 光标落到末尾：老师接着打就是往后接，不是回头改前面的字
+          try { els.input.setSelectionRange(els.input.value.length, els.input.value.length); } catch (e) {}
         });
         box.appendChild(b);
       })(t, i);
@@ -1718,8 +1752,21 @@ SR.chat = (function () {
         //   兜底词库和挑选规则见 js/chips.js 顶上的注释。
         var modelChips = (msg.lastSay && msg.lastSay[0]) ? msg.lastSay[0].split('\n') : [];
         modelChips = SR.filterCopiedChips(modelChips);   // 把提示词里那段示范原样抄回来的挡掉
+        // ★ 2026-10-04：作图那三颗兜底按钮要按"图上画的是立体还是平面"挑词
+        //   （孔老师 2026-10-03 截图那三条"画个正方体／换成三维，再画个球"，
+        //    摆在一条**平面的数轴**底下——见 js/chips.js 的 SR.CHIPS.draw 那段）。
+        //   证据取**助手回复的原文**：历史里那些，外加刚收完的这一条 `res.text`。
+        //   ⚠ 顺序是"从旧到新"，规则在 SR.dimFromTexts 里（最近一条真画了图的说了算）。
+        //   ⚠ 必须跟重画那条路（restoreText）传的是**同一个东西**，
+        //     否则刷新前一套词、刷新后另一套——那正是这一片注释反复在防的事。
+        var dimTexts = [];
+        for (var hj = 0; hj < history.length; hj++) {
+          if (history[hj].role === 'assistant') dimTexts.push(String(history[hj].content || ''));
+        }
+        dimTexts.push(String(res.text || ''));
         showChips(modelChips.length ? modelChips : SR.fallbackChips({
-          work: work, first: isFirstTurn, lastUser: text, prevAssistant: prevAssistant
+          work: work, first: isFirstTurn, lastUser: text, prevAssistant: prevAssistant,
+          is3D: SR.dimFromTexts(dimTexts)
         }), b);
       }
     }).catch(function (e) {

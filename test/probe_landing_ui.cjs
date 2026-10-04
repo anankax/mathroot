@@ -42,6 +42,11 @@
 //
 // 用法（先 node test/serve.cjs 8138，Chrome 开着 9222）：
 //   node test/probe_landing_ui.cjs
+//   ⚠ 跑之前先把这个浏览器里的**旧 8138 标签页关掉**（留一个 about:blank 就行，
+//     别把窗口全关光——Chrome 会整个退掉，9222 就没了）。
+//     为什么：同源页**共享 localStorage**，别的页离开时 `pagehide` 会把 memo 写回盘上，
+//     正好盖掉这一趟的清场。2026-10-04 实测：存量 11 个标签时自检当场报"仪器不对"，
+//     关干净之后 47/47 全绿。**这不是产品坏，是这道探针的现场没扫干净。**
 // 退出码：0 = 通过；1 = 有红；2 = 探针自己炸了；3 = 尺子坏了（页面/仪器没起来）
 const path = require('path'), http = require('http');
 const WebSocket = require(path.join(process.env.USERPROFILE, '.claude', 'skills', 'browser', 'browser', 'node_modules', 'ws'));
@@ -114,8 +119,25 @@ function closeTab(tid) {
   }
 
   await send('Page.navigate', { url: PAGE });
-  for (let i = 0; i < 40; i++) { if (await q('!!(window.SR&&SR.WORKS&&SR.chat&&SR.landing)')) break; await wait(500); }
-  await wait(900);
+  for (let i = 0; i < 40; i++) { if ((await q('!!(window.SR&&window.SR.landing)')) === true) break; await wait(500); }
+  // ★★ 首屏那张卡片屏只在"刚进来"那一屏出现——memo 非空时 landing.js 不挂它（show() 里写死的），
+  //    这是**设计**不是坏了。所以先把前提做出来：存一份 memo 原文 → 清掉 → 重开一页。
+  //    ⚠ 清必须用产品自己的 `SR.memo.clear()`（内存和盘**一起**清，js/memo.js 那份）；
+  //      从外面 `localStorage.removeItem()` **不管用**：memo 有两个朝向，内存里那份
+  //      在 `pagehide` 时会再写回盘上（js/memo.js 顶上那条注释），正好把抹掉的填回来。
+  //      第一版我就写的 removeItem，结果量到的还是六轮对话那一屏，自检报"仪器不对"——
+  //      把人指向"服务没起来"，而真相是**我自己的清法没生效**。
+  //    ⚠ 收工按**原文**写回（不是 clear()），别抹掉老师自己的东西。
+  const 开工前memo = await q("(function(){try{return localStorage.getItem('mathroot_memo')}catch(e){return null}})()");
+  const memo条数 = await q("(function(){try{return (SR.memo&&SR.memo.log&&SR.memo.log().length)||0}catch(e){return -1}})()");
+  if (memo条数 > 0) {
+    await q("(function(){try{if(SR.memo&&SR.memo.clear)SR.memo.clear();}catch(e){}return 1})()");
+    await send('Page.navigate', { url: PAGE });
+    for (let i = 0; i < 40; i++) { if ((await q('!!(window.SR&&SR.WORKS&&SR.chat&&SR.landing&&document.querySelector(".msg.landing"))')) === true) break; await wait(500); }
+    await wait(900);
+    console.log('  （开工前 memo 里躺着 ' + memo条数 + ' 条，先清掉重开一页做"刚进来"那一屏——'
+              + 'memo 非空时首屏**本来就不该**出现，不清就量不到首屏，只会量到上一次对话。）');
+  }
   await injectFault();       // ① 也在故障范围里（hideblocks / nostanddown 打的就是①）
 
   const host = await q('location.host');
@@ -126,7 +148,12 @@ function closeTab(tid) {
   const inst = await q(`(function(){
      return { works: !!SR.WORKS, order: SR.WORK_ORDER ? SR.WORK_ORDER.length : -1,
               nworks: SR.WORKS ? Object.keys(SR.WORKS).length : -1,
-              landing: !!SR.landing, box: !!document.getElementById('landing'),
+              // ⚠ 门牌 2026-10-03 换过：首屏不再是 HTML 里的 #landing，改成 #msgs 的
+              //   第一条助手消息 div.msg.assistant.landing（landing.js 的 mountFirstMessage 现建现插）。
+              //   旧写法 getElementById('landing') 永远 false，这把尺子就永远卡在"仪器不对"——
+              //   **一把拒绝出数的尺子，跟坏产品长得一模一样**，所以门牌得跟着产品走。
+              //   ⚠ 这段整个在模板串里，注释**不许出现反引号**（会把模板串截断，见下面那条同族警告）。
+              landing: !!SR.landing, box: !!document.querySelector('.msg.landing'),
               bar: !!document.getElementById('routebar'), input: !!document.getElementById('input'),
               send: !!document.getElementById('send'), chat: !!SR.chat };
    })()`);
@@ -138,6 +165,7 @@ function closeTab(tid) {
   if (!instOk) {
     console.log('★ 仪器不对，先别往下判：' + JSON.stringify(inst));
     console.log('  （页面根本没起来？服务在 8138 吗、Chrome 9222 是这个 profile 吗？）');
+    if (typeof 开工前memo === 'string') await q('(function(){try{localStorage.setItem("mathroot_memo",' + JSON.stringify(开工前memo) + ')}catch(e){}return 1})()');
     await closeTab(t.id); ws.close(); process.exit(3);
   }
 
@@ -162,6 +190,15 @@ function closeTab(tid) {
     //     会把内存里那份**又写回盘上**（写在删除之后，等于没删）。
     //     内存那份和盘上那份都得动——`clear()` 干的正是这件事。
     await q(`SR.memo.clear(); localStorage.removeItem('mathroot_memo'); 1`);
+    // ★★ 2026-10-04：**还得先分清"这是新那一页"**。下面那个等号在刷新**落地之前**
+    //   就会被旧页满足（旧页本来就 data-landing=1、lblocks=6），于是循环当场放行：
+    //   `before` 量到的是**刚被 clear 清空的旧页**（0 条），发送那一下点在还没就绪的新页上。
+    //   结果 ②整段把产品冤枉成"话没发出去、工位没换"——而产品其实是好的
+    //   （手跑一遍：发送后 data-landing=null、data-work=material、routeBar「我按【组卷】办的」、
+    //    气泡里老师那句在、输入框清空，全对）。
+    //   治法：刷新前在 window 上盖个戳，刷新后那个戳**必须消失**才算换了 document。
+    //   （同族：等的是个"稳的错值"——旧页那个状态稳稳地成立着。）
+    await q(`window.__probeGen = 'g' + Date.now(); 1`);
     await send('Page.reload', { ignoreCache: true });
     // ★★ 2026-10-03：**等的东西换了一个**。原来等的是"#lblocks 里有 6 块"——
     //   可那 6 块是 index.html 里就写死的静态 DOM，**页面一解析完就是 6 块**，
@@ -174,9 +211,20 @@ function closeTab(tid) {
     //   （记忆里"等稳会栽在稳的错值上"那条，形状一模一样）。
     //   现在等 data-landing="1"：landing.js 的 show() 里设的那个属性，
     //   而它正是下面每一段都依赖的那个状态（"首屏真的立起来了"）。
-    //   ⚠ 别改成等 `#landing` 可见：那一条是 CSS 说了算的，属性没设也可能可见。
+    //   ⚠ 别改成等首屏那个框（.msg.landing）可见：那一条是 CSS 说了算的，属性没设也可能可见。
     for (let i = 0; i < 60; i++) {
-      if (await q('document.body.getAttribute("data-landing")==="1" && document.querySelectorAll("#lblocks .lblock").length === ' + NW)) break;
+      // 换了 document（戳没了）**且**首屏真立起来了，才算这一页准备好了
+      const 新页 = await q('typeof window.__probeGen === "undefined"');
+      // ★★ 2026-10-04：这里**必须**把第二个 q 也钉成布尔。
+      //   刷新刚落地那一瞬 `document.body` 还是 null，`document.body.getAttribute` 当场抛，
+      //   而 q 把异常**变成一个字符串** `'THROW: …'` 返回（见 q 的定义）——字符串是真值，
+      //   于是 `&&` 当场成立、循环**立刻放行**，这一页根本没等就绪。
+      //   后果：下面是 ②③④⑤⑥ 全在一张没加载完的页上量，红得跟产品坏了一样
+      //   （实测 ② 报"老师那句话没发出去、气泡 0 条"，而手动走一遍产品全对：
+      //    routebar「我按【组卷】办的」、user 气泡在、输入框清空）。
+      //   同一族：一把**会提前放行**的等号，跟"等一个稳的错值"是一回事。
+      const 就绪 = await q('!!(document.body && document.body.getAttribute("data-landing")==="1" && document.querySelectorAll("#lblocks .lblock").length === ' + NW + ')');
+      if (新页 === true && 就绪 === true) break;
       await wait(250);
     }
     await wait(400);
@@ -195,7 +243,7 @@ function closeTab(tid) {
   //  ① 首屏立起来了吗
   // ============================================================
   console.log('① 首屏：一个框 + 底下 ' + NW + ' 块');
-  ok('★ #landing 真的看得见（量 getClientRects，不量 computed display）', await q(vis('#landing')));
+  ok('★ 首屏那个框真的看得见（量 getClientRects，不量 computed display）', await q(vis('.msg.landing')));
   const q1 = await q('(document.getElementById("lq")||{}).textContent||""');
   ok('  #lq 上有一句问话，而且不是空的（空的会让下面几条变成"比了个寂寞"）', !!String(q1).trim(), q1);
 
@@ -223,12 +271,27 @@ function closeTab(tid) {
 
   // 首屏在的时候，干活那一套该让开——★ 这也要量"看得见"，不是量 display
   ok('  首屏在的时候，数根那个水印让开了（.ghost 看不见）', (await q(vis('.ghost'))) === false);
-  ok('  首屏在的时候，消息区让开了（#msgs 看不见）', (await q(vis('#msgs'))) === false);
-  // ★ 2026-10-03 孔老师原话："页面也太偏左了，我觉得就应该对话框居中"。病根就是**右栏这会儿还立着**：
-  //   `main` 是两栏网格，画板占掉右边 42%，右边一沉，左边那栏就被挤到左边去了。
-  //   治法 = 首屏时把 `.side` 收起来（见 css/main.css 里 `body[data-landing="1"] .side{display:none}`）。
-  //   ⚠ 量的是 .side **本身**——藏的就是它。别量里面的 #ggb：那是"藏了爹、孩子照样报 flex"那个坑。
-  ok('★ 首屏在的时候，右栏画板收起来了（.side 看不见——它是"页面偏左"的病根）', (await q(vis('.side'))) === false);
+  // ★★ 2026-10-04：判据改了。产品 2026-10-03 起**不再整块藏 `#msgs`**了——
+  //   首屏那条消息（`div.msg.landing`）现在就住在 `#msgs` 里面，藏 `#msgs` 等于把首屏自己藏掉，
+  //   而刷新回来时它藏的是 memo 刚接回来的那一场对话（见 css/main.css 那一段长注释）。
+  //   现在让开的是"**首屏之外**的那些消息"。这两条合起来才是原来那一条的意思，
+  //   而且是**往严了**改的：不光"看着让开了"，还要求首屏自己看得见。
+  ok('  首屏在的时候，首屏之外的消息让开了（#msgs 里非 landing 那些看不见）',
+    (await q('(function(){var l=document.querySelectorAll("#msgs > .msg:not(.landing)");'
+      + 'if(!l.length) return true;'
+      + 'return !Array.prototype.some.call(l,function(m){return m.getClientRects().length>0});})()')) === true);
+  ok('  而首屏那条自己**看得见**（#msgs 整块没被藏——藏了就是把首屏藏了）',
+    (await q(vis('.msg.landing'))) === true);
+  // ★ 2026-10-03 孔老师原话："页面也太偏左了，我觉得就应该对话框居中"。当年病根是右栏还立着。
+  //   ★★ 2026-10-04：这条判据**原来量的是 .side**，而 .side 2026-10-02 就搬进抽屉了——
+  //   元素没了，`vis` 恒返回 false，于是这条**永远是绿的**，绿的却是"东西不存在"，
+  //   不是"东西被藏了"。同一族的坑：砍掉容器会把否定式断言变成恒真。
+  //   现在量首屏**真用 data-landing 藏掉的那几样**（见 css/main.css 的
+  //   `body[data-landing="1"] #msgs>.msg:not(.landing), #thumb, #steps, .works, .ghost {display:none}`）：
+  //   干活那一套（工位那一行 .works、台阶条 #steps）在首屏上必须让开。
+  //   ⚠ 量的是它们**本身**看得见看不见，不是 getComputedStyle().display——藏的是它自己。
+  ok('★ 首屏在的时候，干活那一套让开了（工位那一行 .works 看不见）', (await q(vis('.works'))) === false);
+  ok('★ 首屏在的时候，台阶条 #steps 也让开了', (await q(vis('#steps'))) === false);
 
   // 首屏那几块排不排得下（本机这份宽度下）
   const fit = await q(`(function(){
@@ -274,36 +337,43 @@ function closeTab(tid) {
               barSeen: !!document.querySelector('#routebar') && document.querySelector('#routebar').getClientRects().length>0,
               work: document.body.getAttribute('data-work'),
               inputVal: document.getElementById('input').value,
-              landSeen: !!(document.getElementById('landing')||{}).getClientRects && document.getElementById('landing').getClientRects().length>0,
-              // ★ 2026-10-03 新加：首屏把右栏（画板）收起来了，这里得量它**回来了没有**。
-              //   在首屏那句"首屏让开了"只证明 #landing 自己撤了，证明不了画板回来了——
-              //   两件事分头发生（前者是 landing 那层，后者是我这趟加的 body[data-landing] 下 .side 收起来那条）。
-              //   ⚠ 这一行原本写成反引号包的 CSS，**反引号在模板串里就是把模板串截断**——
-              //     node 当场报 missing ) after argument list。这整段是模板串，别在里面用反引号。
-              //   量 .side 本身（藏的就是它），别量里面的 #ggb——那是"藏了爹、孩子照样报 flex"那个坑。
-              //   ⚠ #ggb 另给一个尺寸：光看得见不够，applet 得**真的有尺寸**才算活着（宽高>0）。
-              sideSeen: !!document.querySelector('.side') && document.querySelector('.side').getClientRects().length>0,
+              landSeen: !!(document.querySelector('.msg.landing')||{}).getClientRects && document.querySelector('.msg.landing').getClientRects().length>0,
+              // ★★ 2026-10-04：判据换掉了。原来量的是 .side（main 右边那一栏），
+              //   那个元素 **2026-10-02 就搬进抽屉了**（见 css/main.css 那句
+              //   "…已经搬进抽屉，main 现在只有一个孩子（那个 .col）"）。
+              //   querySelector 找 .side 从那天起**永远是 null**，于是这一条**一直红**——
+              //   一把永远红的尺子，跟"产品一直坏着"长得一模一样，谁也不会再去看它。
+              //   而且"首屏收起来的那一栏"这个说法今天也没了：首屏收的是 .works/#steps/#thumb，
+              //   画板根本不在首屏的收放范围里。所以改成量今天的实情——说完话之后，
+              //   画板那一格还在文档里、抽屉还能开。（板子**活着**由下面 ggbBox 那条单独量。）
+              //   ⚠ 这里是在一个模板串**里面**，注释里也不许出现反引号——
+              //     反引号会把模板串当场截断（本行我改了两次，两回都栽在这上面）。
+              板在: !!document.getElementById('ggb') && !!document.getElementById('drawer'),
               ggbBox: (function(){var e=document.getElementById('ggb'); if(!e) return null;
                         var r=e.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) };})() };
    })()`);
 
+  // ★★ 2026-10-04：上面那段 evaluate **一抛错，q 回的是字符串** `'THROW: …'`（见 q 的定义）
+  //   ——它是真值，于是下面 `after.sentTxt.slice(...)` 在 Node 里炸成
+  //   "Cannot read properties of undefined (reading 'slice')"，**把页面里真正那句话吞掉**。
+  //   教训：探针的报错路径自己也会遮蔽现场。所以先把它摆到明面上，再让读数取值一律走 S()。
+  if (typeof after === 'string') console.log('  ★ ② 那段 evaluate 在页面里抛了：' + after);
+  const S = x => (typeof x === 'string' ? x.slice(0, 60) : x);
+
   ok('★ 气泡真的挂上去了——**老师那句话发出去了**（不是只剩一行"我按【X】办的"）',
-     after && after.n > before && after.nUserSent === 1 && after.sentTxt.indexOf(SENT.slice(0, 5)) >= 0,
-     { 之前: before, 之后: after && after.n, 找到几条我发的话: after && after.nUserSent, 内容: after && after.sentTxt.slice(0, 40) });
+     !!after && typeof after === 'object' && after.n > before && after.nUserSent === 1 && String(after.sentTxt || '').indexOf(SENT.slice(0, 5)) >= 0,
+     { 之前: before, 之后: after && after.n, 找到几条我发的话: after && after.nUserSent, 内容: S(after && after.sentTxt) });
   ok('★ 那一行"我按【…】办的"出来了、而且看得见', !!after && after.barSeen && /组卷/.test(after.bar), after && after.bar);
   ok('  工位真的换到组卷了（body[data-work]）', after && after.work === 'material', after && after.work);
   ok('  工位那一行里「组卷」那颗也亮了', (await q(`(function(){var b=document.querySelector('#works .workbtn[data-work="material"]');return !!b && b.classList.contains('on');})()`)) === true);
   ok('  首屏让开了（这一栏开始说正事了）', after && after.landSeen === false, after && after.landSeen);
-  // ★★ 这两条是这趟改动里**最该量、最不能想当然**的一件事（我在改动注释里就写了"得用探针量"）：
-  //   首屏把 `.side` 收成 display:none，说上话之后它得自己回来。回来分两层，缺一层都算没回来：
-  //     ① `.side` 那一下 `display:none` 撤掉了（看得见）；
-  //     ② 里面的 applet **还有尺寸**——GeoGebra 是在开屏时注入的（js/main.js，那时 .side 还立着），
-  //        收起来再放开，要是它把自己的尺寸算成了 0 再没算回来，画布就是块死白。
-  //        光"看得见"证明不了这件事，得量 #ggb 的宽高。
-  //   ⚠ 这一条绿了才算"收起来是安全的"。它要是一直红，说明收 .side 这条路本身走不通，
-  //     得换成"首屏只改列宽、不 display:none"。
-  ok('★ 说上话之后，右栏画板回来了（首屏收起来的那一栏，这时候得重新立起来）',
-     after && after.sideSeen === true, after && after.sideSeen);
+  // ★★ 2026-10-04：这两条原来守的是"首屏把 .side 收成 display:none，说上话之后得自己回来"。
+  //   那件事已经不存在了（.side 搬进抽屉了，见上面 板在 那段注释）。今天真正会出事的是
+  //   **画板本身有没有被首屏那一趟弄死**：GeoGebra 是开机时注入的，首屏把周围的东西
+  //   display:none 掉，要是把 applet 的尺寸算成了 0 再没算回来，画布就是块死白。
+  //   所以现在只留一条硬指标——#ggb 得有**实际尺寸**（宽高都 > 0）。光"在文档里"证明不了这件事。
+  ok('★ 说上话之后，画板那一格还在（没被首屏那一趟拆掉）',
+     after && after.板在 === true, after && after.板在);
   ok('★ 而且它是**活的**：#ggb 有实际尺寸（宽高都 > 0，不是被藏到尺寸都没了）',
      !!(after && after.ggbBox && after.ggbBox.w > 0 && after.ggbBox.h > 0), after && after.ggbBox);
   ok('  发出去之后框清空了（chat.js 自己清的，不是 landing 替他清）', after && after.inputVal === '', after && after.inputVal);
@@ -324,7 +394,7 @@ function closeTab(tid) {
      lq: (document.getElementById('lq')||{}).textContent||'',
      tip: (document.getElementById('ltip')||{}).innerText||'',
      inputVal: document.getElementById('input').value,
-     landSeen: !!document.getElementById('landing').getClientRects && document.getElementById('landing').getClientRects().length>0,
+     landSeen: !!(document.querySelector('.msg.landing')||{}).getClientRects && document.querySelector('.msg.landing').getClientRects().length>0,
      nMark: document.querySelectorAll('#lblocks .lblock em').length };})()`);
   ok('★ 没发出去（气泡数没变）—— 这一句被接住了', ask && ask.n === n3, { 之前: n3, 之后: ask && ask.n });
   ok('★ 屏幕上明说了"不像"（产品原话是「这不像底下这几件里的哪一件。」，尺子只判这三个字）', ask && /不像/.test(ask.lq), ask && ask.lq);
@@ -445,8 +515,12 @@ function closeTab(tid) {
     console.log('     ' + w + 'px：' + (g && g.cols) + ' 列，一栏容器宽 ' + (g && g.boxW) + 'px，'
               + '对话栏宽 ' + (g && g.colW) + 'px，左留白 ' + (g && g.leftGap) + ' / 右留白 ' + (g && g.rightGap));
   }
-  // 宽屏那一档单独把"是不是正好 900px"钉死（900 的封顶只有宽屏才咬得住——
+  // 宽屏那一档单独把"是不是正好 1000px"钉死（封顶只有宽屏才咬得住——
   // 窄屏两档量的是"没超"，量不出它到底封没封顶）。
+  // ★ 2026-10-04：这个数从 900 改成 1000。原来首屏那一屏单有一条例外
+  //   （`body[data-landing="1"] .col{max-width:900px}`），10-03 那条例外已删、
+  //   并进 `main > .col` 的默认；10-04 孔老师又把默认从分档改成一律 1000。
+  //   所以现在首屏跟别的屏**同一个数**——这行跟着改，不是放宽判据。
   await send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false });
   await fresh(); await wait(300);
   const wide = await q(`(function(){ var c=document.querySelector('main .col:not(.side)');
@@ -454,12 +528,15 @@ function closeTab(tid) {
      return { w: c?Math.round(c.getBoundingClientRect().width):-1,
               maxw: c?getComputedStyle(c).maxWidth:'',
               side: !!sd && sd.getClientRects().length>0 }; })()`);
-  ok('★ 1400px 宽屏：对话栏正好封顶在 900px（模拟稿里那一栏就是这个宽）', !!wide && wide.w === 900, wide);
+  ok('★ 1400px 宽屏：对话栏正好封顶在 1000px（六个工位同一个数，首屏也不例外）', !!wide && wide.w === 1000, wide);
   ok('★ 1400px 宽屏：画板照样收着（宽了也不许把它放出来）', !!wide && wide.side === false, wide);
   await send('Emulation.clearDeviceMetricsOverride', {});
 
-  // ---- 收尾：桩还回去 ----
+  // ---- 收尾：桩还回去、记忆原样写回 ----
   await q('(function(){ if(window.__origAsk) SR.api.ask=window.__origAsk; if(window.__origReady) SR.api.ready=window.__origReady; return 1 })()');
+  // 开页前挪开的那份记忆，原样放回去（探针不许把老师的对话弄丢）
+  if (开工前memo === null) await q("localStorage.removeItem('mathroot_memo')");
+  else await q('(function(){try{localStorage.setItem("mathroot_memo",' + JSON.stringify(开工前memo) + ')}catch(e){}return 1})()');
 
   console.log('\n' + (FAIL ? '★ 红的 ' + FAIL + ' 条 / 共 ' + (PASS + FAIL) + ' 条' : '全绿：' + PASS + ' 条，红的 0 条'));
   await closeTab(t.id); ws.close();

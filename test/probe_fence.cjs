@@ -1,15 +1,25 @@
-// 数围栏命中率：同一份提示词打 N 次，看模型有几次真写了 ```ggb 和 ```想说。
+// ★★ 2026-10-04：**这一把尺子已经死了，别再用它，也别信它过去报的数。**
 //
-// ★ 这个脚本是"换后端"这件事的头号验收关。
-//   提示词是在 DeepSeek 上逐版调出来的，免费通道那几颗模型听不听话，
-//   不许假设——只能同一个用例、同一个提示词，在 GLM 上重打一遍对数字。
+//   三条硬伤，任何一条都足以让它作废：
+//     ① 它要装的十个文件里，有**四个早就不存在了**——
+//        prompt-student.js / prompt-lean.js / prompt-tail.js / prompt-demo.js。
+//        所以它连启动都起不来（ENOENT）。
+//     ② 它的用例分 'student' / 'demo' 两档，可**学生模式和演示模式这两个工位整个砍掉了**
+//        （今天 SR.WORK_ORDER 是 prep/draw/vary/material/grade/review，没有 student 也没有 demo）。
+//     ③ 就算前两条修好，它传的还是 `SR.api.ask({mode: …})` —— **api.js 不认 mode**，
+//        参数名叫 `work`。实测传 mode:'demo' 时**真发出去的 system 是 0 个字符**，
+//        模型是按裸聊天在回话。它量到的一切都不属于任何一份提示词。
+//   ——于是"免费通道围栏 6/6""全量提示词围栏 8/8"这类出处是它的数字，**全部作废**。
+//     （不删这个文件，是因为 git 里那些记录还引着它；但谁再跑一次，下面会当场说明。）
 //
-// 走的是页面里真真正正的 SR.api.ask（连降级链、按 token 裁历史都在里面），
-// 不是另搭一套请求——另搭的那套测通了不算数。
-//
-// 用法: node test/probe_fence.cjs [次数] [后端] [用例关键词]
-// 例:   node test/probe_fence.cjs 8 glm
-//       node test/probe_fence.cjs 8 deepseek
+//   ★ 画图那一格的替代尺子：**test/probe_drawfence.cjs**。
+//     它两头都量（真该画的不许掉出图 / 瞎问的不许硬画），而且判据走真解析器
+//     SR.render.parseFences().ggb ——原文里有围栏 ≠ 画板收到命令。
+if (require.main === module) {
+  console.error('test/probe_fence.cjs 已经作废（见文件开头三条硬伤）。');
+  console.error('画图工位请改用：node test/probe_drawfence.cjs [次数] [后端]');
+  process.exit(1);
+}
 const path = require('path'), fs = require('fs'), os = require('os');
 
 // ---- 把数根那几个 js 原样装进来（跟浏览器同一个 window 形状）----

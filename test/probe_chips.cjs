@@ -75,8 +75,18 @@ for (const c of CASES) {
 const MODE_CASES = [
   { name: '默认工位（没给 work）→ 走 DEFAULT_WORK 那一档 = ' + S.DEFAULT_WORK, opts: {}, want: S.DEFAULT_WORK },
   { name: '出材料 → material（★ 曾经掉进 chain 的那一格）', opts: { work: 'material' }, want: 'material' },
-  { name: '画图 → draw', opts: { work: 'draw' }, want: 'draw' },
+  // ★★ 2026-10-04 加的这三格：作图那一档按**图上画的是什么**分成 draw / draw3d 了
+  //   （起因是孔老师截图那三条"画个正方体／换成三维"，摆在一条数轴的底下）。
+  //   ⚠ 没传 is3D 那一格是**最要紧的一格**：产品里任何一条忘了传的老路，
+  //     都会落到这儿——它必须是 draw（平面），不是 undefined。
+  { name: '画图 → draw（平面，默认那档）', opts: { work: 'draw' }, want: 'draw' },
+  { name: '画图·判不出来（没传 is3D）→ 仍走平面那档', opts: { work: 'draw', is3D: '' }, want: 'draw' },
+  { name: '画图·平面 → draw', opts: { work: 'draw', is3D: 'plane' }, want: 'draw' },
+  { name: '★ 画图·立体 → draw3d（原来那张死表就是它）', opts: { work: 'draw', is3D: '3d' }, want: 'draw3d' },
   { name: '出题 → vary', opts: { work: 'vary' }, want: 'vary' },
+  // ★ 反例：`is3D` 这个口子只许对作图开。出题也是摆弄画板的活儿，
+  //   但它不该跟着换档（词库里根本没有 vary3d 这一档，真跳了就是 undefined）。
+  { name: '★ 出题就算画的是立体，也不换档', opts: { work: 'vary', is3D: '3d' }, want: 'vary' },
   { name: '备课 → chain', opts: { work: 'prep' }, want: 'chain' },
   { name: '讲评·第一轮（刚列完题号）→ review', opts: { work: 'review', first: true }, want: 'review' },
   { name: '讲评·挑定一道之后 → chain（跟备课一样往下摆）', opts: { work: 'review', first: false }, want: 'chain' },
@@ -96,8 +106,10 @@ for (const c of MODE_CASES) {
   console.log((ok ? '  ✓ ' : '  ✗ ') + c.name);
   if (!ok) console.log('      期望 CHIPS.' + c.want + '，拿到 ' + (got ? JSON.stringify(got) : String(got)));
 }
-// ★ 反例：五个工位的按钮**不该互相串**。任意两档只要内容一样，就说明有人复制粘贴没改。
-const KEYS = ['draw', 'vary', 'material', 'review', 'chain'];
+// ★ 反例：各档的按钮**不该互相串**。任意两档只要内容一样，就说明有人复制粘贴没改。
+//   ★ 2026-10-04 把 `draw3d` 也收进来：新分的这一档尤其容易是"上面那张表复制过来改两个字"，
+//     而它跟平面那档**必须完全不同**——撞了就等于这刀白切，老师看到的三句还是立体那套。
+const KEYS = ['draw', 'draw3d', 'vary', 'material', 'review', 'chain'];
 let bad3 = 0;
 console.log('');
 console.log('===== ③ 五档互不串（每档的话必须不一样）=====');
@@ -109,8 +121,77 @@ for (let i = 0; i < KEYS.length; i++) {
 }
 if (!bad3) console.log('  ✓ ' + KEYS.length + ' 档两两不同');
 
-const total = CASES.length + MODE_CASES.length, badAll = bad + bad2 + bad3;
+// ============================================================
+//  ④ 「三维名单」两处同步
+// ============================================================
+// ★★ 2026-10-04：`SR.ggbLooks3D` 里那份三维命令名单，**必须**是 board.js 的 CMD_MAP
+//   那段 `---- 3D ----` 的子集——两处各是一份名单，就是"改一处忘一处"的老毛病。
+//   ⚠ **不执行 board.js**（那文件要 DOM 和 GeoGebra，node 里装不起来），
+//     把它当**文本**读、在两段注释之间切出那段映射，逐字去里面找。
+//   ⚠ 只查一个方向（chips 的名单 ⊆ board 的名单）。反过来不查是故意的：
+//     board 那边还有 `平面`／`棱`／`侧面` 三个**歧义词**，chips 这边不收它们。
+const chipsSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'chips.js'), 'utf8');
+const boardSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'board.js'), 'utf8');
+const i3 = boardSrc.indexOf('// ---- 3D ----');
+const board3dBlock = i3 < 0 ? '' : boardSrc.slice(i3, boardSrc.indexOf('};', i3));
+const 板上名 = [...board3dBlock.matchAll(/'([^']+)'\s*:/g)].map(m => m[1]);
+const fnSrc = chipsSrc.slice(chipsSrc.indexOf('SR.ggbLooks3D'));
+const mm = /return \/\(\?:([^)]+)\)\\s\*\\\(\//.exec(fnSrc);
+const 尺上名 = mm ? mm[1].split('|') : [];
+console.log('');
+console.log('===== ④ 三维名单两处同步 =====');
+let bad4 = 0;
+if (!板上名.length || !尺上名.length) {
+  bad4++;
+  console.log('  ✗ 名单没切出来（board ' + 板上名.length + ' 条，chips ' + 尺上名.length + ' 条）'
+    + '—— 是**尺子**的毛病，不是产品的：board.js 那段标记或 chips.js 那条正则改了形状。');
+} else {
+  const 缺 = 尺上名.filter(w => 板上名.indexOf(w) < 0);
+  if (缺.length) { bad4++; console.log('  ✗ chips 认的这几个词，board.js 的 CMD_MAP 里根本没有：' + 缺.join('、')); }
+  else console.log('  ✓ chips 认出 ' + 尺上名.length + ' 个三维名，board 的 3D 段（' + 板上名.length + ' 条）里一条不缺');
+}
+// ★ 光有子集还不够强：哪天一任性把名单删成两个字，子集照样成立。钉一条下界。
+if (尺上名.length < 12) { bad4++; console.log('  ✗ 名单只剩 ' + 尺上名.length + ' 个词，太少——三维名不止这些'); }
+else console.log('  ✓ 名单长度 ' + 尺上名.length + ' ≥ 12，不像被误删过');
+
+// ============================================================
+//  ⑤ 立体 / 平面 判得对不对
+// ============================================================
+// ★ 纯函数、只读文本（`SR.ggbLooks3D` / `SR.dimFromTexts`），所以能拿手写的假回复直接量。
+//   这几条全都是**真实形状**：孔老师那张截图上的图就是"一条平面的数轴"，
+//   而他抱怨的三句话全在讲正方体和球——第一格量的就是它。
+const DIM = [
+  { name: '一条数轴 → 平面', texts: ['```ggb\n#清空\n坐标系\n数轴\n```'], want: 'plane' },
+  { name: '明写 #三维 → 立体', texts: ['```ggb\n#三维\n坐标系\n```'], want: '3d' },
+  { name: '立方体不带 #三维 标记，也认得出', texts: ['```ggb\n立方体((0,0,0),(1,1,1))\n```'], want: '3d' },
+  // ★ 这一格是这份名单最容易咬错人的地方：正文里顺口提一句球，图其实是平面的。
+  //   判据里那条"三维名后面得跟括号"就是为它加的。
+  { name: '★ 正文提了一句「球」，但图是平面的 → 平面', texts: ['```ggb\n坐标系\n圆心((0,0),1)\n```\n这个球的截面我们下节课再看'], want: 'plane' },
+  { name: '★ 这一轮没画图 → 回头看上一轮（上一轮是正方体）', texts: ['```ggb\n#三维\n正方体(A,B)\n```', '这个交点为什么在这儿'], want: '3d' },
+  // ★ 顺序不能反：拼起来判的话，上一轮的 #三维 会盖过这一轮明写的 #平面。
+  { name: '★ 上一轮立体、这一轮明写 #平面 画数轴 → 平面赢', texts: ['```ggb\n#三维\n正方体(A,B)\n```', '```ggb\n#平面\n数轴\n```'], want: 'plane' },
+  { name: '一条图都没画过 → 平面（默认）', texts: [], want: 'plane' },
+  { name: '空文本也不炸', texts: [null, ''], want: 'plane' }
+];
+console.log('');
+console.log('===== ⑤ 立体/平面 判得对不对 =====');
+let bad5 = 0;
+for (const c of DIM) {
+  const got = S.dimFromTexts(c.texts);
+  const ok = got === c.want;
+  if (!ok) bad5++;
+  console.log((ok ? '  ✓ ' : '  ✗ ') + c.name + (ok ? '' : '  → 期望 ' + c.want + '，拿到 ' + got));
+}
+// ★ 反例（这条不判产品，判**尺子**）：上面那些 want 里得两种答案都出现过。
+//   全填 'plane' 的话这一节恒绿，等于没量。
+if (!DIM.some(c => c.want === '3d') || !DIM.some(c => c.want === 'plane')) {
+  bad5++; console.log('  ✗ 用例里 3d/plane 没有各出现一次 —— **这一节自己是恒绿的**，重写');
+} else console.log('  ✓ 鲁棒：3d 与 plane 两种期望都在用例里出现过（不是"全填 plane"的恒绿题）');
+
+const total = CASES.length + MODE_CASES.length + DIM.length, badAll = bad + bad2 + bad3 + bad4 + bad5;
 console.log('\n===== 按钮：防抄 ' + (CASES.length - bad) + '/' + CASES.length
   + '，分派 ' + (MODE_CASES.length - bad2) + '/' + MODE_CASES.length
-  + '，互不串 ' + (bad3 ? '✗' : '✓') + ' =====');
+  + '，互不串 ' + KEYS.length + ' 档 ' + (bad3 ? '✗' : '✓')
+  + '，名单同步 ' + (bad4 ? '✗' : '✓')
+  + '，维度判定 ' + (DIM.length - bad5) + '/' + DIM.length + ' =====');
 process.exit(badAll ? 1 : 0);

@@ -83,7 +83,21 @@ window.SRlib = (function () {
     'autorender':['https://fastly.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js',
                   'https://unpkg.com/katex@0.16.9/dist/contrib/auto-render.min.js',
                   'https://cdn.bootcdn.net/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js'],
-    'geogebra':  ['https://www.geogebra.org/apps/deployggb.js']
+    // ★★ 2026-10-04：原来这里只有 `www.geogebra.org` 一个源。孔老师报"出不来图"，
+    //   而他这台机器的 DNS 把 `www.geogebra.org` 解析到 CloudFront 的 IPv6，
+    //   国内走那条路经常整段不通——一旦不通，**板子起不来 = 一道图都出不来**，
+    //   而其余五个库都有三源兜底，就它没有。
+    // ★ 加 `cdn.geogebra.org`：实测是**另一组边缘**（3.161.82.x，跟 www 的
+    //   2600:9000:… 完全两套），同一份 deployggb.js（md5 逐字节相同），
+    //   连整个 codebase（那一包十几 MB，真正慢的是它）也镜像了 ——
+    //   `https://cdn.geogebra.org/apps/5.4.920.0/web3d/web3d.nocache.js` 实测 200 / 0.6s。
+    // ⚠ 只把**脚本**换到 cdn 是不够的：deployggb.js 里的 codebase 是**写死
+    //   `www.geogebra.org`** 的（`codebase="https://www.geogebra.org/apps/5.4.920.0/"`，
+    //   实测两份文件里都是这一串）。所以 board.js 那边要跟着把 codebase 也转过去，
+    //   见 js/board.js 里那段「跟源走」。两处**必须一起改**。
+    // ⚠ 别删 www 这一档：它是官方源，能到的时候优先走它（少一跳）。
+    'geogebra':  ['https://www.geogebra.org/apps/deployggb.js',
+                  'https://cdn.geogebra.org/apps/deployggb.js']
   };
   // ★ 顺序就是**依赖顺序**：auto-render 一执行就调 katex 的接口，必须排在它后面。
   var 顺序 = ['katex-css', 'marked', 'dompurify', 'katex', 'autorender', 'geogebra'];
@@ -92,7 +106,7 @@ window.SRlib = (function () {
   //   它执行时 `katex` 这个全局还不存在。
   var 依赖 = { autorender: 'katex' };
 
-  var 到的 = {}, 待飞 = 顺序.slice(), 剩 = 顺序.length, 开 = false, 等 = [];
+  var 到的 = {}, 用 = {}, 待飞 = 顺序.slice(), 剩 = 顺序.length, 开 = false, 等 = [];
   function 开门() {
     if (开) return;
     开 = true;
@@ -130,7 +144,10 @@ window.SRlib = (function () {
       //   写 false 才回到"按插入顺序执行"——这就是原来 `defer` 那批的顺序保证。
       el.async = false;
     }
-    el.onload = function () { 落定(name); };
+    // ★ 记下"这一项最终是**哪个源**中的"。目前只有 geogebra 用得上它：
+    //   deployggb.js 里的 codebase 写死在 www，脚本从 cdn 来时得跟着转（见 js/board.js）。
+    //   记的是**源链里的第 k 个**，不是"成功/失败"——失败的那几档没有意义。
+    el.onload = function () { 用[name] = list[k]; 落定(name); };
     el.onerror = function () { 换源(name, k + 1); };
     document.head.appendChild(el);
   }
@@ -150,6 +167,8 @@ window.SRlib = (function () {
 
   return {
     ready: 到的,
+    // 「这一项最后落在哪个源上」——`{}` 里没有某个名字，就是它还没落定（或全试完了）。
+    used: 用,
     // ★ 已经开门就立刻叫，别漏了这一档：库很可能在 DOMContentLoaded 之前就齐了，
     //   那时候调用方还没来登记。
     whenReady: function (fn) { if (开) fn(); else 等.push(fn); }
@@ -837,6 +856,10 @@ window.SRlib = (function () {
      ★ 治的是孔老师那句话：「投到教室字太小、步骤全露」。备课／讲评的链子一屏摆全，
        在电脑上当草稿看正合适，投到教室就同时坏了两次——字小到后排看不清，
        而且"学生大概会说"那行提前把答案亮在黑板上，这一节课的讲法就白设计了。
+     ★ **一节之内还要再展开一次**（2026-10-04 孔老师拍板）：一上来只亮"学生大概会说"，
+       往下按一下才亮"你接这句"，再按一下才亮"这么接的道理"——
+       不然你念学生那行的时候，"你接这句"已经亮在旁边，学生答之前就看见你要接的话了。
+       展开的规矩和"前后可逆"那条，都写在 js/project.js 的头顶。
      ★ 内容**一个字都不写在这儿**，由 js/project.js 从 `SR.memo.log()` 现读现画。
        写死在这儿就是给链子开了第二个真源（同下面 `#works` 那条注释的道理）：
        链子每往前走一节，这份死文本不会跟着动，而屏幕上看着完全正常。
@@ -855,7 +878,7 @@ window.SRlib = (function () {
       <span class="projnum" id="projnum"></span>
       <span class="projname" id="projname"></span>
     </div>
-    <span class="projhint">← → 翻页</span>
+    <span class="projhint">空格 / → 下一步 · ← 收回</span>
     <button type="button" class="projx" id="projx" title="退出投影（Esc）">退出<em>Esc</em></button>
   </div>
   <div class="projbody" id="projbody"></div>

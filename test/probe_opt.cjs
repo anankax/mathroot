@@ -1,7 +1,9 @@
 // 2026-10-03 「全优化」那一趟的合并尺子。
 //
 // 一次跑完四件事的验收（孔老师原话：「你不要再屡次三番跑探针了，真的很浪费时间」）：
-//   【1】布局两刀   —— ① 对话栏按工位分档列宽；② 画板抽屉改成**挤压式**（不再盖住对话）
+//   【1】布局两刀   —— ① 六个工位**一个宽度**（2026-10-04 孔老师改的：原来四档宽窄，
+//                        他说「切换的根本不自然」，改成一律 1000；这一段现在量的是
+//                        "分档有没有偷偷回来"）；② 画板抽屉改成**挤压式**（不再盖住对话）
 //   【2】稳一手     —— ③ CDN 三源兜底；④ 手机（≤620px）抽屉改成底部升起；
 //                     ⑤ 「素材」那颗按钮的门禁
 //   【3】投影       —— 一屏一节的大字视图（js/project.js）
@@ -92,8 +94,9 @@ function 注(s) { 出.push('  · ' + s); }
     }
     return false;
   }
-  // 首屏那张卡片屏要收掉：它挂着 body[data-landing="1"]，而那条规则里的
-  // `.col{max-width:900px}` 权重比"按工位分档"高 —— 不收掉，量到的六档全是 900。
+  // 首屏那张卡片屏要收掉：它挂着 body[data-landing="1"]，那条规则里有个
+  // `.col{max-width:900px}`，且选择器更具体 —— 不收掉，六个工位量到的全是 900
+  // （读数看着"整齐划一"，量到的却是首屏那张卡片，不是工位栏）。
   async function 收首屏() {
     await ev("if(SR.landing&&SR.landing.hide)SR.landing.hide();'ok'");
     await sleep(350);
@@ -120,8 +123,15 @@ function 注(s) { 出.push('  · ' + s); }
     注('main：' + JSON.stringify(mn));
 
     // ============================================================
-    段('【1-①】对话栏按工位分档列宽（1440 屏）');
+    段('【1-①】六个工位**一个宽度**（1440 屏）');
     // ============================================================
+    // 这一段的规矩，是孔老师 2026-10-04 自己改的，原话：
+    //   「不同的板块不是用的一个屏，大小也不一样。切换的根本不自然。」
+    // 改之前是四档宽窄（备课/作图/命题 900，讲评 1000，组卷/学情 1120）。
+    // **问题不在哪个数**：换一档宽，居中就跟着重算一次，左右两条边**一起**跳。
+    // 他现在要的是六个工位同一块屏。所以下面这组断言是**反过来**的：
+    // 从前量"分档生效了没"，现在量"分档**有没有偷偷回来**"。
+    // 要再分档得他先改口——这条红着，就是有人（包括我）又把它加回去了。
     const 档 = {};
     for (const w of ['prep', 'draw', 'vary', 'material', 'grade', 'review']) {
       await ev("SR.main.applyWork(" + J(w) + ");'ok'");
@@ -137,29 +147,54 @@ function 注(s) { 出.push('  · ' + s); }
     for (const w in 档) 差最大 = Math.max(差最大, Math.abs(档[w].左 - 档[w].右));
     判('六个工位都是居中（左右空白差 ≤4px）', 差最大 <= 4, '最大差 ' + 差最大 + 'px');
     判('单栏（main 底下只有一个 .col）', 档.prep.栏数 === 1, '栏数 ' + 档.prep.栏数);
-    判('分档生效：组卷比备课宽', 档.material.w > 档.prep.w, 档.material.w + ' > ' + 档.prep.w);
-    判('分档生效：学情跟组卷同档', 档.grade.w === 档.material.w, 档.grade.w + ' / ' + 档.material.w);
-    判('分档生效：讲评夹在中间', 档.review.w >= 档.prep.w && 档.review.w <= 档.material.w, 档.review.w);
-    判('画图／命题还是窄档', 档.draw.w === 档.prep.w && 档.vary.w === 档.prep.w, 档.draw.w + ' / ' + 档.vary.w);
-    // 分档不能是"全部一样"——那正是改之前的样子
-    判('六档不是一刀切（至少三种宽度）', new Set(Object.values(档).map(x => x.w)).size >= 3,
+    // ★ 这条是"切换自然"的本体：同宽 → 居中重算的结果也相同 → 左边界一动不动
+    const 左集 = [...new Set(Object.values(档).map(x => x.左))];
+    判('★★ 六个工位**同宽**（换工位屏幕不变宽窄）',
+      new Set(Object.values(档).map(x => x.w)).size === 1,
       JSON.stringify([...new Set(Object.values(档).map(x => x.w))]));
+    判('★★ 六个工位**同一条左边界**（换工位左右两条边都不跳）', 左集.length === 1, JSON.stringify(左集));
+    判('那一条宽度就是他定的 1000（不是别处漂来的数）', 档.prep.w === 1000, 档.prep.w + 'px');
+    // 静态那半边：样式表里**不该再出现**按工位改 max-width 的规则。
+    // 光量屏幕上六个读数是不够的——四档全塞进一个 `<style>` 只要有一档被别的
+    // 规则压住，屏幕上照样看着"同宽"，而那条规则还在，风一吹就复活。
+    const 分档规则 = await ev("(function(){var out=[];"
+      + "for(var i=0;i<document.styleSheets.length;i++){var ss=document.styleSheets[i];var rs;"
+      + "try{rs=ss.cssRules}catch(e){continue}if(!rs)continue;"
+      + "for(var j=0;j<rs.length;j++){var r=rs[j];if(!r.selectorText||r.style.maxWidth==='')continue;"
+      + "if(r.selectorText.indexOf('data-work')>=0&&r.selectorText.indexOf('.col')>=0)"
+      + "out.push(r.selectorText+' { max-width: '+r.style.maxWidth+' }');}}"
+      + "return out;})()");
+    判('★★ 样式表里**没有**按工位改宽度的规则（分档没偷偷回来）',
+      Array.isArray(分档规则) && 分档规则.length === 0, JSON.stringify(分档规则));
 
     // ============================================================
-    段('【1-①-红】把分档改回"一刀切 900" —— 尺子必须红');
+    段('【1-①-红】把分档偷加回来（只给学情一档 820）—— 上面两条必须红');
     // ============================================================
+    // 红验要跟被验的断言**用同一把尺子**：上面量的是"六个读数一不一样"和
+    // "样式表里有没有 data-work 规则"，这里就注入一条 data-work 规则，看两条是不是都翻红。
     await ev("(function(){var s=document.createElement('style');s.id='__rb1';"
-      + "s.textContent='body[data-work=\\'material\\'] main > .col,body[data-work=\\'grade\\'] main > .col,body[data-work=\\'review\\'] main > .col{max-width:900px}';"
+      + "s.textContent='body[data-work=\\'grade\\'] main > .col{max-width:820px}';"
       + "document.head.appendChild(s);return 'ok';})()");
-    await ev("SR.main.applyWork('material');'ok'");
-    await sleep(200);
+    await ev("SR.main.applyWork('grade');'ok'");
+    await sleep(220);
     const rb1 = await rect('main > .col');
-    判('★故障确实生效了（注入后组卷栏被压回 900）', rb1.w === 900, '实测 ' + rb1.w);
-    判('★红验：这时候"组卷比备课宽"这条断言**应当**是假的', !(rb1.w > 档.prep.w), '900 > ' + 档.prep.w + ' = ' + (rb1.w > 档.prep.w));
-    await ev("var e=document.getElementById('__rb1');if(e)e.remove();SR.main.applyWork('material');'ok'");
+    await ev("SR.main.applyWork('prep');'ok'");
+    await sleep(180);
+    const rb0 = await rect('main > .col');
+    判('★故障确实生效了（注入后学情被压到 820，而备课还是 1000）', rb1.w === 820 && rb0.w === 1000, '学情 ' + rb1.w + ' / 备课 ' + rb0.w);
+    判('★红验：「六个工位同宽」这时候**应当**是假的', !(rb1.w === rb0.w), rb1.w + ' vs ' + rb0.w);
+    const 红分档 = await ev("(function(){var out=[];"
+      + "for(var i=0;i<document.styleSheets.length;i++){var ss=document.styleSheets[i];var rs;"
+      + "try{rs=ss.cssRules}catch(e){continue}if(!rs)continue;"
+      + "for(var j=0;j<rs.length;j++){var r=rs[j];if(!r.selectorText||r.style.maxWidth==='')continue;"
+      + "if(r.selectorText.indexOf('data-work')>=0&&r.selectorText.indexOf('.col')>=0)"
+      + "out.push(r.selectorText+' { max-width: '+r.style.maxWidth+' }');}}"
+      + "return out;})()");
+    判('★红验：「样式表里没有分档规则」这时候**应当**是假的', Array.isArray(红分档) && 红分档.length >= 1, JSON.stringify(红分档));
+    await ev("var e=document.getElementById('__rb1');if(e)e.remove();SR.main.applyWork('grade');'ok'");
     await sleep(250);
     const 复原 = await rect('main > .col');
-    判('红验用完复原（组卷栏回到 ' + 档.material.w + '）', 复原.w === 档.material.w, '实测 ' + 复原.w);
+    判('红验用完复原（学情栏回到 ' + 档.grade.w + '）', 复原.w === 档.grade.w, '实测 ' + 复原.w);
 
     // ============================================================
     段('【4】手机上空掉的那条 grid 轨道（`#msgs` 只占 44% 高）');
@@ -366,67 +401,147 @@ function 注(s) { 出.push('  · ' + s); }
     判('开的时候抽屉是关着的（底下不露半块板）',
       await ev("document.querySelector('#drawer').getAttribute('data-drawer')") === 'closed');
 
-    const 第一屏 = {
+    const 敲 = async (k, code, vk) => {
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code: code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code: code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk });
+      await sleep(320);
+    };
+
+    // ★★ 2026-10-04：投影多了一条规矩——**一节之内逐块亮**（一上来只亮"学生大概会说"，
+    //   按一下才亮"你接这句"，再按一下才亮"这么接的道理"）。治的是原来三块并排、
+    //   你还没开口问，"你要接的那句话"已经亮在黑板上被学生读完了。
+    //   所以下面量的不再是"一屏三块"，而是"**这一刻屏上亮着几块、哪一块的正文真的在 DOM 里**"。
+    //   `.pblk:not(.pwait)` 才是"亮着的"；`.pblk` 总数仍然是三（没亮的那几块画成虚线占位，屏才不会跳）。
+    const 读屏 = async () => ({
       节号: await 字('#projnum'),
       节名: await 字('#projname'),
       块数: await 数('#projbody .pblk'),
-      接句: await 数('#projbody .p_you'),
-      正文: await 字('#projbody .p_you .ptext'),
-      道理: await 数('#projbody .p_why'),
-      学生: await 数('#projbody .p_said'),
+      亮着: await 数('#projbody .pblk:not(.pwait)'),
+      学生正文: await 字('#projbody .p_said .ptext'),
+      接句正文: await 字('#projbody .p_you .ptext'),
+      道理正文: await 字('#projbody .p_why .ptext'),
+      上一颗: await 字('#projprev'),
+      下一颗: await 字('#projnext'),
+      上一颗禁用: await ev("document.getElementById('projprev').disabled"),
+      下一颗禁用: await ev("document.getElementById('projnext').disabled"),
       点: await 数('#projdots .pdot'),
-      亮点: await ev("(function(){var d=document.querySelectorAll('#projdots .pdot');for(var i=0;i<d.length;i++)if(d[i].classList.contains('now'))return i;return -1;})()"),
-      上一节禁用: await ev("document.getElementById('projprev').disabled"),
-      下一节禁用: await ev("document.getElementById('projnext').disabled")
-    };
-    注('第一屏：' + JSON.stringify(第一屏, null, 0));
-    判('一屏只放一节（第 1 节）', /第\s*1\s*节/.test(第一屏.节号 || ''), 第一屏.节号);
-    判('节名读出来了', 第一屏.节名 === '复述', 第一屏.节名);
-    判('一屏只有三块（学生说／你接／道理），不是七八块挤一起', 第一屏.块数 === 3 && 第一屏.接句 === 1,
-      第一屏.块数 + ' 块，其中「你接这句」' + 第一屏.接句 + ' 块');
-    判('「你接这句」那段正文读得出来', /代进去算/.test(第一屏.正文 || ''), String(第一屏.正文).slice(0, 30));
-    判('进度点 = 三节', 第一屏.点 === 3, 第一屏.点);
-    判('第一屏亮的是第 1 个点', 第一屏.亮点 === 0, 第一屏.亮点);
-    判('第一屏上「上一节」按不动（但不隐藏）', 第一屏.上一节禁用 === true &&
-      await 可见('#projprev') > 0);
+      亮点: await ev("(function(){var d=document.querySelectorAll('#projdots .pdot');for(var i=0;i<d.length;i++)if(d[i].classList.contains('now'))return i;return -1;})()")
+    });
 
+    const 一屏 = await 读屏();
+    注('第一屏：' + JSON.stringify(一屏, null, 0));
+    判('一屏只放一节（第 1 节）', /第\s*1\s*节/.test(一屏.节号 || ''), 一屏.节号);
+    判('节名读出来了', 一屏.节名 === '复述', 一屏.节名);
+    判('三块都占着位置（学生说／你接／道理），不是七八块挤一起', 一屏.块数 === 3, 一屏.块数 + ' 块');
+    判('★★ 一上来**只亮第一块**（学生大概会说）', 一屏.亮着 === 1 && !!一屏.学生正文,
+      '亮着 ' + 一屏.亮着 + ' 块；学生那块正文' + (一屏.学生正文 ? '在' : '不在'));
+    判('★★ **不剧透**：你还没开口，「你接这句」那段的正文**根本不在屏上**',
+      一屏.接句正文 === null, '读到的：' + JSON.stringify(一屏.接句正文));
+    const 未亮最矮 = await ev("(function(){var p=document.querySelectorAll('#projbody .pwait');"
+      + "if(p.length!==2)return -1;var m=1e9;for(var i=0;i<p.length;i++){var h=p[i].getBoundingClientRect().height;"
+      + "if(h<m)m=h;}return Math.round(m);})()");
+    判('还没亮的那两块照样**占着位置**（画成虚线；亮出来那一刻屏才不会跳一下）',
+      未亮最矮 > 0, '还没亮的最矮那块 ' + 未亮最矮 + 'px');
+    判('脚上那颗这时写的是「亮下一块」，不是「下一节」——不用猜这一下按出去是什么',
+      /亮下一块/.test(一屏.下一颗 || ''), 一屏.下一颗);
+    判('进度点 = 三节', 一屏.点 === 3, 一屏.点);
+    判('第一屏亮的是第 1 个点', 一屏.亮点 === 0, 一屏.亮点);
+    // ★ 读数一定要带上：不写读数的话，下面这条红只会打印一个光秃秃的标题，
+    //   而"读到了不存在的字段"（undefined===true → 假）和"按钮真的被藏了"
+    //   在屏幕上**一模一样**——这次就栽在这儿：对象里叫 `上一颗禁用`，
+    //   我这条断言读的是 `上一节禁用`（差一个字），红得理直气壮，产品却是好的。
+    判('第一屏上「上一节」按不动（但不隐藏／不消失）',
+      一屏.上一颗禁用 === true && await 可见('#projprev') > 0,
+      'disabled=' + 一屏.上一颗禁用 + '，rects=' + await 可见('#projprev'));
+    判('还没亮完时「下一节」按得动（它这一下是"亮一块"，不是灰的）', 一屏.下一颗禁用 === false);
+
+    // —— 投影红验 ③：**把"逐块展开"整个拆掉**（往亮表里灌一个"全亮"，
+    //    就等于回到改之前"三块并排"的样子），上面那两条"只亮一块／不剧透"**必须当场变假**。
+    //    ★ 走的是产品自己的数据口子（`__view().表` 那一份按引用返回），不是改坏 js/ 再还原。
+    await ev("(function(){var t=SR.project.__view().表;t[1]=3;SR.project.refresh();return 'ok';})()");
+    await sleep(250);
+    const 灌满 = await 读屏();
+    判('★故障确实生效了（灌满亮表之后三块都亮了）', 灌满.亮着 === 3, '亮着 ' + 灌满.亮着);
+    判('★红验：这时候"一上来只亮第一块"那条断言**应当**是假的', !(灌满.亮着 === 1));
+    判('★红验：这时候"不剧透"那条断言**应当**是假的（正文果然露出来了）', 灌满.接句正文 !== null,
+      '读到「' + String(灌满.接句正文).slice(0, 18) + '…」');
+    await ev("(function(){SR.project.__view().表[1]=1;SR.project.refresh();return 'ok';})()");
+    await sleep(250);
+    判('红验用完复原（又只剩第一块了）', (await 读屏()).亮着 === 1, (await 读屏()).亮着);
+
+    // —— 按一下：亮出第二块 ——
+    await 敲('ArrowRight', 'ArrowRight', 39);
+    const 两块 = await 读屏();
+    注('按一下之后：' + JSON.stringify(两块, null, 0));
+    判('★ 按一下 → 亮出「你接这句」', 两块.亮着 === 2 && !!两块.接句正文, '亮着 ' + 两块.亮着 + ' 块');
+    判('「你接这句」那段正文读得出来', /代进去算/.test(两块.接句正文 || ''), String(两块.接句正文).slice(0, 30));
+    判('★ 这一下**没有翻节**（还在第 1 节）—— 一块块亮完才翻页', /第\s*1\s*节/.test(两块.节号 || ''), 两块.节号);
+    判('「这么接的道理」这时还没亮', 两块.道理正文 === null && 两块.亮着 === 2);
     const 字大 = await ev("(function(){var e=document.querySelector('#projbody .p_you .ptext');"
       + "return e?parseFloat(getComputedStyle(e).fontSize):0;})()");
     判('「你接这句」的字够大（≥28px，投到教室后排能读）', 字大 >= 28, 字大 + 'px');
     const 大字 = await ev("parseFloat(getComputedStyle(document.getElementById('projname')).fontSize)");
     判('节名更大（≥40px）', 大字 >= 40, 大字 + 'px');
 
-    // —— 键盘翻页 ——
-    const 敲 = async (k, code, vk) => {
-      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code: code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk });
-      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code: code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk });
-      await sleep(320);
-    };
     await 敲('ArrowRight', 'ArrowRight', 39);
-    const 第二屏 = { 节号: await 字('#projnum'), 节名: await 字('#projname'),
-      亮点: await ev("(function(){var d=document.querySelectorAll('#projdots .pdot');for(var i=0;i<d.length;i++)if(d[i].classList.contains('now'))return i;return -1;})()") };
-    判('按 → 翻到第 2 节', /第\s*2\s*节/.test(第二屏.节号 || '') && 第二屏.节名 === '定位', JSON.stringify(第二屏));
-    判('进度点跟着走', 第二屏.亮点 === 1, 第二屏.亮点);
+    const 三块 = await 读屏();
+    判('再按一下 → 三块全亮（「这么接的道理」也出来了）', 三块.亮着 === 3 && !!三块.道理正文,
+      '亮着 ' + 三块.亮着 + ' 块');
+    判('三块全亮之后，脚上那颗才改口叫「下一节」', /下一节/.test(三块.下一颗 || ''), 三块.下一颗);
+
     await 敲('ArrowRight', 'ArrowRight', 39);
-    await 敲('ArrowRight', 'ArrowRight', 39);
-    const 末屏 = await rect('#projbody');
-    判('翻到最后一节时「下一节」按不动', await ev("document.getElementById('projnext').disabled") === true);
-    判('翻页时正文区没被撑破（.projbody 高度正常）', 末屏 && 末屏.h > 100, JSON.stringify(末屏));
-    注('末屏 body：' + JSON.stringify(末屏));
+    const 第二节 = await 读屏();
+    判('三块都亮完了，这一下才翻到第 2 节',
+      /第\s*2\s*节/.test(第二节.节号 || '') && 第二节.节名 === '定位',
+      JSON.stringify({ 节号: 第二节.节号, 节名: 第二节.节名 }));
+    判('★★ 新的一节**不许一上来就全亮**（只亮第一块）', 第二节.亮着 === 1, '亮着 ' + 第二节.亮着);
+    判('进度点跟着走', 第二节.亮点 === 1, 第二节.亮点);
+
+    // —— 按回去：**必须回到原来那一屏**（"按错了能原路退回去"）——
+    //   ★ 这一条是"逐块亮"最容易做坏的地方：如果"亮了几块"只存一个全屏的数，
+    //     翻回来就被重置成 1，退回去看到的跟原来不是一屏——那就不叫退回去了。
     await 敲('ArrowLeft', 'ArrowLeft', 37);
-    判('按 ← 能倒回去', /第\s*2\s*节/.test(await 字('#projnum')), await 字('#projnum'));
+    const 回一 = await 读屏();
+    判('★★ 按 ← 退回第 1 节，**亮着的还是那三块**（不是退回"只亮一块"）',
+      /第\s*1\s*节/.test(回一.节号 || '') && 回一.亮着 === 3, 回一.节号 + '，亮着 ' + 回一.亮着);
+    await 敲('ArrowLeft', 'ArrowLeft', 37);
+    判('本节还有多的，再按 ← 先**收一块**（没翻节）',
+      (await 读屏()).亮着 === 2 && /第\s*1\s*节/.test(await 字('#projnum')), (await 读屏()).亮着);
+    await 敲('ArrowLeft', 'ArrowLeft', 37);
+    const 收到底 = await 读屏();
+    判('收到只剩第一块', 收到底.亮着 === 1, 收到底.亮着);
+    判('收到底时「上一节」按不动了（第一屏第一块）', 收到底.上一颗禁用 === true);
+    await 敲('ArrowRight', 'ArrowRight', 39);
+    await 敲('ArrowRight', 'ArrowRight', 39);
+    判('★ 左三下、右两下之后回到"三块全亮"——两边对得上',
+      (await 读屏()).亮着 === 3, (await 读屏()).亮着);
 
     // —— 模型没写全三行时的实话 ——
+    //   现在停在（第 1 节，三块全亮）。模型又写了一节（第 4 节，只有"学生大概会说"一行），
+    //   往回走要穿过第 2、3 节：那两节都还没亮完过，所以每穿一节都得先把它亮满。
+    //   ★ 这一段顺带量到一件事：**跨过一节时不会被那一节的展开状态绊住**。
     await ev("SR.memo.pushTurn('a','第 4 节 · 小结\\n学生大概会说：嗯。','prep');SR.memo.flush();SR.project.refresh();'ok'");
     await sleep(300);
     const 点4 = await 数('#projdots .pdot');
-    await 敲('ArrowRight', 'ArrowRight', 39); await 敲('ArrowRight', 'ArrowRight', 39);
-    const 半节 = { 节号: await 字('#projnum'), 块数: await 数('#projbody .pblk'),
-      缺的实话: await 字('#projbody .pnote'), 点: 点4 };
-    注('半节：' + JSON.stringify(半节));
     判('字幕跟上了新写的一节（进度点变 4）', 点4 === 4, 点4);
+    for (let i = 0; i < 12; i++) {          // 一路按到第 4 节（第 2、3 节各要按几下才过）
+      if (/第\s*4\s*节/.test(await 字('#projnum') || '')) break;
+      await 敲('ArrowRight', 'ArrowRight', 39);
+    }
+    const 半节 = { 节号: await 字('#projnum'), 块数: await 数('#projbody .pblk'),
+      亮着: await 数('#projbody .pblk:not(.pwait)'),
+      缺的实话: await 字('#projbody .pnote') };
+    注('半节：' + JSON.stringify(半节));
+    判('一路按到了第 4 节', /第\s*4\s*节/.test(半节.节号 || ''), 半节.节号);
     判('只有一行的那一节只画一块，**不替模型编满**', 半节.块数 === 1, 半节.块数);
+    判('★ 只有一行的那一节也不许"没得亮"——那唯一一块该是亮的', 半节.亮着 === 1, '亮着 ' + 半节.亮着);
     判('缺的几行如实说了', /没写/.test(半节.缺的实话 || ''), 半节.缺的实话);
+    const 末屏 = await rect('#projbody');
+    判('正文区没被撑破（.projbody 高度正常）', 末屏 && 末屏.h > 100, JSON.stringify(末屏));
+    判('翻到最后一节、又全亮完了，「下一节」按不动',
+      await ev("(function(){var b=document.getElementById('projnext');"
+        + "return b.disabled;})()") === true,
+      '亮着 ' + 半节.亮着 + '/1');
 
     // —— 投影红验 ①：把层藏起来，尺子必须红 ——
     await ev("(function(){var s=document.createElement('style');s.id='__rb3';s.textContent='#proj{display:none !important}';document.head.appendChild(s);return 'ok';})()");
@@ -443,11 +558,11 @@ function 注(s) { 出.push('  · ' + s); }
     await sleep(300);
     const 空块 = await 数('#projbody .pblk');
     判('★故障确实生效了（掐掉解析后一块正文都没有了）', 空块 === 0, '块数 ' + 空块);
-    判('★红验：这时候"这一屏有三块"那条断言**应当**是假的', !(空块 === 3));
+    判('★红验：这时候"这一节只画一块"那条断言**应当**是假的', !(空块 === 1));
     await ev("SR.parseStepBody=window.__psBody;delete window.__psBody;SR.project.refresh();'ok'");
     await sleep(300);
-    判('红验用完复原（三块回来了）', await 数('#projbody .pblk') === 1 || await 数('#projbody .pblk') > 0,
-      await 数('#projbody .pblk'));
+    判('红验用完复原（第 4 节那一块回来了）', await 数('#projbody .pblk') === 1,
+      '块数 ' + await 数('#projbody .pblk'));
 
     // —— 退出 ——
     await 敲('Escape', 'Escape', 27);

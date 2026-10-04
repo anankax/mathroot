@@ -638,6 +638,12 @@ SR.api = (function () {
       if (w.chain === 'board') chain = b.models;
       else if (hasImg) chain = b.modelsImage || b.models;
       else chain = b.modelsText || b.models;
+      // ★ 例外（2026-10-04）：工位带 textHead 时，**不带图那一轮**也走 modelsText。
+      //   目前只有画图开（理由与代价见 SR.WORKS.draw 那段：瞎问那一档 glm-4v-flash
+      //   24/36、250414 36/36；代价是 想说围栏 9/24→2/24，认了）。
+      //   注意 hasImg 是"这一轮带图 **或** 历史里还留着图"（见上面那段）——
+      //   所以对话里只要出现过图，这里的 head 仍然回到视觉模型，这是有意的。
+      if (w.chain === 'board' && w.textHead && !hasImg) chain = b.modelsText || b.models;
 
       // ★ 单模型链（就是带图那条）必须给足重试：链上只有一个，一次 429 就失败太亏。
       //   429 是秒回的，等一下再打很便宜，而"降级"在这条链上是不能用的选项。

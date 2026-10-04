@@ -773,22 +773,76 @@ SR.board = (function () {
   //   cb({ ok, back, res, why })   back = 有没有把板还回去
   // ★ 这是"出材料当着老师的面把画板洗一遍"那个旧 bug 的正解：画到一张借来的板上，
   //   画完把老师原来那一张**原样**放回去（连视角、连他手动拖过的位置一起）。
+  // ★★ 2026-10-04：这一趟**必须**有回话，而且是"说得出为什么"的回话。
+  //   孔老师截图里那格一直停在「正在画…」，就是这个洞：`lock()` 那套是
+  //   **手工交卷**的（每个 job 拿到一个 `done()，干完自己喊一声），而 `done` 有几条
+  //   到不了的路：
+  //     ① `fn` 同步炸了 —— 原来只有 `try{…}finally{借板中--}`，借板中能还上，
+  //        可 `done` **一次都没喊**，`lockBusy` 从此永远是 true，后面所有的画图、截图、
+  //        换页全排在队里等一个永远不会来的交卷；
+  //     ② `fn` 的回调**根本不来**（异步链断在半路）。这条最阴：`shoot` 是靠
+  //        `im.onload` / `im.onerror` 往下走的，两个都不来的话，`shoot` 的 cb
+  //        一次都不调 —— `fn` 的回调也就永远不来，而中间**没有任何一步会报错**；
+  //        （`toPNG()` 本身有 try/catch，炸不了，别拿它当这条的例子。）
+  //     ③ `snapshot()` / `restore()` 炸了。
+  //   三种都长得一样：屏幕上一直转，**一个字都不说**。老师说"出不来图"，看到的就是这个。
+  //   → 两条一起补：整段包 try（炸了也要交卷、并且把原因带回去），
+  //     再挂一张**看门狗**的表。转着不说是最坏的一种坏法：
+  //     它连"坏在哪儿"都没给，比一句"图没画出来"还难查。
+  //   ★ 表盯的是"**还在不在往下走**"，不是"整趟花多久"。
+  //     为什么不能用一张总表：一轮回复里可能有好几张图，一张张顺序冻，
+  //     "几张算是正常"是个猜不准的数 —— 猜小了误伤正常的多图那一轮，猜大了白等。
+  //     而"卡住"这事儿的特征恰恰是**不再往下走**，所以盯"有没有往下走"比盯总时长准。
+  //     `draw` 每被喊一次就重挂一次表：单张画不完有 DRAW_MAX 兜着，单张截不完有
+  //     shoot 自己的 SHOOT_MAX 兜着，这张表只管最后那条底线——再怎么也不该一声不吭这么久。
+  //   ⚠ 老实说：**这张表到现在没被真触发过**。`test/probe_fighang.cjs` 量到的是
+  //     `shoot` 那条 SHOOT_MAX（10.6 秒认输）——那是把 `Image` 换成不解码的假货造出来的，
+  //     而那张假货只卡 `shoot`，`draw` 照常往下走，看门狗就一直被喂着。
+  //     它是"万一还有一条我没数到的路"的兜底，不是有人踩过的坑。
+  //     真到了那天，**先把它触发一次、量一眼再信它**——别因为这条注释看着笃定就当它测过。
+  //   ⚠ 交卷只算第一次（`交卷过`）：到点交了之后真结果再回来，不能当第二次算，
+  //     否则 `pump` 会为同一个 job 放行两次，队列直接乱套。
+  //   ⚠ `死路: true` 是给调用方看的：这条路上"重试"没有意义
+  //     （see js/chat.js 的 freezeFences —— 它原先不分青红皂白重试 4 次，
+  //     是给"画板忙，没动它"那种**转瞬即逝**的原因准备的；卡死和炸了重试只是白等）。
+  var JOB_静默上限 = 30000;
   function offscreenJob(fn, cb) {
     lock(function (done) {
-      waitIdle(function (idle) {
-        if (!idle) return done({ ok: false, back: false, why: '画板忙，没动它' });
-        var back = snapshot();
-        // ★ 这一遍是"画给我自己截图看"的，不是"画给老师看"的 → 挂上快档。
-        //   `fn` 里那条 `drawNow` 是**同步**调 `run` 的，节奏在 run 里当场就定下来，
-        //   所以 try/finally 圈住这一下就够了（截图和还原都在回调里，不受影响）。
-        借板中++;
-        try { fn(drawNow, function (res) {
-          if (!back) return done({ ok: true, back: false, res: res });
-          restore(back, function (r) {
-            done({ ok: r.ok, back: true, res: res, why: r.why });
-          });
-        }); } finally { 借板中--; }
-      });
+      var 交卷过 = false, 表 = null;
+      var 收 = function (r) { if (交卷过) return; 交卷过 = true; if (表) clearTimeout(表); done(r); };
+      var 拍一下 = function () {
+        if (表) clearTimeout(表);
+        表 = setTimeout(function () {
+          收({ ok: false, back: false, 死路: true,
+               why: '画板静默超过 ' + (JOB_静默上限 / 1000) + ' 秒，这一张没成' });
+        }, JOB_静默上限);
+      };
+      拍一下();
+      try {
+        waitIdle(function (idle) {
+          if (!idle) return 收({ ok: false, back: false, why: '画板忙，没动它' });
+          var back = null;
+          try { back = snapshot(); } catch (e) { back = null; }
+          // ★ 这一遍是"画给我自己截图看"的，不是"画给老师看"的 → 挂上快档。
+          //   `fn` 里那条 `drawNow` 是**同步**调 `run` 的，节奏在 run 里当场就定下来，
+          //   所以 try/finally 圈住这一下就够了（截图和还原都在回调里，不受影响）。
+          借板中++;
+          try {
+            // ⚠ 只把 `draw` 包一层（每次被喊就拍一下表）。`finish` 不包：
+            //   它一被喊这一趟就收工了，没有再"往下走"的必要。
+            fn(function (lines, cb2) { 拍一下(); drawNow(lines, cb2); }, function (res) {
+              if (!back) return 收({ ok: true, back: false, res: res });
+              try {
+                restore(back, function (r) { 收({ ok: r.ok, back: true, res: res, why: r.why }); });
+              } catch (e) { 收({ ok: false, back: false, res: res, why: '画完还不了原：' + (e && e.message) }); }
+            });
+          } catch (e) {
+            收({ ok: false, back: false, 死路: true, why: '画这一遍就炸了：' + (e && e.message) });
+          } finally { 借板中--; }
+        });
+      } catch (e) {
+        收({ ok: false, back: false, 死路: true, why: '出图这条路炸了：' + (e && e.message) });
+      }
     }, cb);
   }
 
@@ -864,7 +918,11 @@ SR.board = (function () {
       //   而视野一共才 14 个单位宽 → 那个画数字的循环只走得出一个 "0"。
       //   症状：**每一张冻图上的坐标轴都只有一个孤零零的 0**。
       //   他问"在数轴上表示-2和3"，屏幕上就是一条线加一个看不懂的 0（2026-10-03 截图来问）。
-      //   取倒数之后 = 每单位约 35.6 像素 → niceStep 给 2 → 数字 −6…6 每两格一个，正是卷子上的样子。
+      //   取倒数之后 = 每单位约 35.6 像素 → 这个数正是下面 niceStep 要的那个"每单位多少像素"。
+      // ★★ 2026-10-04 更正：这一行原来接着写"niceStep 给 2 → 数字 −6…6 每两格一个，
+      //   正是卷子上的样子"——**那句判断是错的**。孔老师两次来看这张图，两次说的都是
+      //   "单位长度怎么还是不是 1"。每两格写一个数，学生照着图数格就是把一格当成 2。
+      //   现在 niceStep 按"数字占多宽"定步长，35.6 像素够写一个两位的负数 → 步长落到 1。
       cssPerUnitX: 1 / v.invXscale, cssPerUnitY: 1 / v.invYscale,
       sx: function (x) { return (x - xMin) / v.invXscale * k; },
       sy: function (y) { return (yMax - y) / v.invYscale * k; }
@@ -873,9 +931,20 @@ SR.board = (function () {
 
   // 刻度间隔：跟 GeoGebra 用它自己那套挑出来的多半一样（都是"两格之间留够看得清的距离"），
   // 但**我不赌**——下面 setAxisSteps 会把它钉死成这个值，于是刻度线和我的数字天然对齐。
-  function niceStep(pxPerUnit) {
+  //
+  // ★★ 2026-10-04：那条线原来是**写死的 50 像素**。50 像素对"两个数字别撞上"是够的，
+  //   可它顺手把**单位长度必须是 1** 这条规矩也一起挡掉了：画板上每单位约 35.6 像素，
+  //   35.6 < 50 → 步长一路挑到 2 → 数轴上只剩 −6/−4/−2/0/2/4/6。
+  //   图看上去"挺干净"，**单位长度却是 2**：学生照着格子数一格就多数了一倍。
+  //   孔老师两次来问的都是这一条。
+  //   改成按"**这一格上要写的那个数字占多宽**"来定：最宽的那个刻度数有几位（负号也算一位），
+  //   每位约 8 像素，再加 8 像素空当。35.6 像素够写一个两位的负数 → 步长落到 1。
+  //   ⚠ 别把这条改回固定阈值：阈值一写死，视野一变宽它就又偷偷把 1 跳过去了，
+  //     而屏幕上**看不出哪里不对**（数字还是排得整整齐齐的），只有学生会数错格。
+  function niceStep(pxPerUnit, 最宽几位) {
     var c = [0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
-    for (var i = 0; i < c.length; i++) if (pxPerUnit * c[i] >= 50) return c[i];
+    var 需要 = 8 + 8 * Math.max(1, 最宽几位 || 1);
+    for (var i = 0; i < c.length; i++) if (pxPerUnit * c[i] >= 需要) return c[i];
     return 10000;
   }
 
@@ -913,7 +982,12 @@ SR.board = (function () {
     o.axesColor = '#000000';
     // 刻度间隔钉死，好让我的数字落在它的刻度线上
     var m = viewMap(1);
-    var stepX = niceStep(m.cssPerUnitX), stepY = niceStep(m.cssPerUnitY);
+    // 视野两端里**最宽的那个刻度数字**有几位（负号也算一位）——步长按它来定。
+    // 视野是对称的（setDefaultView 的 setCoordSystem 给的就是 ±xr），所以负数那一端一定在。
+    // ⚠ viewMap 只回 yMax（没回 yMin）——对称视野下 |yMin| 就是 yMax，够用。
+    var 位X = String(Math.ceil(Math.max(Math.abs(m.xMin), Math.abs(m.xMax)))).length + (m.xMin < 0 ? 1 : 0);
+    var 位Y = String(Math.ceil(m.yMax)).length + 1;
+    var stepX = niceStep(m.cssPerUnitX, 位X), stepY = niceStep(m.cssPerUnitY, 位Y);
     try { api.setAxisSteps(1, stepX, stepY); } catch (e) {}
     try { api.setGraphicsOptions(1, o); } catch (e) {}
     snap.objs.forEach(function (s) {
@@ -1050,7 +1124,26 @@ SR.board = (function () {
   // ★ 顺手裁边：画板是个方方正正的格子，图往往只占中间一条。
   //   不裁的话，卷子上会出现"图很小、周围一大片空"的怪样子。
   //   裁的判据是"这一圈像不像空白"，**只裁白边，不动内容**。
-  function shoot(cb) {
+  // ★★ 2026-10-04：这一张图**必须有上限**。原来没有 —— 而这是出图链上**唯一**
+  //   一个没有上限的环节（等闲 IDLE_MAX 12s、画 DRAW_MAX 30s、还原 RESTORE_MAX 8s 都有）。
+  //   往下走的那一步是 `im.onload` / `im.onerror`，两个**都不来**的时候，
+  //   这里的 cb 一次都不调，而中间**没有一步会报错**：上一层 `offscreenJob` 的活儿
+  //   就这么挂着，老师看到的是那格一直停在「正在画…」，一个字都不说。
+  //   （孔老师 2026-10-04 那张截图就是这个状态。）
+  // ⚠ 上限挂在**这一张**上，不挂在整个 job 上：一轮回复里可能有好几张图，
+  //   按顺序一张张冻，挂在整个 job 上就得猜"几张算是正常"，猜小了误伤正常的多图那一轮，
+  //   猜大了又白等。挂在这儿，"这张多久没动静"是**确定的**，不用猜。
+  // ⚠ 交卷只算第一次（`交卷过`）：到点交了之后位图再解码完，不能再交一次卷 ——
+  //   那样 `figCache` 会被写第二遍，而第一遍已经按"没出图"往下走了。
+  var SHOOT_MAX = 10000;
+  function shoot(cb0) {
+    var 交卷过 = false, 到点 = null;
+    var cb = function (url, w, h) {
+      if (交卷过) return;
+      交卷过 = true;
+      if (到点) clearTimeout(到点);
+      cb0(url, w, h);
+    };
     if (!api) { cb(''); return; }
     var snap = null;
     try { snap = paperSnapshot(); paperOn(snap); } catch (e) { snap = null; }
@@ -1061,6 +1154,7 @@ SR.board = (function () {
     if (!raw) { cb(''); return; }
     var src = /^data:/.test(raw) ? raw : 'data:image/png;base64,' + raw;
     var im = new Image();
+    到点 = setTimeout(function () { cb(''); }, SHOOT_MAX);
     im.onerror = function () { cb(''); };
     im.onload = function () {
       try {
@@ -1428,6 +1522,35 @@ SR.board = (function () {
         flushPending();
       }
     }, true);
+    // ★★ 2026-10-04：codebase 跟着"脚本是哪个源来的"走。
+    //   为什么非做不可：deployggb.js 里那包**真正的大件**（十几 MB 的 web3d/webSimple）
+    //   的地址是**写死 `www.geogebra.org`** 的，跟脚本自己从哪儿来无关。实测两份
+    //   deployggb.js（www 的 / cdn 的）逐字节相同，里面都写着
+    //   `codebase="https://www.geogebra.org/apps/5.4.920.0/"`。
+    //   → 于是在 index.html 里给 geogebra 加了 `cdn.geogebra.org` 兜底之后，
+    //     **只换脚本等于没换**：脚本能到、板子照样起不来，因为大头还在 www 那台。
+    //     （这正是"改了没生效"的典型：探针看见 deployggb.js 200，就以为修好了。）
+    // ⚠ 版本号**让它自己报**（`getHTML5CodebaseVersion()`，实测当场返回 "5.4.920.0"），
+    //   别在这儿写死 5.4.920.0：GeoGebra 升版本时 deployggb.js 换的正是那个字面量，
+    //   而同一个 deployggb.js 报出来的版本跟它塞进 codebase 的**必然一致**。
+    //   写死的话，将来它升到 5.4.9xx 而我们钉着旧版本号，就成了"脚本新的、引擎旧的"。
+    // ⚠ 走 `setHTML5CodebaseVersion(完整 URL)` 而不是 `setHTML5Codebase(目录)`：
+    //   后者要自己决定 web3d 还是 webSimple（那一档由 appName、有没有 3D/AV 视图等
+    //   一起决定，见 deployggb.js 里 `codebase+="webSimple/"` 那段），抄一份就是第二份真源。
+    //   传完整 URL 时，版本串里带 `//`，deployggb.js 会**原样当 codebase 用**，
+    //   然后再由它自己去接 `web3d/` 或 `webSimple/` —— 分档逻辑始终只有它那一份。
+    try {
+      var 用的源 = (window.SRlib && SRlib.used && SRlib.used['geogebra']) || '';
+      if (用的源.indexOf('cdn.geogebra.org') >= 0 &&
+          typeof app.getHTML5CodebaseVersion === 'function' &&
+          typeof app.setHTML5CodebaseVersion === 'function') {
+        var 版本 = app.getHTML5CodebaseVersion();
+        if (版本 && 版本.indexOf('//') < 0) {
+          app.setHTML5CodebaseVersion('https://cdn.geogebra.org/apps/' + 版本 + '/');
+          log('GeoGebra 脚本走的是 cdn.geogebra.org，codebase 也跟着转到 cdn（' + 版本 + '）');
+        }
+      }
+    } catch (e) { log('转 codebase 那一步没成：' + (e && e.message)); }
     app.inject(containerId);
 
     // ★★ 把**容器自己的高度**也对齐到 applet 的高度（2026-10-02 加，手机实测）。
