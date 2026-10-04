@@ -30,6 +30,20 @@
 //   补上 y 步长 1 之后 1,2,3,…（每 1 一个）。**正是他抱怨的那个症状，跑到纵轴上了。**
 //   图片留在 test/_shot/y-现状NaN.png 与 y-补上1.png。
 //
+// 第五弯：**修完推上去，尺子当场又报红，而线上其实是好的**。因为等待信号选错了：
+//   原来拿「`SR.board.applet()` 上有 `getAllObjectNames`」当"装完机"，
+//   +2s 就开量 —— 那会儿 applet 只是个半装配的壳，`appletOnLoad`（`setDefaultView`
+//   在里面）还没跑：横轴恰好是默认值 1，纵轴还是没配过的 NaN。
+//   **又一次把"还没开机"读成了"报错了"**。等真能读要 +23.9s（`setCacheDisabled`
+//   逼着 GeoGebra 那一大包重下），那时读到的就是 1/1，之后 12 秒一动不动。
+//   治法：等**产品自己**的装完机信号 `SR.board.isReady()`（board.js:1519 `ready = true`
+//   写在 appletOnLoad 里，跟 board.js:1527 的 `setDefaultView()` 同一个同步回调）。
+//   ⚠ 绝不许拿"tickDistance 不是 NaN"当等待条件——那是**待断言的那个量**，断言会恒绿。
+//
+// 第六弯：光靠"它在已经修好的线上是绿的"证明不了它能抓 bug（也可能恒绿）。
+//   所以每一步都**当场做反例**：亲手按老写法 `setAxisSteps(1,1)` 调一次，
+//   纵轴必须读得出 NaN；反例成立，上面的主断言才有意义。
+//
 // ★ 现在这把尺子这么定：
 //   ① 运行时从线上页面读 x/y 两条 tickDistance（活读数，第二弯验过它会动）；
 //   ② 两条都必须是"1" —— NaN 也算红（NaN !== "1"），这样第四弯那个 bug 复发就抓得到；
@@ -88,15 +102,27 @@ function 判(名, ok, 值) {
   //   ⚠ 必须**自带括号**：句柄表达式结尾是 `||null`，直接接 `.方法()` 会被 `||`
   //     抢走优先级、静默什么都不做（2026-10-04 在这把尺子的"还原"那行上真栽过一次）。
   const 句柄 = "((window.SR&&SR.board&&SR.board.applet&&SR.board.applet())||null)";
+  // ★ 第五弯（2026-10-04 推完之后当场又栽的）：等信号的选错，红就成了假的。
+  //   我原来拿「`SR.board.applet()` 上有 `getAllObjectNames`」当"装完机"，
+  //   于是 +2s 就开量——可那会儿 applet 只是个**半装配**的壳，`appletOnLoad`
+  //   （`setDefaultView` 在里面）还没跑：横轴恰好是默认值 1，纵轴还是没配过的 NaN。
+  //   线上**已经修好**了，尺子却报"线上纵轴 NaN"——又一次把"还没开机"读成"报错了"。
+  //   实测：等真能读（+23.9s，`setCacheDisabled` 逼着 GeoGebra 那一大包重下）时，
+  //   读到的就是 1/1，之后 12 秒一动不动。
+  //   治法：等**产品自己**的装完机信号 `SR.board.isReady()`——
+  //   它写在 `appletOnLoad` 里（board.js:1519 `ready = true`），跟 `setDefaultView()`
+  //   （board.js:1527）同一个同步回调，所以外部轮询只可能在两件事都做完之后才看见它。
+  //   ⚠ 绝不许拿"tickDistance 不是 NaN"当等待条件——那是**待断言的那个量**，
+  //     拿它等待＝断言恒绿。
   let 到了 = false;
-  for (let i = 0; i < 90; i++) {
-    const g = await ev("(function(){try{return !!(" + 句柄 + "&&" + 句柄 + ".getAllObjectNames);}catch(e){return false;}})()");
-    if (g === true) { 到了 = true; console.log('  · 产品的板子到场：+' + (i + 1) + 's'); break; }
+  for (let i = 0; i < 120; i++) {
+    const g = await ev("(function(){try{return !!(window.SR&&SR.board&&SR.board.isReady&&SR.board.isReady());}catch(e){return false;}})()");
+    if (g === true) { 到了 = true; console.log('  · 产品报"装完机了"（SR.board.isReady）：+' + (i + 1) + 's'); break; }
     await sleep(1000);
   }
-  判('线上板子起来了（SR.board.applet() 有方法）', 到了);
+  判('线上板子装完机了（SR.board.isReady() 为真）', 到了);
   if (!到了) { ws.close(); await put('/json/close/' + t.id); process.exit(2); }
-  await sleep(2500);   // 让 appletOnLoad 跑完（setDefaultView 在里面）
+  await sleep(400);
 
   // ── ①② 两条轴的刻度间距（主断言） ────────────────────────────────────
   const 读刻度 = "(function(){try{var x=String(" + 句柄 + ".getXML());"
@@ -110,10 +136,25 @@ function 判(名, ok, 值) {
   const 每单位 = 甲.scale;
   console.log('  · 线上每单位 ' + 每单位.toFixed(2) + ' 像素');
 
-  // ── ③ 正控：三参改写必须读得出变化（不是恒读 1） ─────────────────────
+  // ── ③ 反例：亲手把老写法复现一遍，证明上面那条断言**看得见**这个 bug ────
+  //   为什么非做不可：上面"纵轴 = 1"那条，光看它在**已经修好的**线上是绿的，
+  //   证明不了它能抓到 bug —— 它可能无论怎样都报绿。而且"当时线上是红的"是
+  //   一次性记忆，修完就没了，下次谁也不敢再信这条尺子。
+  //   所以每次跑都**当场**把 `setAxisSteps(1,1)`（老代码那个两参写法）调一次，
+  //   它必须把纵轴写成 NaN —— 反例成立了，主断言才有意义。
+  const 设 = a => ev("(function(){try{" + 句柄 + ".setAxisSteps(" + a + ");}catch(e){}return 1;})()");
+  await 设('1,1'); await sleep(600);
+  const 反 = await ev(读刻度);
+  判('★ 反例：按老写法 setAxisSteps(1,1) 调一次，纵轴**必须**读得出 NaN（证明主断言看得见这个 bug）',
+    反 && 反.y轴 === 'NaN', 反 && { x轴: 反.x轴, y轴: 反.y轴 });
+  await 设('1,1,1'); await sleep(600);
+  const 复 = await ev(读刻度);
+  判('★ 还原成三参 (1,1,1) 之后又回到 1/1（不把反例留在页面上）',
+    复 && 复.x轴 === '1' && 复.y轴 === '1', 复 && { x轴: 复.x轴, y轴: 复.y轴 });
+
+  // ── ③b 正控：三参改写必须读得出变化（不是恒读 1） ─────────────────────
   //   ⚠ 第一版这里是 `setAxisSteps(2,2)` —— 少一个参数、第一个还填成了视图号，
   //     语法不报错、行为静默无效，于是正控"红了"，被我误判成"读数不活"。
-  const 设 = a => ev("(function(){try{" + 句柄 + ".setAxisSteps(" + a + ");}catch(e){}return 1;})()");
   await 设('1,3,3'); await sleep(600);
   const 乙 = await ev(读刻度);
   判('★ 正控：三参改成 (1,3,3) 之后读得出 3（不是恒读 1）', 乙 && 乙.x轴 === '3' && 乙.y轴 === '3', 乙 && { x轴: 乙.x轴, y轴: 乙.y轴 });
