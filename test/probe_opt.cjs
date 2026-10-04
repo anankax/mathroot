@@ -65,6 +65,21 @@ function 注(s) { 出.push('  · ' + s); }
     + "geogebra:typeof window.GGBApplet})");
   const 齐了 = o => !!o && Object.keys(o).every(k => o[k] && o[k] !== 'undefined');
 
+  // ★★ 2026-10-04：`等开机` 等的是**页面**（`SR.main` + `#works` 有孩子），
+  //   而 `#works` 那几张卡是 landing.js（本地 defer 脚本）画的，**比 CDN 上的库早得多**。
+  //   这条网实测：8 秒看门狗先把门开了、`GGBApplet` 要 19 秒才到。于是 2-③ 那一段
+  //   在"页面开了、库还没来"的当口就去读基准，六个全局全是 undefined ——
+  //   红的样子跟"三源兜底坏了"一模一样，其实是我**量早了**。
+  //   （probe_live.cjs 顶上早就记过同一句：**要等的是库本身，不是页面**。）
+  //   所以这里补一个**等库**：它等的就是下面那条断言要量的东西。
+  async function 等库(限) {
+    for (let i = 0; i < (限 || 120); i++) {
+      if (齐了(await 库在())) return true;
+      await sleep(500);
+    }
+    return false;
+  }
+
   async function 硬载(url) {
     await send('Network.setCacheDisabled', { cacheDisabled: true });
     await send('Page.navigate', { url: url + (url.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now() });
@@ -244,12 +259,14 @@ function 注(s) { 出.push('  · ' + s); }
     // ============================================================
     // 先留一份"没断源"的读数当基准：下面那条红验要拿它来对照，证明
     // "全断"那一次读到的缺席是**断源造成的**，不是这个页面上本来就少东西。
+    const 基准齐 = await 等库(120);          // ← 先等库**真的到齐**，再取基准
     const 基准库 = await 库在();
-    判('（基准）没断源时六个全局都在', 齐了(基准库), JSON.stringify(基准库));
+    判('（基准）没断源时六个全局都在', 基准齐 && 齐了(基准库), JSON.stringify(基准库));
 
     await send('Network.setBlockedURLs', { urls: ['*jsdelivr*'] });
     await 硬载(本地);
     const 断源开机 = await 等开机(80);
+    await 等库(120);                          // ← 备用源也可能慢，等它真到
     const 断源库 = await 库在();
     判('断了 jsdelivr，页面照常开机', 断源开机 === true);
     判('六份库全部从备用源补齐（量的是真全局，不是 SRlib.ready 那个落定集）', 齐了(断源库), JSON.stringify(断源库));
@@ -267,9 +284,14 @@ function 注(s) { 出.push('  · ' + s); }
     await send('Network.setBlockedURLs', { urls: ['*jsdelivr*', '*unpkg*', '*bootcdn*', '*geogebra*', '*fontsource*', '*cdnjs*', '*jsdelivr.net*'] });
     await 硬载(本地);
     const 全断开机 = await 等开机(100);
+    // ★ 这里**不能**用 等库 等它齐——全断之下它永远不齐，等着就是干等到天荒地老。
+    //   要证明的是"等了够久它一直没齐"，不是"等到某一刻它没齐"。
+    //   等满 40 秒（比这条网实测的 19 秒到齐多一倍余量），全程盯着有没有齐过。
+    let 全断齐过 = false;
+    for (let i = 0; i < 80; i++) { if (齐了(await 库在())) { 全断齐过 = true; break; } await sleep(500); }
     const 全断库 = await 库在();
-    判('★红：故障确实生效了 —— 三源全断时那几个全局**真的缺席了**', !齐了(全断库),
-      JSON.stringify(全断库) + '（基准那一次是全在）');
+    判('★红：故障确实生效了 —— 三源全断时那几个全局**真的缺席了**', !全断齐过 && !齐了(全断库),
+      JSON.stringify(全断库) + '（等了 40 秒，基准那一次是全在）');
     判('★红：库全断了，页面**照样开得起来**（8 秒看门狗兜住了，不是白屏等死）', 全断开机 === true);
     const 缺的 = await ev("(window.SRlib&&SRlib.ready)?'有SRlib':'没有SRlib'");
     注('全断时：' + JSON.stringify(全断库) + ' / ' + 缺的
@@ -277,7 +299,7 @@ function 注(s) { 出.push('  · ' + s); }
     await send('Network.setBlockedURLs', { urls: [] });
     await 硬载(本地);
     await 等开机(80);
-    判('松开屏蔽之后六个全局又回来了', 齐了(await 库在()));
+    判('松开屏蔽之后六个全局又回来了', await 等库(120), JSON.stringify(await 库在()));
 
     // ============================================================
     段('【3】投影 —— 一屏一节的大字视图');

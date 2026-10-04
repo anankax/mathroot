@@ -142,6 +142,35 @@ function closeTab(tid) {
   //   （老师点一块、或者说一句话，landing 调的就是它）。
   //   ⚠ 别图省事自己 `removeAttribute('data-landing')` 冒充过去——那等于绕开产品的手，
   //     hide() 哪天真坏了，我这边照样一片绿。
+  //
+  // ★★ 2026-10-04：B0 的前提是**首屏正亮着**，而这一条只有在"memo 是空的"时才成立——
+  //   `landing.init()` 里写死了：memo 里已经有条目就**根本不建首屏**
+  //   （js/landing.js:495，理由是刷新回来不能拿首屏盖住刚恢复的那场对话，那是 D1 那一族）。
+  //   探针 profile（test/_chrome）里**留着上一趟的对话**，所以 B0 读到 `up:false`：
+  //   **读数是对的，量到的却不是产品**，是"我这个 profile 不干净"。
+  //   跟"扫描器量到的数字没错、错的是它量的那个东西"是同一族。
+  //   治法是把前提**做出来**，不是把断言放宽：存一份 memo 原文 → 清掉 → 重开一页
+  //   （这一下首屏真会亮）→ 再量 B0。跑完把原文写回去，**不用 clear() 抹别人的东西**。
+  const MEMO_KEY = 'mathroot_memo';
+  const memo_起先 = await q('(function(){try{return localStorage.getItem(' + JSON.stringify(MEMO_KEY) + ')}catch(e){return null}})()');
+  const memo_条数 = await q('(function(){try{return (SR.memo&&SR.memo.log&&SR.memo.log().length)||0}catch(e){return -1}})()');
+  if (memo_条数 > 0) {
+    // ★★ 第一版这里写的是 `localStorage.removeItem(...)`——**不管用**，
+    //   重开一页首屏照样不亮。因为 memo 那份数据有**两个朝向**：
+    //   `mem` 是内存里的这一份，localStorage 是落盘的那一份；而
+    //   `window.addEventListener('pagehide', …writeNow())` 会在**离开这一页时**
+    //   把内存里那份**再写回盘上**（js/memo.js:440）。
+    //   于是"抹掉盘上的键 → 跳走"正好把抹掉的那一下填了回来。
+    //   要用产品自己那个 `clear()`：它把内存和盘两处**一起**清了（js/memo.js:326）。
+    //   （同族：探针写的假环境能不能跨导航活下来，取决于它存在哪儿、谁在什么时候回写。）
+    await q('(function(){try{if(SR.memo&&SR.memo.clear)SR.memo.clear();'
+      + 'else localStorage.removeItem(' + JSON.stringify(MEMO_KEY) + ');}catch(e){}return 1})()');
+    await send('Page.navigate', { url: PAGE });
+    for (let i = 0; i < 40; i++) { if (await q('!!(window.SR&&SR.chat&&SR.landing)')) break; await wait(500); }
+    await wait(800);
+    console.log('  （开工前 memo 里躺着 ' + memo_条数 + ' 条，先重开一页做"刚进来"那一屏——'
+              + 'memo 非空时首屏**本来就不该**出现，不重开就量不到 B0，只会量到我自己没收拾干净。）');
+  }
   const land = await q('(function(){var up=document.body.getAttribute("data-landing")==="1";'
     + 'var sd=document.querySelector(".side");'
     + 'var seen=!!sd && sd.getClientRects().length>0;'
@@ -265,6 +294,15 @@ function closeTab(tid) {
   const badgeShown = await q('(document.getElementById("badge")||{}).textContent||""');
   ok('★ 对照：当前工位的说明文字有内容（空页也能让上面几条"通过"）',
      String(badgeShown).trim().length > 0, badgeShown);
+
+  // ★ 收尾：把开工时那份 memo 原文写回去（只在真的清过时才写）。
+  //   写回**原文**，不用 clear()——clear() 会连这一趟之前可能存在的东西一起抹掉，
+  //   那是"写用户状态却不还原"那一族。不是字符串就说明本来就没有，那就保持没有。
+  if (memo_条数 > 0 && typeof memo_起先 === 'string') {
+    const 回 = await q('(function(){try{localStorage.setItem(' + JSON.stringify(MEMO_KEY) + ','
+      + JSON.stringify(memo_起先) + ');return localStorage.getItem(' + JSON.stringify(MEMO_KEY) + ').length}catch(e){return -1}})()');
+    console.log('\n（已把开工前那份 memo 原样写回：' + 回 + ' 字节）');
+  }
 
   console.log('\n结果：' + PASS + ' 通过, ' + FAIL + ' 失败');
   await closeTab(t.id); ws.close();
