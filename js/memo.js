@@ -50,8 +50,19 @@ SR.memo = (function () {
     material: { k: 'paper', one: '卷子', unit: '份' },
     prep:     { k: 'chain', one: '链',   unit: '节' }
   };
-  // 摆出来的顺序 = 工位那一行的顺序（跟 config.js 的 SR.WORK_ORDER 一致，不另立一套）
-  var ORDER = ['material', 'draw', 'prep', 'vary'];
+  // 摆出来的顺序 = 工位那一行的顺序。
+  // ★★ 2026-10-04：原来这儿是一张**写死的、独立的**表 `['material','draw','prep','vary']`，
+  //   上面那句注释却写着"跟 config.js 的 SR.WORK_ORDER 一致，不另立一套"——**注释是假话**：
+  //   它就是另立了一套，而且是**旧的那一套**（组卷打头）。
+  //   症状：一屏里两套序——工位按钮是 备课 作图 命题 组卷，口袋那行读出来是
+  //   「口袋：卷子 1 份 · 图 2 张 · 链 5 节 · 题 3 道」。**两边都"看着正常"**，
+  //   只有把两串并排读才看得见（判据见 test/_chk14c.cjs）。
+  //   现在直接读 SR.WORK_ORDER。config.js（index.html:180）在 memo.js（:250）之前装，拿得到。
+  // ★ 筛掉没有 SAY 的工位（grade／review 不往口袋里放东西，SAY 里本来就没它们）。
+  //   ⚠ 筛空了退回 SAY 自己的顺序：宁可排得不对，也不要空白一行
+  //   （同 js/main.js 的 paintWorks 那条规矩）。
+  var ORDER = (SR.WORK_ORDER || []).filter(function (w) { return !!SAY[w]; });
+  if (!ORDER.length) ORDER = Object.keys(SAY);
 
   var mem = null;
   var timer = 0;
