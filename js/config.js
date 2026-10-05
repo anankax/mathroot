@@ -219,6 +219,66 @@ SR.HARD_CAP = 240000;               // 全程硬顶
 //                               不带图／带图都走 models（glm-4v-flash 打头，实测出图 6/6）。
 //                               ★ 例外（2026-10-04）：工位自己带 textHead 时，**不带图那一轮**
 //                                 走 modelsText。目前只有画图开——见 SR.WORKS.draw 里那段。
+// ★★ 2026-10-05：**这一轮要用的料——所有工位共用一个口子。**
+//
+// 孔老师问的原话：「为什么三角尺那个只在作图工位的页面，不是全部通用的工具栏呢。
+//   …难道点了工位以后是不一样的页面？就不能让它们都是对话框的同一个页面么。」
+//
+// ★ 他说的对，而且**本来就是这样**：六个工位不改页面、不改对话，只改"这一轮告诉
+//   模型它是谁"（六段 system）。对话记录、画板、口袋全是同一份，切工位不清空。
+//   所以左侧工具栏里挂的东西，**没有理由只有某一个工位收得到**。
+//
+// ⚠ 改之前的样子（**这就是"📐只在作图能用"的真正原因**，不只是 css 卡着）：
+//   料是挂在**每个工位自己的 `extra` 上**的——组卷挂 `SR.material.slotBrief`，
+//   作图挂 `SR.DRAWT.骨架简报`，另外四个**压根没有 `extra` 这个字段**。
+//   于是把 📐 在别的工位露出来，它会**打开、能填、点了「画」——然后什么也不发**，
+//   因为那个工位的 system 里没有这个口子。这种"点了没反应"最难查：
+//   界面一切正常，只有模型那边少了一段话。
+//   ⇒ 所以这一刀不是"把按钮的卡子去掉"，是**给六个工位一个共同的收料口**。
+//
+// ★ 以后往工具栏加新工具：在下面**多写一格**就行，不用再回来改六处 `extra`。
+//   （同族：index.html 里那条栏的注释说"往里加一件工具只要多写一颗按钮"——
+//     那说的是"露不露"；这里说的是"发了算不算数"。两件事，都要有。）
+//
+// ★★ **每件料自己声明给哪些工位**（`工位: '*'` = 全都给；写工位 id = 只给那几个）。
+//   ⚠ 这一格不能省：第一版我写的是"六个工位收所有料"，跑出来**组卷那份
+//     "格式号表"跟着进了备课那一轮**（实测 663 个字）。那份表说的是"这所学校的
+//     卷子长什么样"，只有组卷用得上；塞进备课就是纯噪音，还会把模型带跑。
+//     ⇒ 一件料的范围 = 它**本来**的范围。作图骨架原来就只挂在作图，
+//       可孔老师要的是"工具栏通用"，所以它 `'*'`；组卷那张表原来只挂组卷，
+//       就该**还是只挂组卷**——这一刀改的是"按钮在不在"，不是"料发给谁"。
+//   ★ 判据：`this` 就是那个工位对象（api.js:287 是 `w.extra()` 调的），
+//     所以 `this.id` 现成。⚠ 别改成从全局读当前工位：`extra` 一轮可能被调两次，
+//     而"当前工位"是个会变的量，读它等于把两件事绑在一起。
+//
+// ⚠ `SR.DRAWT.收()` 仍然挂在每轮收尾（js/chat.js 的 submit 末尾），**没动**：
+//   `extra` 一轮可能被调两次（重试），在 extra 里清会把重试那一次的骨架弄丢。
+SR.料源 = {
+  // 作图模板的骨架 —— **六个工位都收**（孔老师：工具栏是通用的）
+  作图: {
+    工位: '*',
+    取: function () { return window.SR.DRAWT ? SR.DRAWT.骨架简报() : ''; }
+  },
+  // 组卷那份"格式号表" —— **只有组卷收**（原来就是这样，别顺手放宽）
+  组卷: {
+    工位: 'material',
+    取: function () { return window.SR.material ? SR.material.slotBrief() : ''; }
+  }
+};
+
+SR.料 = function () {
+  var w = (this && this.id) || '';
+  var a = [];
+  for (var k in SR.料源) {
+    var x = SR.料源[k];
+    if (x.工位 !== '*' && String(x.工位).split(/\s+/).indexOf(w) < 0) continue;
+    var s = '';
+    try { s = x.取() || ''; } catch (e) { s = ''; }   // 一件料坏了不该拖垮整轮
+    if (s) a.push(s);
+  }
+  return a.join('\n\n');
+};
+
 SR.WORKS = {
   // ★★ 第五轮（2026-10-01 夜）加的第一个工位，也是这一版的主线。
   //   **模板是这个老师自己上传的**——换一所学校 = 换一份上传的文件，代码一行不动。
@@ -232,12 +292,21 @@ SR.WORKS = {
     // ★ extra：**每轮现拼**的一段 system（api.js 的 buildSystem 会接在提示词后面）。
     //   出材料挂的是"老师这份模板认出来的格式号表"——它随模板变，写不进常量提示词。
     //   换一所学校 = 换一份上传的文件 = 这张表自己变，代码一行不动。
-    extra: function () { return window.SR.material ? SR.material.slotBrief() : ''; },
+    // ★ 2026-10-05：**改成共用口 `SR.料`**（定义在 SR.WORKS 上面，理由写在那儿）。
+    //   它收的东西里就有这一格原来那份 slotBrief，行为没变；
+    //   变的是它**现在也收工具栏里挂的别的料**（比如作图模板的骨架）。
+    extra: SR.料,
     retrieve: false, tail: false, listPaper: false, stripAssign: true, chain: 'role'
   },
   draw: {
     id: 'draw', label: '作图', badge: '平面立体同一块板 · 存图贴进课件',
     prompt: function () { return window.SR.PROMPT_DRAW; },
+    // ★ extra（2026-10-05）：作图模板的骨架走**共用口 `SR.料`**。
+    //   ⚠ 原来这儿挂的是 `SR.DRAWT.骨架简报` **只挂在这一个工位**——
+    //     这就是"📐 只在作图能用"的根子（详见 SR.料 上面那段）。现在六个工位都收。
+    //   ⚠ `收()` 挂在每轮收尾（chat.js 的 submit 末尾）而不是挂在 extra 里 ——
+    //     extra 一轮可能被调两次（重试），在那儿清会把重试那一次的骨架弄丢。
+    extra: SR.料,
     retrieve: false, tail: false, listPaper: false, stripAssign: false, chain: 'board',
     // ★★ textHead（2026-10-04）：**不带图那一轮**改走 modelsText（glm-4-flash-250414 打头）。
     //   为什么：孔老师截图那次走的就是默认免费通道，glm-4v-flash 在瞎问上**每次都照样出图**
@@ -286,6 +355,8 @@ SR.WORKS = {
     id: 'prep', label: '备课', badge: '学生怎么答 · 你接哪一句',
     prompt: function () { return window.SR.PROMPT_PREP; },
     lean: function () { return window.SR.PROMPT_PREP_LEAN; },
+    // ★ 2026-10-05：原来**没有这一行**——所以工具栏里的东西在这一格发不出去。
+    extra: SR.料,
     retrieve: true, tail: true, chainStart: true, listPaper: false,
     stripAssign: true, chain: 'role', steps: true, copy: true
   },
@@ -299,6 +370,7 @@ SR.WORKS = {
     //     （每个围栏头一行都是 #清空，连着画等于前两张刚出来就被擦掉）。
     //     哪天多页这条路彻底稳了，这个标记就该删掉——留着它就是留一条会漂的旧规矩。
     multiFig: true,
+    extra: SR.料,   // ★ 2026-10-05 补：原来没有这一行（同上）
     retrieve: false, tail: false, listPaper: false, stripAssign: false, chain: 'board'
   },
   // ★★ 学情（2026-10-02 补上，模拟稿第⑤张的第六步）。
@@ -313,6 +385,7 @@ SR.WORKS = {
   grade: {
     id: 'grade', label: '学情', badge: '拖成绩表进来 · 先讲哪三道',
     prompt: function () { return window.SR.PROMPT_GRADE; },
+    extra: SR.料,   // ★ 2026-10-05 补：原来没有这一行（同上）
     retrieve: false, tail: false, listPaper: false, stripAssign: false, chain: 'role'
   },
   // ★ 讲评跟备课共用一份提示词（讲评是备课的一个阶段，不是另一个职责）。
@@ -322,6 +395,7 @@ SR.WORKS = {
     id: 'review', label: '讲评', badge: '先列题号 · 定一道再展开',
     prompt: function () { return window.SR.PROMPT_PREP; },
     lean: function () { return window.SR.PROMPT_PREP_LEAN; },
+    extra: SR.料,   // ★ 2026-10-05 补：原来没有这一行（同上）
     retrieve: true, tail: true, chainStart: true, listPaper: true,
     stripAssign: true, chain: 'role', steps: true, copy: true
   }

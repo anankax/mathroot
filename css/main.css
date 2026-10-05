@@ -337,7 +337,21 @@ header {
      牌子改成了白底绿字（见 .brand .plate），编号、角标、连接点用的是绿但面积极小。
    ★ 出图那两个工位（画图／出题）例外：那一格填的是苔绿（--alt），
      整页也跟着换一档色。四个工位里就这两个"出东西"，配色把这条界线画出来。 */
-.works, .backs, .viewsw {
+/* ★★ 2026-10-05：这三样原来共用一套壳（凹槽底 + 外框 + 格间竖线），
+   于是它们看着像同一种东西——其实不是：
+     · `.works`（六个工位）／`.viewsw` 是**一条路**：你顺着走，走到哪一格。
+     · `.backs`（免费通道／我的 Key）是**一个开关**：两边二选一。
+   路该像路，开关该像开关。所以壳拆成两套：
+     路 —— 不要壳，靠**一根 3px 的条子**指出"现在在哪一格"（跟首屏那六行同一套语言，
+           竖排时条子在左边，横排时在底下）。
+     开关 —— 留着凹槽底子（凹槽本来就是"这是一组开关"的样子），选中的那一格浮起来。
+   ⚠ 别再把这两样合并回一条规则：合并的那一刻，"路"和"开关"又长得一样了，
+     而这正是这一版要修的东西。 */
+.works, .viewsw {
+  display: flex; flex: 0 0 auto; gap: 0;
+  background: transparent; border: 0;
+}
+.backs {
   display: flex; flex: 0 0 auto; gap: 0;
   background: var(--sunken); border: 1px solid var(--line);
 }
@@ -345,17 +359,28 @@ header {
   border: 0; background: transparent; font: inherit; cursor: pointer;
   color: var(--ink-2); white-space: nowrap;
 }
-.workbtn { font-size: 14px; padding: 8px 17px; }
+.workbtn { font-size: 14px; padding: 8px 17px 6px; border-bottom: 3px solid transparent; }
 .backbtn { font-size: 13px; padding: 7px 13px; }
 .viewbtn { font-size: 13px; padding: 5px 13px; }
-/* 格与格之间一道竖线，不是靠间距分开——间距会被窗口宽度拉变形，线不会 */
-.workbtn + .workbtn, .backbtn + .backbtn, .viewbtn + .viewbtn { border-left: 1px solid var(--line); }
+/* 格与格之间一道竖线，不是靠间距分开——间距会被窗口宽度拉变形，线不会。
+   ★ 只剩"开关"那一组要竖线了：路那一排没有壳，再画竖线就是在给空气画框。 */
+.backbtn + .backbtn { border-left: 1px solid var(--line); }
 
-.workbtn.on, .backbtn.on, .viewbtn.on {
-  background: var(--ink); color: #fff; font-weight: 700;
+/* ★★ 2026-10-05：选中态不再**填满**。原来填的是近黑（--ink: #0d1913），
+   一屏灰绿纸里那一块是整页最重的一笔；孔老师原话
+   「备课的为啥是黑色的……不好看，组卷学情讲评也全是黑色」。
+   ★ 而且原先还分两档——作图／命题填苔绿（--alt）。那条界线想说的是
+     "这四个里就这俩出东西"，可是**读不出来**：不知道这个设定的人只看见
+     "有的黑有的绿，说不清为什么"。一个需要注释才看得懂的差别，就不算差别。
+   现在两档合并成一条：**主色那根条子**；作图／命题仍然是苔绿那一档，
+   但用的是同一个形状（只是换了颜色），所以"它们俩不一样"这件事还看得见。 */
+.workbtn.on, .viewbtn.on {
+  background: transparent; color: var(--brand-deep); font-weight: 700;
+  border-bottom-color: var(--brand);
 }
 body[data-work="draw"] .workbtn.on,
-body[data-work="vary"] .workbtn.on { background: var(--alt); }
+body[data-work="vary"] .workbtn.on { color: var(--alt-dark); border-bottom-color: var(--alt); }
+.backbtn.on { background: var(--panel); color: var(--brand-deep); font-weight: 700; }
 
 /* 通道那两格带状态点：白＝在用，砖红＝这条走不通 */
 .backbtn .dot {
@@ -370,22 +395,18 @@ body[data-work="vary"] .workbtn.on { background: var(--alt); }
 /* 小号大写字距标签——那篇里说"中英结合总能够比较好看，多用于装饰"。
    ★ 字距 2.4px 是好几个字符的时候才好看；只有一两个字（比如"关于"）拉这么开
      就散了，所以按钮上的中文不动字距（见 .tool）。 */
-/* ★ 2026-10-02：这句话（"当前这一格是干什么的"）从左栏搬到了**中栏栏头**，
-   紧跟「对话」两字。它说的就是"这一栏在办哪件事"，贴着栏头比挂在左栏底下近得多——
-   左栏在的时候它离工位按钮近、离对话栏远，老师在中间栏打字，那句说明在屏幕另一头。
-   ★ 左边那道 2px 竖线留着（原来就靠它跟按钮分开）：现在它分开的是栏头这块铭牌
-     和这句注脚，同一个用途。 */
-#badge {
-  font-family: var(--mono); font-size: 11px; color: var(--ink-3); flex: 0 0 auto;
-  letter-spacing: 1.4px; border-left: 2px solid var(--rule); padding-left: 11px;
-}
-/* 栏头里的这句注脚：`.colhead span` 那条会给它 15px/右边距，字号由 #badge 的 ID 压住，
-   但**长句不能撑破栏头**——窄屏上 badge 有的句子不短（"套你学校的模板 · 打开就能印"），
-   给它一个省略号，宁可截断也不要挤掉「对话」或者换行把栏头顶高。 */
-.colhead .colhint {
-  margin-left: 0; margin-right: 0; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
+/* ★★ 2026-10-05：`#badge`（栏头「对话」右边那句"当前这一格是干什么的"）**整个删了**。
+   孔老师原话：「对话以外的这些文字加了干什么啊，按下面工位的按钮的时候这些字体的
+   变化直接破坏了页面的感觉了。也没啥用。」
+   ★ 他说得对。那句话是同一句话的**第三次出现**：首屏六行右边一次、工位按钮的 title
+     一次、栏头又一次。而老师刚按完那个按钮，不需要栏头再把同一句话念一遍——
+     更要紧的是它**跟着工位变**，一按按钮那行字就跳一下，一屏安静的东西里唯一在动的是它。
+   ⚠ 删的时候连着三处一起删的，少一处就剩一具空壳（或一条指向空元素的规则）：
+       · index.html 栏头那个 `<span class="colhint" id="badge">`
+       · js/main.js 的 applyWork 里写它 textContent 的那两行
+       · 这里这一整段 css
+   ⚠ 三条探针在量它非空（probe_labels / probe_flow_panel / probe_tplrow），
+     同一天一起改了——不改的话它们会报红，而红的样子跟"产品坏了"长得一样。 */
 
 /* 通用按钮。★ 悬停时右下角冒出一小段角线——那篇讲"交互时的强调方式"，
    角线比变色更省、比阴影更清楚，而且跟面板四角的角标是同一套语言。
@@ -448,8 +469,16 @@ main {
    ⚠ 首屏那一屏不再单列规则（2026-10-03 已删，理由见下面那段注释），跟着这条走。 */
 main > .col { max-width: 1000px; margin: 0 auto; width: 100%; }
 
+/* ★★ 2026-10-05「不要边界感」第一刀：`.col` 原来是**一整块白卡 + 一圈线**
+   （`background: var(--panel); border: 1px solid var(--line)`）。
+   孔老师看线上站的时候说的是"不要边界感"——整个页面本来是一张方格纸，
+   对话栏偏偏在上面又铺了一块白板、还描了一圈边，看着是"贴在纸上的一个框"，
+   不是"纸上写的东西"。
+   ★ 撤掉之后对话直接落在纸上，跟首屏那六行、跟画板是同一个底。
+   ★ 只撤这两样，`display:flex / overflow:hidden` 一个字不能动：
+     它们是"栏头钉住、中间滚动、输入条钉底"那套骨架，跟长相无关。
+     （同族：给 `overflow` 去掉，`#msgs` 的滚动会顶破整页。） */
 .col {
-  background: var(--panel); border: 1px solid var(--line);
   min-height: 0; display: flex; flex-direction: column; overflow: hidden;
 }
 
@@ -466,9 +495,20 @@ main > .col { max-width: 1000px; margin: 0 auto; width: 100%; }
      （原话"那个 02 03 的标签搞了干啥……搞什么英文在那干啥"）。编号是我从面板铭牌
      那套抄来的，可**这是一排按钮，不是铭牌**：菜单项前面挂"01/02"，
      读者得多认一层，什么也没换到。真要分组，用线分，别用字。 */
+/* ★★ 2026-10-05：**这里原来有 `border: 1px solid var(--line); background: var(--sunken);`**
+   ——一条凹槽 + 一圈线。撤掉了。
+   ★ 为什么非撤不可：上面给 `.works / .viewsw` 写了一套"没有壳"的规则，**它们在这条上面
+     压根没生效**——这个元素是 `class="works stretch"`，`.works.stretch`（两个类）
+     比 `.works`（一个类）**权重高**，所以我改的那份是死代码。
+     拆壳那一下，写是写了，**页面上一点没动**；是量出来的（实算底 = rgb(216,229,221)，
+     框 = 1px），不是看出来的。
+   ⚠ 留这条记录，是因为这种"改了、也没报错、就是没生效"最容易被当成"改好了"：
+     下一个人再看见 `.works { background: transparent }` 会以为工位行是素的。
+   ★ 撤掉之后这一行跟通道那两个开关（`.backs`，**留着**凹槽 + 白片）就长得不一样了：
+     一条路摊在白底上，一个开关嵌在槽里。这正是那套壳**该拆开**的理由（见文件上头那段）。
+   ★ 只留布局：六格等分、四周留白。 */
 .works.stretch {
   flex: 0 0 auto; margin: 8px 14px 12px;
-  border: 1px solid var(--line); background: var(--sunken);
 }
 .works.stretch .workbtn {
   flex: 1 1 0; min-width: 0;
@@ -502,8 +542,12 @@ main > .col { max-width: 1000px; margin: 0 auto; width: 100%; }
   background: transparent;
 }
 .works.stretch .workbtn.has::before { background: var(--brand); }
-/* 当前这一格底色是近黑的，墨绿那点在上面太暗，换成白的才读得出来 */
-.works.stretch .workbtn.on.has::before { background: #fff; }
+/* ★★ 2026-10-05：这一条原来是 `background: #fff`，注释写着"当前这一格底色是近黑的，
+   墨绿那点在上面太暗，换成白的才读得出来"。**底色不再是近黑的了**——
+   那天把选中态从"一块黑底"改成"一条 3px 底边"，却没回来撤这一条：
+   白点落在纸上是**看不见的**（它自己就是底色的颜色）。
+   这不是"设计取舍"，是上一个改动漏掉的下游——所以现在跟着选中态一起走 `--brand`。 */
+.works.stretch .workbtn.on.has::before { background: var(--brand); }
 
 /* ---------- 顶栏那一排小图标（原左栏「我的」那四个） ---------- */
 /* ★ 2026-10-02：左栏撤掉之后它们搬到顶栏。不写字、只放图标——
@@ -547,12 +591,20 @@ main > .col { max-width: 1000px; margin: 0 auto; width: 100%; }
 .drawer {
   position: fixed; inset: 0 0 0 auto; width: min(520px, 42vw);
   display: flex; flex-direction: column; gap: 0;
-  background: var(--panel); border-left: 1px solid var(--line);
-  box-shadow: -18px 0 44px rgba(0, 0, 0, .16);
+  background: var(--panel);
   transform: translateX(calc(100% + 24px)); visibility: hidden;
   pointer-events: none; z-index: 30;
   transition: transform .22s ease, visibility .22s;
 }
+/* ★★ 2026-10-05 去边界感：原来这里还有 `border-left: 1px solid var(--line)` 和
+   `box-shadow: -18px 0 44px rgba(0,0,0,.16)`，两样都撤了。
+   ★ 理由是**它已经不是浮层了**：2026-10-03 起抽屉是**挤压式**的
+     （开着的时候 `main` 让出右边的宽度，见下面 `body[data-drawer="open"] main`），
+     它是"页面多出来的一栏"，不是"飘过来盖在上面的一块板"。
+     既然是并排的一栏，就不该有那条"我压在你上面"的左投阴影，
+     也不该有一条竖线去分——它左边本来就是对话栏自己的留白。
+   ⚠ 这一条别跟 `visibility` 那套过渡分开改：`transform` 还在（滑入滑出），
+     撤的只是"浮层"那两样装饰。 */
 .drawer[data-drawer="open"] { transform: none; visibility: visible; pointer-events: auto; }
 /* ★★ 2026-10-03：抽屉从**覆盖式**改成**挤压式**。
    改的原因是量出来的：1440 的屏上抽屉占 920~1440，而对话列是 270~1170 ——
@@ -568,7 +620,9 @@ main > .col { max-width: 1000px; margin: 0 auto; width: 100%; }
      外边距会把它自己推出视口、横着长出滚动条。
    ⚠ 窄屏（≤620）抽屉改成从底下升起，不吃横向空间，所以那一档不设这个内边距。 */
 @media (min-width: 621px) {
-  main { transition: padding-right .22s ease; }
+  /* ★ 2026-10-05：`padding-left` 也进这条过渡——左边那条工具栏显隐时
+     （切到作图／切走）`main` 的左边距会变，不跟着过渡的话对话栏会"跳"一下。 */
+  main { transition: padding-right .22s ease, padding-left .22s ease; }
   body[data-drawer="open"] main { padding-right: calc(min(520px, 42vw) + 14px); }
 }
 /* 遮罩：点一下关抽屉。★ 只在开着的时候在，关着时 `hidden` 直接摘掉，
@@ -891,25 +945,41 @@ body[data-flow="on"] .flowbox {
      首屏放得下。这是 mock 那一格 `.lblock` 的写法（grid 4.6em / 1fr）。
    ⚠ 按宽度改列数的那两条 media query（900px 两列 / 620px 一列）**一起删了**：
      一列就是一列，跟宽度无关；留着它们只会在窄屏把这条规则悄悄改回去。 */
-.lblocks { display: grid; grid-template-columns: 1fr; gap: 8px; max-width: none; }
+.lblocks { display: grid; grid-template-columns: 1fr; gap: 0; max-width: none; }
+/* ★★ 2026-10-05：**盒子撤了**。原来六行各是一个带框的白块（一圈 border + 左边一道灰条），
+   六个框摞在一起，一屏里就有六个矩形在抢注意力——孔老师原话「六个工位按钮这些
+   放在页面上都很丑」。现在只剩字。
+   ★ "这六个是一组"靠什么看出来？靠**排布**（一列、行距一致、名字那一列对齐），
+     不靠给每一行画框。框的意思是"把东西圈起来"，可这六行本来就住在同一个气泡里，
+     再各画一圈是同一个意思说两遍。
+   ★ 那根 3px 的条子**平时是透明的、位置留着**（border-left: 3px solid transparent）：
+     选中时才染色。要是平时不占位，变色那一刻整行字会往右跳一下。
+   ⚠ 这一版**没动字体**。我先前那份草稿把名字换成了宋体 19px——那是我自己的偏好，
+     跟"撤盒子"是两件事，混在一起你就分不清是哪一个带来的变化。要试的话说一声，
+     改一行就行。 */
 .lblock {
   display: grid; grid-template-columns: 4.6em 1fr; align-items: baseline; column-gap: 12px;
   text-align: left; cursor: pointer;
-  padding: 12px 15px; line-height: 1.4;
-  border: 1px solid var(--line); border-left: 3px solid var(--rule);
-  background: var(--panel); color: var(--ink);
+  padding: 13px 14px; line-height: 1.4;
+  border: 0; border-left: 3px solid transparent;
+  background: transparent; color: var(--ink);
   font-family: inherit; font-size: 15px;
-  transition: border-color .12s, background .12s;
+  transition: border-color .14s, color .14s;
 }
-/* 悬停/选中：左边那道色条走到主色，底子浮到最亮。★ 这套里"交互强调"一律是
+/* 悬停/选中：左边那道色条走到主色，名字跟着沉一档。★ 这套里"交互强调"一律是
    **这根条子变色**，不是投影、不是缩放——那篇第六节讲的"光照变化"落在这儿，
-   就是"被照亮的是条子，不是整块"。 */
-.lblock:hover, .lblock:focus-visible { border-left-color: var(--brand); background: #fff; outline: none; }
-.lblock.on { border-left-color: var(--brand); background: var(--brand-soft); }
+   就是"被照亮的是条子，不是整块"。
+   ⚠ **别给它加 background**：它坐在对话气泡里，而气泡本来就是白的——
+     白底上再铺一层白，是"量得出来、看不出来"（这个坑先前栽过一次）。 */
+.lblock:hover, .lblock:focus-visible { border-left-color: var(--brand); outline: none; }
+.lblock.on { border-left-color: var(--brand); }
+.lblock:hover b, .lblock:focus-visible b, .lblock.on b { color: var(--brand-deep); }
 .lblock b { display: block; font-size: 17px; font-weight: 700; color: var(--ink); }
 /* 那句小字直接取 config 的 badge（"套你学校的模板 · 打开就能印"）。
    ★ 用 var(--ink-3) 不用 ink-2：对面板 ≈5.1:1，是"还能读清"的最后一档，
-     再浅一档就成装饰了——而这句话恰恰是"这五块分别给我什么"的正身。 */
+     再浅一档就成装饰了——而这句话恰恰是"这几块分别给我什么"的正身。
+     （★ 原文写的是"这五块"，2026-10-05 改成"这几块"：加「学情」之后是六块了，
+       件数写死在注释里，加一块那天没人会回来改它。） */
 /* 说明落在名字**右边**（grid 第二列），不在底下——六行一列之后每行宽约 900px，
    名字占 4.6em，说明跟在同一行读着像菜单里的一行。
    ★ `margin-top` 由 5px 改成 0：`align-items: baseline` 已经把它跟名字那条基线对齐了，
@@ -1046,7 +1116,15 @@ body[data-landing="1"] .ghost { display: none; }
   flex: 0 0 auto; display: flex; align-items: center; gap: 0;
   padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--panel);
 }
-.colhead { padding: 9px 14px; }
+/* ★★ 2026-10-05：栏头原来是**白底 + 一条下边线**。跟 `.col` 那块白卡是同一套
+   "框起来"的语言，白卡撤了，这条线就成了一条**悬在半空、什么也不围的横线**——
+   原来它是在给"栏头 / 正文"分界；没有白卡之后，两边的底是同一个纸，
+   这条线只是把「对话」两个字跟下面隔开，而那片留白本来就已经隔开了。
+   ⚠ 只改 `.colhead`，**上面的 `.colhead, .boardbar` 那条共用规则不许动**：
+     `.boardbar`（抽屉里画板顶上那条）是工具栏，该有那条线。
+   ⚠ 写法用 `border-bottom-color` 而不是 `border-bottom: 0`：改颜色不动宽度，
+     不然后面按这条宽度算过位置的东西会整体上移一像素。 */
+.colhead { padding: 9px 14px; border-bottom-color: transparent; background: transparent; }
 .colhead span, .boardbar span { font-size: 15px; margin-right: 10px; }
 
 /* ---------- 左：对话 ---------- */
@@ -1175,16 +1253,22 @@ body[data-work="draw"] .chip:hover,
 body[data-work="vary"] .chip:hover { background: var(--alt-soft); border-color: var(--alt); }
 
 /* ---------- 输入区 ---------- */
+/* ★★ 2026-10-05：原来是"白底 + 一条**横贯整幅**的上边线"。白卡撤掉之后，
+   那条线成了整屏最长的一根横线，横着切在对话底下，最抢眼。
+   ★ 撤线之后输入框得**自己站得住**：它现在坐在方格纸上，
+     所以底下 `#input` 从凹槽色（`--sunken`，那是"嵌进去"的意思）翻成白色——
+     白底在方格纸上就是一块"可以往里写字的地方"，不必再靠那条线去找它。
+   ⚠ 内边距保留：那是给滚到底的最后一条消息留的底边呼吸，跟线无关。 */
 .composer {
   flex: 0 0 auto; display: flex; gap: 9px; align-items: flex-end;
-  padding: 12px 14px; border-top: 1px solid var(--line); background: var(--panel);
+  padding: 12px 14px; border-top-color: transparent; background: transparent;
 }
 
 #input {
   /* min-height 要够放一行（padding 22 + 边框 3 + 行高 25.6 ≈ 51），46 会切掉半个字 */
   flex: 1 1 auto; font: inherit; resize: none; min-height: 51px; max-height: 160px;
   padding: 11px 13px; border: 1.5px solid var(--line);
-  outline: none; line-height: 1.6; background: var(--sunken); color: inherit;
+  outline: none; line-height: 1.6; background: var(--panel); color: inherit;
 }
 /* 聚焦＝"这一格现在归你"。给左边一道粗色条，不用外发光圈——
    光圈是软的东西，跟我们这套硬边语言不是一路。 */
@@ -1210,6 +1294,143 @@ body[data-work="vary"] #send:hover { background: var(--alt-dark); }
   border: 1.5px solid var(--line); background: var(--panel); cursor: pointer;
 }
 #attach:hover { border-color: var(--brand); background: var(--brand-soft); }
+
+/* ── 左侧工具栏（2026-10-05）────────────────────────────────────────────
+   ★ 这里原来是 `.composer` 里那颗 📐 的样式（`display:none` + 只给作图显形）。
+     那颗按钮**搬去左边那条栏**了（`index.html` 的 `#toolrail`），
+     所以这一整段跟着换地方、换长相。
+   ★★ 显隐**不再由 css 管**（原来那条 `body[data-work="draw"] #drawtplbtn` 删了）：
+     现在由 `js/main.js` 的 `paintToolrail()` 照按钮上的 `data-only` 现算，
+     算完给按钮加 `hidden`。这样"加一件工具"不用回来改 css。
+     ⚠ 别把 `display` 写回 `.railtool` 上：作者样式表的 `display` 会盖过
+       浏览器默认的 `[hidden]{display:none}`（默认样式表永远排在后面），
+       于是 `hidden` 加了等于没加，那颗按钮在六个工位上都露着。
+   ★ 这段长相是**全站唯一一处"浮层"**：圆角 + 投影 + 白底。
+     全站别的面板都是方角细线（下面 `#tplp` 那条注释还写着"别加圆角阴影"）——
+     这一条不是漏改，是孔老师点名要的「白色悬浮质感」：它**是**浮层
+     （`position:fixed` 盖在页面上），长得像内容反而会让人以为那儿有内容。
+     ⚠ 别为了"统一"把它改回方角——那就把它变回"一块贴在左边的白板"了。
+   ★ 位置：贴**窗口**左缘、竖直居中，不跟着内容栏走。量过：内容栏在抽屉拉开时
+     左缘从 220 挪到 14，跟着它算会得到 `left = −52`（跑到屏幕外）。
+   ⚠ `[hidden]` 那条**必须写在 `display:flex` 之后**，理由见上面那条。 */
+.toolrail {
+  position: fixed; left: 18px; top: 50%; transform: translateY(-50%); z-index: 40;
+  display: flex; flex-direction: column; gap: 0; padding: 5px;
+  background: var(--panel);
+  border: 1px solid rgba(0, 0, 0, .06); border-radius: 12px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, .13);
+}
+.toolrail[hidden] { display: none; }
+.toolrail .railtool {
+  width: 40px; height: 40px; font-size: 18px; line-height: 1; padding: 0;
+  border: 0; border-radius: 8px; background: transparent; cursor: pointer; color: var(--ink-2);
+}
+.toolrail .railtool:hover { background: var(--alt-soft); color: var(--alt-dark); }
+/* 开着的时候给底：跟 `#input:focus` 一个道理——"这一格现在归你"。
+   ★ 作图工位的主色是 --alt（跟 #send 一致），这儿跟着它走，不跟 --brand。 */
+.toolrail .railtool[aria-expanded="1"] { background: var(--alt-soft); color: var(--alt-dark); }
+
+/* 让开这一条 —— 跟"抽屉拉开时让出右边"是同一个办法（`padding` 缩 content box，
+   栏在剩下的地方重新居中）。不让的话，1440 的屏上这条栏会**压住**对话栏左缘
+   （内容栏最左能到 14px，而栏占 18~68）。
+   ⚠ 数值要跟上面 `.toolrail` 对得上才算得准：18(左) + 40(按钮) + 5×2(内边距) = 68，
+     再加 14 的呼吸缝 = 82。改任何一边都得回来改这个数——写岔了就是"差几像素压住"
+     或者"白留一条缝"，两种都不报错，只是难看。
+   ⚠ 窄屏不给这个左内边距（≤620 那条把栏改横了，见下面）。 */
+@media (min-width: 621px) {
+  body[data-toolrail="1"] main { padding-left: 82px; }
+}
+/* 窄屏：左边放不下一条竖栏，改成**贴在输入条上方的一条横栏**。
+   ★ `bottom` 让开的是一整块"输入条 + 工位那一行"，不是只看输入条——
+     少算工位那一行的高度，这条栏就正好压在六格上面。实测那一块约 142px。 */
+@media (max-width: 620px) {
+  .toolrail {
+    left: auto; right: 12px; top: auto; bottom: 150px; transform: none;
+    flex-direction: row;
+  }
+}
+
+/* 面板本体。★ 方角、细线、跟全站一套硬边语言；**别**给它加圆角和阴影——
+   那是浮层的样子，而它是"把对话区顶高"的一块常驻区域。 */
+#tplp {
+  flex: 0 0 auto; border-top: 1px solid var(--rule);
+  background: var(--panel); position: relative; z-index: 1;
+}
+#tplp[hidden] { display: none; }
+
+.tplp-bar {
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 9px 14px; border-bottom: 1px solid var(--line); background: var(--brand-soft);
+}
+.tplp-t { font: 700 15px/1.4 var(--song); color: var(--brand-deep); letter-spacing: 1px; }
+.tplp-hint { flex: 1 1 auto; font-size: 12.5px; color: var(--ink-3); }
+#tplp-x {
+  border: 1.5px solid var(--brand-line); background: var(--panel); color: var(--brand-deep);
+  cursor: pointer; font-size: 13px; line-height: 1; padding: 5px 9px;
+}
+#tplp-x:hover { background: var(--brand-line); }
+
+.tplp-main { display: flex; align-items: stretch; min-height: 0; }
+/* 左栏：分组名 + 模板名。可滚动——模板越加越多的时候别把面板撑破。 */
+#tplp-rail {
+  flex: 0 0 186px; overflow-y: auto; max-height: 246px;
+  border-right: 1px solid var(--line); padding: 6px 0;
+}
+.tplp-g {
+  font-size: 11.5px; color: var(--ink-3); letter-spacing: 1px;
+  padding: 8px 12px 4px; font-weight: 700;
+}
+.tplp-i {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  font: inherit; font-size: 14px; color: var(--ink-2);
+  padding: 7px 12px; border: 0; border-left: 3px solid transparent; background: none;
+}
+.tplp-i:hover { background: var(--sunken); color: var(--ink); }
+.tplp-i.on { background: var(--alt-soft); border-left-color: var(--alt); color: var(--ink); font-weight: 700; }
+
+.tplp-form { flex: 1 1 auto; min-width: 0; padding: 12px 14px; overflow-y: auto; max-height: 246px; }
+#tplp-fname { font: 700 15px/1.5 var(--song); color: var(--ink); }
+#tplp-desc { font-size: 12.5px; color: var(--ink-3); margin: 3px 0 10px; line-height: 1.6; }
+#tplp-fields { display: flex; flex-wrap: wrap; gap: 9px 18px; }
+.tplp-row { display: flex; align-items: center; gap: 8px; }
+.tplp-lb { font-size: 13.5px; color: var(--ink-2); white-space: nowrap; }
+.tplp-in {
+  font: inherit; font-size: 14px; width: 108px; padding: 6px 9px;
+  border: 1.5px solid var(--line); background: var(--sunken); color: inherit; outline: none;
+}
+.tplp-in:focus { border-color: var(--alt); background: var(--panel); }
+
+/* 底下这条：左边摊开**即将发出去的骨架原文**（老师能检查我的命令），右边是「照着画」。 */
+.tplp-foot {
+  display: flex; align-items: stretch; gap: 12px;
+  padding: 10px 14px; border-top: 1px solid var(--line); background: var(--sunken);
+}
+#tplp-prev {
+  flex: 1 1 auto; min-width: 0; margin: 0; max-height: 108px; overflow: auto;
+  font: 12.5px/1.65 var(--mono); color: var(--ink-2); white-space: pre-wrap;
+  background: var(--panel); border: 1px solid var(--line); padding: 7px 10px;
+}
+#tplp-go {
+  flex: 0 0 auto; font: inherit; font-weight: 700; letter-spacing: 2px; cursor: pointer;
+  background: var(--alt); color: #fff; border: 0; padding: 0 20px;
+}
+#tplp-go:hover { background: var(--alt-dark); }
+#tplp-go:disabled { background: #b9c2a4; cursor: default; }
+
+/* 窄屏：左栏从"竖着排一列"改成"横着铺一条"——手机上没有 186px 的余量给它。 */
+@media (max-width: 620px) {
+  .tplp-main { flex-direction: column; }
+  #tplp-rail {
+    flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 4px;
+    max-height: none; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px;
+  }
+  .tplp-g { width: 100%; padding: 4px 6px 2px; }
+  .tplp-i { width: auto; border-left: 0; border-bottom: 3px solid transparent; padding: 6px 9px; }
+  .tplp-i.on { border-left: 0; border-bottom-color: var(--alt); }
+  .tplp-form { max-height: 200px; }
+  .tplp-foot { flex-direction: column; }
+  #tplp-go { padding: 11px 0; }
+}
 
 /* 待发送的文件。原来是"一张缩略图 + 一个绝对定位的 ×"，位置写死 left:100px——
    一张图还行，两张就叠在一起了。现在改成横排的条：每个文件一格，
@@ -1329,20 +1550,102 @@ body[data-work="vary"] #send:hover { background: var(--alt-dark); }
    ★ `.mmon`（导图）时收起来：导图那一层盖着的是它自己的画布，这两颗按钮
      在导图底下既点不着、又占着地方——留在屏幕上就是两颗"点了没反应"的按钮
      （同族：按钮"存在、可点、唯独不可见"，比没有更坏）。 */
+/* ★★ 2026-10-05：`--ggb-inbar` 的兜底值**必须真的写在这**。
+   下面 `.zoomctl` 那段注释和 js/main.js 里那段的注释，**两边都写着"量不到就用
+   52px"**，两句都挺像真的 —— 中间谁也没写这条定义。于是那天：
+     · 冷启动 `量输入条()` 试到第 12 秒还没量到（`#ggb` 里一直是空的），
+       变量从此再没被写过；
+     · `bottom: calc(var(--ggb-inbar) + 8px)` 里的 `var()` 没给兜底参数，
+       整条声明在计算时作废 → `bottom` 退回 `auto`；
+     · `position: fixed` + `bottom: auto` = 按它在文档流里的**静态位置**放 ——
+       四颗按钮当场滑到页面左上角，正压着顶栏那排图标和「关于」
+       （孔老师截图问"不是让你放右下角的么"，量出来盒子是 [1043,0,1197,34]）。
+   所以这条不能删。有它兜着，最坏也只是"让开 52px 而不是实测那个数"。
+   ⚠ 同族坑：**注释替一个不存在的守卫做了担保** —— 读代码的人（包括我）会以为它在那儿。
+     凡"这里有个兜底"这种话，得能指出那一行。 */
+:root { --ggb-inbar: 52px; }
+
 .zoomctl {
-  position: absolute; left: 10px; bottom: 10px; z-index: 6;
+  /* ★ 2026-10-05：`bottom` 从写死的 10px 改成**让开 GeoGebra 底下那条输入框**。
+     孔老师发截图过来说："你这个调整大小按钮也挡住输入的位置了啊。"
+     实测（test/_lab_ui.cjs，视口 1680×980）：板底 980、`.InputPanel` 顶 928
+     → 那条输入条吃掉底下 52px，而这两颗原来坐在 936–970 上，**正压着它**。
+     `--ggb-inbar` 由 js/main.js 在板子排完版之后**量出来**写进 `:root`（见文件里那段）；
+     量不到就用 52px —— 那个数就是上面这一次实测。
+     ⚠ 别把兜底写成 0：写 0 就等于原样压回去，而且"看起来只是贴底了一点"，
+       跟没改一样难发现。 */
+  position: absolute; left: 10px; bottom: calc(var(--ggb-inbar) + 6px); z-index: 6;
   display: flex; gap: 6px;
 }
 .boardwrap.mmon .zoomctl { display: none; }
-.zoomctl .zbtn {
+/* ★ 右下角那支笔的四颗按钮**共用这一套长相**（见下面"画笔"那一节）：
+   同一块板上两组小控件，长得一样才像一套，而且改一处两边都跟着改。 */
+.zoomctl .zbtn, .pendock .zbtn {
   width: 34px; height: 34px; padding: 0;
   font: inherit; font-size: 17px; font-weight: 700; line-height: 1;
   color: var(--ink-2); background: rgba(253, 254, 253, .88);
   border: 1px solid var(--line); border-radius: 5px; cursor: pointer;
   box-shadow: 0 1px 3px rgba(0, 0, 0, .10);
 }
-.zoomctl .zbtn:hover { border-color: var(--brand); color: var(--brand); background: var(--panel); }
-.zoomctl .zbtn:active { transform: translateY(1px); }
+.zoomctl .zbtn:hover, .pendock .zbtn:hover { border-color: var(--brand); color: var(--brand); background: var(--panel); }
+.zoomctl .zbtn:active, .pendock .zbtn:active { transform: translateY(1px); }
+
+/* ---------- 画笔：整页随手画（2026-10-05，见 js/pen.js） ----------
+   孔老师原话：
+     「我觉得需要一个网页的画笔功能，这个功能要在最高层不会被页面影响遮挡，
+       最好是在右下角搞个画笔按钮，以及清屏，撤销，这样就可以在几何大图上面批注画线标记了。」
+   后面又补了两条，都是一句话定死的：
+     · 撤销之外**还要重做** —— 「撤销操作也能还原操作」「操作肯定要能可逆的」；
+     · **笔开着的时候别的按钮不许按** —— 「画的时候会误触按钮肯定是不行的」。
+
+   ★★ 它是**整页一层**（fixed inset:0），不是板子里的一小块 —— "随便画"就是这句。
+      所以它挂在 `<body>` 底下：`.drawer` 的关闭态靠 `translateX(…)` 滑出屏幕，
+      而**任何祖先只要有 transform，`position: fixed` 就改认那个祖先当包含块**，
+      "盖住整页"当场退化成"盖住抽屉那一溜"，且屏幕上看着还挺正常、不报错。
+      坑的详细注释在 index.html 那一段。
+   ★★ 层级：**画笔这一层在所有东西之上，没有例外。**
+        抽屉 30 / 「放大看」40 / 弹窗 100 / 投影 120  ——  画笔 200、它的四颗按钮 201。
+      这里改过一次，记下来免得再绕回去：早先我把它排在 35/36，理由是"弹窗和投影开着时
+      它自动让开，不用写代码专门躲"。排完看着挺自洽，实际是**装反了**：
+         · 投影（120）一开，这支笔就用不了；
+         · 「放大看」（40，那个把图放大的浮层）也一样用不了 —— 这一条是我排的时候
+           压根没注意到的，孔老师只说了投影，量一遍才看见还有第二个。
+      他的判据一句话就到底了：「为啥投影模式用不了，**画笔就应该是最高层**。」
+      对：笔是老师手上那支笔，它不该被自己的画面盖住 —— 这是**玩具**和**工具**的差别。
+      原来那条"自动让开"的好处在"笔是画面的一部分"时成立；笔是工具时不成立。
+      按钮 201 压住画布 200，还是那条老理：不然"关掉画笔"那颗自己被画布盖住，开得开、关不掉。
+   ★ 关着的时候 `pointer-events: none`：整页的点击、滚动、按钮全照常。
+     开了才 `auto`（js/pen.js 往它身上加 `on` 类）。
+     **"盖在最上面"解决的是"看不看得见"，解决不了"什么时候吃你的鼠标"** ——
+     这两件事得分开办，不然一块盖满全屏的透明画布会把整页锁死。
+   ★ `touch-action: none` 只写在开着的时候：不开时它反正不吃事件，写了也没意义；
+     开着时必须有，否则手指一划先滚页面，线画不出来。 */
+.penlayer {
+  position: fixed; inset: 0; z-index: 200;
+  display: block; width: 100%; height: 100%;
+  pointer-events: none;
+}
+.penlayer.on { pointer-events: auto; cursor: crosshair; touch-action: none; }
+
+/* 右下角那四颗。`bottom` 跟 .zoomctl 一样让开输入条 —— 不然它正好压着
+   输入框右端那个「?」帮助按钮（实测同一张表：输入面板 x 1171–1613、
+   视口右下角放四颗 34px 会落在 1508–1662 上）。 */
+.pendock {
+  position: fixed; right: 18px; bottom: calc(var(--ggb-inbar) + 8px);
+  z-index: 201; display: flex; gap: 6px;
+}
+.pendock .zbtn { background: rgba(253, 254, 253, .95); }
+/* 画笔开着 = 这颗按下去的样子要一眼看得出来，否则老师分不清"我现在是在画图
+   还是在动板子"——而这两种状态下鼠标干的完全是两件事。 */
+.pendock .zbtn[aria-pressed="true"] {
+  color: var(--paper); background: var(--brand); border-color: var(--brand);
+}
+/* 没东西可撤／可重做的时候是灰的：撤销和重做**成对**，能撤不能重是正常状态
+   （刚画完一笔），两颗都不亮就是"手上还没有一笔"。 */
+.pendock .zbtn:disabled { opacity: .35; cursor: default; }
+.pendock .zbtn:disabled:hover {
+  border-color: var(--line); color: var(--ink-2); background: rgba(253, 254, 253, .95);
+}
 
 /* ---------- 思维导图（见 js/mindmap.js） ----------
    孔老师 2026-10-02 的原话：
@@ -2203,11 +2506,18 @@ footer .r {
    lighting 落到网页上就是这件事。★ 只铺在 .col 自己身上，不另加元素：
    .col 里的 #msgs 是透明的，所以光从对话区透出来；.colhead / .composer
    是不透明的白，光走到那儿会被挡住——正好，那两块本来就不该被照亮。 */
+/* ★★ 2026-10-05：**这条原来给 `.col` 重新铺上了白底**（上面第一刀刚撤掉、
+   这里又给贴回来），而且因为它在文件更靠下的位置，**同样是 `.col` 一个类、
+   后来者赢**——第一刀看着写对了，页面上一点没动。
+   ⚠ **这是同一个坑这半天里的第二个**：上一个是 `.works.stretch`（两个类压一个类）。
+     两个都**不报错、不警告**，只有量出来才看得见。
+     ⇒ 往这个文件里撤一条样式之前，**先 `grep 一次选择器`**，看后面还有没有同名的。
+   撤掉之后对话直接落在纸上（body 那层方格纸），跟首屏那六行是同一个底。
+   ★ 那条"跟着鼠标走的光"（--cl / --hilt）也一起撤：它本来就是"光打在**白面板**上"，
+     面板没了，光只剩纸上一团绿雾。`.overlay .box`（弹层）那一条**留着**——
+     弹层是真浮起来的，它该有光。 */
 .col {
-  background-color: var(--panel);
-  background-image: var(--cl), var(--hilt);
-  background-repeat: no-repeat, no-repeat;
-  background-size: 100% 100%, 100% 100%;
+  background: none;
 }
 
 /* 弹层那块板。同一套光，但它是"浮起来的"，所以多一层散点——
@@ -2455,10 +2765,10 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
 .pvwrap .ov { border-top: 1px solid currentColor; }
 
 /* ---------- 窄屏 ---------- */
-/* ★ 原来这里有一条 `#badge { display: none }`。**2026-10-01 删掉了**：
-   那条是给顶栏写的（横排时它挤掉了通道切换），现在 #badge 搬进左栏、
-   是竖着排的，"这一格到底干什么"这句话在竖排里恰恰最不该收——
-   五个工位的名字光看名字分不出差别。左栏有位置，就让它一直显示。 */
+/* ★ 这里曾有一条 `#badge { display: none }`，2026-10-01 删掉；**2026-10-05
+   `#badge` 这个元素本身也删了**（栏头那句"当前这一格是干什么的"，见文件上头
+   那条注释）。所以这一格现在是空的——留着一行说明告诉后来的人：
+   别再在这儿给 `#badge` 加窄屏规则了，它已经没有对象了。 */
 @media (max-width: 1060px) {
   .brand .sub { display: none; }
 }

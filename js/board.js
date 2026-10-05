@@ -405,6 +405,120 @@ SR.board = (function () {
     });
   }
 
+  // ---- 把 `角` 那三个字母摆正 ----
+  //
+  // ★★ 2026-10-05 实测（test/_angle_why.cjs 三格 + test/_replay3.cjs 复核）。
+  //   同一句「画一个角aob」跑三遍，三遍的**两条射线全建对了**，栽的只有 `角(...)` 这一条：
+  //     ① `角(A,O,B)` → α = 60.02°    ✅ 顶点 O 在中间
+  //     ② `角(O,A,B)` → α = 302.01°   ✗ 模型把顶点写到了**第一个**字母上
+  //     ③ `角(C,A,B)` → α = 302.01°   ✗ 顶点对，可两个边点**绕反了方向**
+  //   ②③ 都吐 302° —— 那是 360 减掉要的那个角。老师看见 302° 只会认定"这模型算错了"，
+  //   而根子就是那一个字母的位置/顺序。
+  //
+  //   ★ 引擎的脾气（同一次实测钉死的）：`角(P,V,Q)` 给的是**从 VP 逆时针转到 VQ** 的那个角。
+  //     绕行方向反了，拿到的就是优角。这是 GeoGebra 的规矩，不是模型算错题。
+  //
+  // ★ 治：**不指望模型**，在这儿自己把三个字母摆正。判据不是猜的——
+  //   `射线(O,A)`、`射线(O,B)` 两条都从 O 出发，**板上明写着顶点只能是 O**。
+  //   这正是孔老师说的那句「**你也得检查你的命令**」。
+  //   顶点定下来之后，另外两个点再按坐标排成逆时针，保证拿到的是小于 180° 的那个角。
+  //
+  // ⚠ **顶点只认证据，不认"中间那个"**：三个字母里恰好有一个是两条射线的公共起点，
+  //   顶点就是它。两个都像（n>1）就一个字不改。
+  //
+  // ★★ 第二次实测（2026-10-05，test/_lab_triarc.cjs）：**三角形那条路原来是坏的**。
+  //   `A=(0,0) B=(3,0) C=(0.9,2.4)` + `三角形(A,B,C)` + 内角按课本的字母序写
+  //   `角(A,B,C)`／`角(B,C,A)`／`角(C,A,B)`，板上一条射线都没有 ⇒ 老代码一个字不改 ⇒
+  //   三个角全吐**优角**：**311.19° / 298.26° / 290.56°**，三段弧都是绕在三角形外面的整圈。
+  //   根子同 ②③：引擎给的是**从 VP 逆时针转到 VQ** 的那个角，三角形按逆时针给顶点，
+  //   内角正好落在**顺时针**那半边，于是每次都拿到 360 减内角。
+  //
+  // ★ 所以这一路也修，判据是这一条**实测出来的事实**：
+  //   **GeoGebra 自己就把中间那个字母当顶点** —— `角(A,B,C)` 不管谁写的、写得多离谱，
+  //   它一律以 B 为顶点。也就是说这一路我最多只换**方向**，**换不了顶点**。
+  //   当初"宁可不动"的理由是「替它改判，万一改出一个看着挺对的锐角、顶点却在别的点上，
+  //   那比 302° 更坏」—— 这条理由在**这一路不成立**（顶点根本不由我定），
+  //   而在有射线证据的那一路，顶点由板上明写的射线定，也不由我定。两头都堵住了才动手。
+  //   剩下唯一的取舍：**初中不考优角**（苏科版课本里 ∠ABC 一律指小于 180° 的那个），
+  //   外角题（∠ACD，D 在 BC 延长线上）也仍是小于 180° 的那个，翻转一样对。
+  //   ★ 而 `叉积 ≥ 0` 时算出来的顺序跟原来**一模一样**，函数直接 `return _` 原样放行——
+  //     本来就对的角一个字节都不会被动到（probe_angle_fix ④ 的对照格盯着这一点）。
+  var RE_角行 = /(^|[^A-Za-z0-9_一-龥])(角|角度|Angle)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*,\s*([A-Za-z][A-Za-z0-9_]*)\s*,\s*([A-Za-z][A-Za-z0-9_]*)\s*\)/g;
+  var RE_射线行 = /(^|[^A-Za-z0-9_一-龥])(射线|Ray)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*,\s*([A-Za-z][A-Za-z0-9_]*)\s*\)/g;
+
+  // 板上已有几条射线、各从哪个点出发（增量作图那一路：射线是上一批画的）
+  function 板上的射线起点() {
+    var 数 = {};
+    if (!api) return 数;
+    var 名 = [];
+    try { 名 = api.getAllObjectNames() || []; } catch (e) { return 数 }
+    for (var i = 0; i < 名.length; i++) {
+      var ty = ''; try { ty = api.getObjectType(名[i]) } catch (e) { continue }
+      if (ty !== 'ray') continue;
+      var cs = ''; try { cs = api.getCommandString(名[i]) || '' } catch (e) { continue }
+      var m = /^(?:Ray|射线)\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*,/.exec(cs);
+      if (m) 数[m[1]] = (数[m[1]] || 0) + 1;
+    }
+    return 数;
+  }
+  function 取坐标(名, 本批) {
+    if (本批[名]) return 本批[名];
+    if (!api) return null;
+    try {
+      var x = api.getXcoord(名), y = api.getYcoord(名);
+      if (typeof x === 'number' && typeof y === 'number' && isFinite(x) && isFinite(y)) return { x: x, y: y };
+    } catch (e) {}
+    return null;
+  }
+
+  function 修正角度顺序(lines) {
+    if (!lines || !lines.length) return lines;
+    var 本批 = {}, 起点 = 板上的射线起点(), i, m;
+    // 本批里的命名坐标（`A=(1,2)`），后面判绕行方向要用
+    for (i = 0; i < lines.length; i++) {
+      m = /^\s*([A-Za-z][A-Za-z0-9_]*)\s*=\s*\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\)\s*$/.exec(String(lines[i]));
+      if (m) 本批[m[1]] = { x: parseFloat(m[2]), y: parseFloat(m[3]) };
+    }
+    // 本批的射线也算进"起点"
+    for (i = 0; i < lines.length; i++) {
+      var s0 = String(lines[i]); RE_射线行.lastIndex = 0;
+      while ((m = RE_射线行.exec(s0))) 起点[m[3]] = (起点[m[3]] || 0) + 1;
+    }
+    var 改了几处 = 0;
+    var out = lines.map(function (ln) {
+      var s = String(ln);
+      if (s.indexOf('角') < 0 && s.indexOf('Angle') < 0) return ln;
+      RE_角行.lastIndex = 0;
+      return s.replace(RE_角行, function (_, 前, 名, a, b, c) {
+        var 三个 = [a, b, c];
+        // 顶点：先认射线证据（三个里**唯一**那个同时是两条射线起点的）；
+        var V = null, n = 0;
+        for (var k = 0; k < 3; k++) if ((起点[三个[k]] || 0) >= 2) { V = 三个[k]; n++; }
+        if (n > 1) return _;                              // 两个字母都像顶点：拿不准，一个字不改
+        // ★ 板上一条射线都没有（**三角形上标内角**就是这一路）：顶点就用**中间那个字母**。
+        //   这不是猜——引擎自己认的就是中间那个：`角(A,B,C)` 不管谁写的，
+        //   GeoGebra 一律把 **B** 当顶点。所以下面最多只换**方向**，绝换不了顶点。
+        //   （2026-10-05 拿真图量过才敢这么定，见上面那段注释的"第二次实测"。）
+        if (!n) V = b;
+        var 边 = 三个.filter(function (x) { return x !== V });
+        if (边.length !== 2) return _;                    // 三个字母有重名，拿不准
+        var P = 边[0], Q = 边[1];
+        var p = 取坐标(P, 本批), q = 取坐标(Q, 本批), v = 取坐标(V, 本批);
+        if (!p || !q || !v) return _;                     // 坐标拿不到就不动
+        // 叉积 ≥ 0 ⇒ 从 VP 逆时针转到 VQ 走的正是那个**小于 180°** 的角，顺序本来就对
+        var 叉 = (p.x - v.x) * (q.y - v.y) - (p.y - v.y) * (q.x - v.x);
+        var 新 = 叉 < 0 ? (Q + ',' + V + ',' + P) : (P + ',' + V + ',' + Q);
+        if (新 === (a + ',' + b + ',' + c)) return _;
+        改了几处++;
+        return 前 + 名 + '(' + 新 + ')';
+      });
+    });
+    if (改了几处) 修过角 = 改了几处;
+    return out;
+  }
+  // 这一批改过几个角（给状态条说一句人话用；下一批开头归零）
+  var 修过角 = 0;
+
   function translate(line) {
     var parts = String(line).split(/("(?:[^"\\]|\\.)*")/);
     // ★ 引词只在**整行的行首**削，所以只动 parts[0]（行首那一段）。
@@ -1523,6 +1637,12 @@ SR.board = (function () {
     //   ⚠ 它必须在 `补跑` **后面**：补跑会救回"先用在先、定义在后"的交点
     //     （第 26/30 号那种），排在前面的话，那一类交点刚生出来就已经错过了。
     交点显坐标();
+    点名字显出来(批内行);
+    角弧放大();
+    //    ★ 顺序有讲究：`角顶点字母让开` 必须在 `角弧放大` **后面** ——
+    //      弧先放大（值跟着往外走），剩下还让不开的（三角形顶点那一路）再把字母挪出去。
+    //      反过来先挪字母的话，弧一放大值又跑到别处去了，让开的方向就不一定还对。
+    角顶点字母让开();
     // ★★ 悬空名**只能在补跑之后问**（见 `找悬空名` 那段讲究①）：模型常常先用在先、
     //   定义在后，补跑刚把那一批救回来，这时候板上的名字才是**这一批最终**的样子。
     //   放在补跑之前问，第 26／30 号那种"先后颠倒"会被当成悬空名冤枉一遍。
@@ -1598,6 +1718,7 @@ SR.board = (function () {
     var myGen = gen;
     clearTimers();
     failedNow = [];                        // 这一批里画板没认的命令，见 exec
+    修过角 = 0;                            // 这一批里被我摆正了几个角的字母位置，见 修正角度顺序
     playWarn = '';                         // 这一批里"`#播放` 指着的不是滑块"那句提醒，见 收尾
     var lines = [];
     for (var i = 0; i < rawLines.length; i++) {
@@ -1608,6 +1729,10 @@ SR.board = (function () {
     //   而且拆分要看整批的名字（起个撞不上的滑块名、把 `#播放` 改指向它），
     //   所以只能在这里做，不能塞进逐行的 expand。
     lines = fixSegSliders(lines);
+    // ★★ 把 `角(A,B,C)` 那三个字母摆正（顶点从**板上的射线**反推出来，见上面那一整段）。
+    //   必须放在**这一层**（成批）而不是逐行的 expand 里：它要一次看全整批
+    //   ——射线行和角行是分开的两行，还有"射线是上一批画的"那种，逐行看不到。
+    lines = 修正角度顺序(lines);
     // 图形被多套了一层 `多边形(...)` 的，剥掉（见上面那段注释：`Polygon` 只收点不收图形）
     lines = 剥多套的多边形(lines);
     // ★ 滑块提前（放在**最后一道**：上面 `fixSegSliders` 拆出来的滑块也在这一遭里一起提）
@@ -2518,7 +2643,14 @@ SR.board = (function () {
           var 底 = api.getFilling(s.n);
           if (typeof 底 === 'number' && 底 > 0) api.setFilling(s.n, 0);
         }
-        api.setLabelVisible(s.n, false);            // 字由我写
+        // ★★ 2026-10-05（孔老师拍板"卷面图跟画板一致"）：**角的值不藏，让它自己印**。
+        //   导出这一刻所有对象的颜色已经在上面那句 `setColor` 里被改成黑的了 ——
+        //   所以只要**不藏**，GeoGebra 自己画的 `48.81°` 就是黑字，位置和字体都是它自己算好的。
+        //   反过来"我重写一遍"要复刻"值挂在角弧中点"那套算法，最容易错的正是这个位置。
+        //   点的名字和文本框照旧藏掉、由下面 `paperDrawText` 按卷面字体重写（那两样要换字体）。
+        //   ⚠ 只放 `angle` 这一种：别的对象的字（`A = (3, 0)` 这种）仍归我写。
+        //   ⚠ 藏没藏，`paperSnapshot` 里已经把原值抄下来了，`paperOff` 照抄的还回去。
+        if (String(ty).indexOf('angle') !== 0) api.setLabelVisible(s.n, false);
       } catch (e) {}
     });
     snap.step = { x: stepX, y: stepY };
@@ -2527,7 +2659,23 @@ SR.board = (function () {
   function paperOff(snap) {
     snap.objs.forEach(function (s) {
       try {
-        if (s.color && s.color.length >= 3) api.setColor(s.n, s.color[0], s.color[1], s.color[2]);
+        // ★★ 2026-10-05：**`getColor` 回的是字符串，不是数组** —— 实测回 `"#4D4DFF"`。
+        //   老写法按**数组**取（`s.color[0], s.color[1], s.color[2]`），取到的是
+        //   `'#'`、`'4'`、`'D'`；`setColor` 把 `'D'` 当 NaN、当 0 —— 于是**每导出一次，
+        //   整块板就变成近黑色**（实测 A 从 `#4D4DFF` 变 `#000400`、三角形从 `#993300`
+        //   变 `#000909`、角从 `#006400` 变 `#000000`），而且整段包在空 `catch` 里，
+        //   **一个错都不报**。上面那段注释早就写着"不还的话老师面前那块画板会一直是黑白图"
+        //   —— 它一直是**还不了**的状态。（老账：不报错、只静默不生效。）
+        //   两种形状都认：字符串按十六进制拆三个分量，数组照老路走（换版本时不会又断）。
+        //   `setColor(n, r, g, b)` 用 0–255 整数是**实测过的**（`setColor('A',0,128,0)`
+        //   读回 `#008000`）；`getColor(n,'r')` 这种取分量的写法**不认**（回来的还是整串）。
+        var 色 = s.color;
+        if (typeof 色 === 'string') {
+          var 色组 = /^#?([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(色);
+          if (色组) api.setColor(s.n, parseInt(色组[1], 16), parseInt(色组[2], 16), parseInt(色组[3], 16));
+        } else if (色 && 色.length >= 3) {
+          api.setColor(s.n, 色[0], 色[1], 色[2]);
+        }
         api.setLineThickness(s.n, s.lt);
         api.setPointSize(s.n, s.pt);
         api.setLabelStyle(s.n, s.ls);
@@ -2538,6 +2686,86 @@ SR.board = (function () {
       } catch (e) {}
     });
     try { api.setGraphicsOptions(1, snap.opts); } catch (e) {}
+  }
+
+  // ★★ 2026-10-05：**卷面上角顶点的字母，也让开那个角的度数**。
+  //
+  //   画板上这件事由 `角顶点字母让开` 做（挪 XML 里的 `<labelOffset>`）；可卷面上的字
+  //   **不是 GeoGebra 画的、是我自己写上去的**，位置写死在点的右上方
+  //   （`px + 0.38f, py − 0.62f`）—— 而角的值恰好也画在顶点附近（弧的中点），
+  //   于是"卷面图跟画板一致"这一改之后，度数一印出来就跟顶点字母挤在一起。
+  //   实测（test/_shots/_卷面_射线带度.png）：`O` 和 `60.02°` 之间只剩几个像素；
+  //   三角形那张更糟，`48.81°` 的右端直接压在 `B` 上。
+  //
+  //   ⚠ **方向跟画板同一条**：字母往**角的外侧**走。角的值在**内**侧（弧的中点在内），
+  //     字母去外侧，两个就再也撞不上；这也正是课本的样子：**字在外、数在内**。
+  //   ⚠ 跟画板不同的地方：画板上的闸是「只动多边形的顶点」（射线那张图的 O 不在多边形上，
+  //     那边 GeoGebra 自己排得开，不去动它）。**卷面上没有这道闸** ——
+  //     卷面的字母位置是我自己定的固定偏移，对**任何**顶点都一样会撞，
+  //     所以只要它是**可见角的顶点**就一律让。
+  //   ⚠ 方向在**屏幕坐标**里算（`m.sx/m.sy` 已经把 y 翻号了），别再翻一次。
+  //   ⚠ 认不准就整件不让：顶点认不出、坐标拿不到、两条边几乎相反（≈180°）、
+  //     同一个点被两个角要往两边跑、让出去会被裁掉 —— 一律退回原来的右上角。
+  function 角顶点让位(m, box, fontPx) {
+    var 出 = {}, 名 = [];
+    try { 名 = api.getAllObjectNames() || [] } catch (e) { return 出 }
+    var 要向 = {};                                  // 点名 → {x, y} 单位方向
+    for (var i = 0; i < 名.length; i++) {
+      var n = 名[i], ty = '';
+      try { ty = String(api.getObjectType(n) || '') } catch (e) { continue }
+      if (ty.indexOf('angle') !== 0) continue;
+      try { if (!api.getVisible(n) || !api.getLabelVisible(n)) continue } catch (e) { continue }
+      var 三 = /\(([^,()]+),([^,()]+),([^,()]+)\)/.exec(String(api.getCommandString(n) || ''));
+      if (!三) continue;
+      var V = 三[2].trim(), P = 三[1].trim(), Q = 三[3].trim();
+      var vx, vy, u1, u2, w1, w2;
+      try {
+        vx = m.sx(api.getXcoord(V)); vy = m.sy(api.getYcoord(V));
+        u1 = m.sx(api.getXcoord(P)); u2 = m.sy(api.getYcoord(P));
+        w1 = m.sx(api.getXcoord(Q)); w2 = m.sy(api.getYcoord(Q));
+      } catch (e) { continue }
+      if (!isFinite(vx) || !isFinite(vy) || !isFinite(u1) || !isFinite(u2) || !isFinite(w1) || !isFinite(w2)) continue;
+      var na = Math.hypot(u1 - vx, u2 - vy), nb = Math.hypot(w1 - vx, w2 - vy);
+      if (!(na > 0) || !(nb > 0)) continue;
+      var bx = (u1 - vx) / na + (w1 - vx) / nb, by = (u2 - vy) / na + (w2 - vy) / nb;
+      var nb2 = Math.hypot(bx, by);
+      if (!(nb2 > 0.15)) continue;                  // 两条边几乎相反（≈180°）→ 平分线不可靠
+      bx /= nb2; by /= nb2;                         // 这是**小角**那一边的平分线
+      // 角的值画在哪一边：值 ≤180° 就在小角里，>180°（优角）画的是大角，方向正好相反。
+      // ⚠ 读不到就当小角 —— **别默认成优角**，优角在初中几乎不出现，而两条边张得开时误判成优角，
+      //   字母就会一头扎进度数里，正是要修的那个样子。
+      var 值 = NaN;
+      try { 值 = parseFloat(String(api.getValueString(n)).replace(/^[^=]*=\s*/, '')) } catch (e) { 值 = NaN }
+      var 小角 = !isFinite(值) || 值 <= 180;
+      // `bx,by` 是**小角**那一边的平分线。值 ≤180° 就画在小角里，方向就是 `bx,by`；
+      // 优角（>180°）画的是大角，值跑到对面去了，方向才反过来。
+      // ⚠ 这里翻反过一次：翻错**不报错**，字母只是从"让到外面"变成"挤到里面"，
+      //   而两种位置都是"顶点右上方一带"，看导出图**很像** —— 只有把度数那串字的
+      //   实际落点量出来才知道谁在里谁在外（`60.02°` 的弧中点在 30° 方向，即 `bx,by`）。
+      var gx = 小角 ? -bx : bx, gy = 小角 ? -by : by;      // 字母的方向 = 值的反方向
+      var 旧 = 要向[V];
+      if (旧) {
+        if (旧.x * gx + 旧.y * gy < 0) { 要向[V] = null; continue }   // 两个角要它往两边 → 整点放弃
+        gx = (旧.x + gx) / 2; gy = (旧.y + gy) / 2;
+        var ng = Math.hypot(gx, gy);
+        if (!(ng > 0.2)) { 要向[V] = null; continue }
+        gx /= ng; gy /= ng;
+      }
+      要向[V] = { x: gx, y: gy };
+    }
+    var 远 = fontPx * 1.05;
+    Object.keys(要向).forEach(function (V) {
+      var o = 要向[V];
+      if (!o) return;
+      var px, py;
+      try { px = m.sx(api.getXcoord(V)) - box.x0; py = m.sy(api.getYcoord(V)) - box.y0; } catch (e) { return }
+      var ax = px + o.x * 远, ay = py + o.y * 远;
+      // 让出去会被画布切掉半个字 —— 缺字比挤字难看得多，宁可退回去挤着
+      var 边 = fontPx * 0.7;
+      if (ax < 边 || ay < 边 || ax > box.w - 边 || ay > box.h - 边) return;
+      出[V] = { x: (ax - px) / fontPx, y: (ay - py) / fontPx };
+    });
+    return 出;
   }
 
   // ---- 往位上写字 ----
@@ -2573,6 +2801,9 @@ SR.board = (function () {
       }
     }
     // ---- 点的名字 ----
+    // ★ 角顶点的那些点先问一句"该往哪边让"（见 `角顶点让位` 上面那段），
+    //   让得开的按**居中对齐**写在让开的位置上，让不开的照老样子写在右上方。
+    var 让位 = 角顶点让位(m, box, fontPx);
     g.textAlign = 'left';
     names.forEach(function (n) {
       var ty = api.getObjectType(n);
@@ -2581,7 +2812,16 @@ SR.board = (function () {
       var px = m.sx(api.getXcoord(n)) - box.x0;
       var py = m.sy(api.getYcoord(n)) - box.y0;
       if (px < -30 || py < -30 || px > box.w + 30 || py > box.h + 30) return;
-      g.fillText(n, px + fontPx * 0.38, py - fontPx * 0.62);
+      var 让 = 让位[n];
+      if (让) {
+        // 居中写：偏移量是**字母中心**的位置，所以近边离顶点恰好剩下半格字，
+        // 不会像左对齐那样"锚点躲开了、字身又探回去"。
+        g.textAlign = 'center';
+        g.fillText(n, px + 让.x * fontPx, py + 让.y * fontPx);
+        g.textAlign = 'left';
+      } else {
+        g.fillText(n, px + fontPx * 0.38, py - fontPx * 0.62);
+      }
     });
     // ---- 文本框（模型写的 `文本("l",(1,2.6))` 这类）----
     //   它的字也是 GeoGebra 的字，为了让字体跟卷子一致，同样是**我重写一遍**。
@@ -3163,6 +3403,297 @@ SR.board = (function () {
     }
   }
 
+  // ---- 点上的字母：默认给它显出来 ----
+  //
+  // ★★ 2026-10-05 孔老师那句「角 aob，**角的位置应该标 o**，两边是射线」，
+  //   落到的就是这一格。他骂的那张图上三个点一个字母都没有。
+  //
+  //   实测（test/_lab_now.cjs，**逐件问板子**，不靠看图猜）：
+  //     `#清空` 之后板子的默认就是 **`标签可见=false`**，
+  //     于是 `O=(0,0)`／`A=(3,0)`／`B=(1.5,2.6)` 画出来是**三个光秃秃的蓝点**——
+  //     图上只有一句孤零零的「60.02°」，可这 60.02° 是谁跟谁的夹角，只有画的人知道。
+  //   一个没有字母的几何图不是"简净"，是**读不出来**：老师一句"看这个 ∠AOB"就没有着落。
+  //   所以这一条是**默认开**，不是给谁留的开关。
+  //
+  //   标签档那几个数也是当场量出来的（图在 test/_shots/_标签档对照.png），不是记忆：
+  //       0 → 光名字 `O`        1 → 名字 + 值 `A = (3, 0)`
+  //       2 → 光值 `(1.5, 2.6)`  3 → 说明
+  //   几何图要的是 **0**。`交点显坐标` 那边写 1 是**故意**的——它那一档要的就是坐标本身
+  //   （它自己的注释写着：0「信息不够」、2「坐标在、名字没了」）。
+  //   两条规矩不打架：上面那一条**先跑**（顺序见 `收尾` 里那两行），
+  //   它开过的点，到这儿 `getLabelVisible` 已经是 true，我当场绕开，
+  //   于是 `A = (-1, 1)` 一个字都不动。
+  //
+  //   ⚠ 只动"**此刻藏着**"的那些点。光这一条就同时办了三件事：
+  //     ① 不覆盖 `交点显坐标` 写的 `A = (-1, 1)`；
+  //     ② 不覆盖模型自己写的 `ShowLabel(A,true)` / `SetLabelStyle(A,…)`；
+  //     ③ 不覆盖模型**故意**关掉的那些。
+  //   ⚠ ③ 必须**再认一遍命令原文**，不能只看读数：「模型显式关了」和「从来没人管过」
+  //     在板子上是**同一个读数**（都是 false）。只看读数，就会把模型的
+  //     `ShowLabel(A,false)` 当成"默认值"、再给它开回来——
+  //     而模型明明说了"这个点不要名字"。（同族：读数没错，错的是从读数推出来的那句话。）
+  //     判据**借产品自己那只解析器**（`样式靶子`，见上面 `样式命令` 那一节），
+  //     不另立一套正则；`__HIDE__`／`__SHOW__` 那两族的取法照抄 `点名的行`。
+  //   ⚠ 整件隐藏的点（`#隐藏 A`）也不碰：那件东西本来就不该出现在图上，
+  //     给一个看不见的点开标签毫无意义。上面那条 `__HIDE__` 一并把它挡住了。
+  //   ⚠ 只认 `point`。尺规作图那一课会顺带建出一串辅助点，全挂上字母会糊；
+  //     可**几何图里的点本来就该有名字**，这是取舍，选了"宁可多给字母"——
+  //     模型不想要哪一个，写一句 `#隐藏 E` 就行，那条路上面刚认过。
+  //   ⚠ 幂等：设的是常数，反复喊是安全的（跟 `交点显坐标` 同一条纪律）。
+  //   ⚠ 它必须排在 `交点显坐标` **后面**：那一族是先开的，我靠它开过才认得出"该绕开谁"。
+  function 点名字显出来(行) {
+    if (!api) return;
+    // 模型自己表过态的名字，一律让开
+    var 让开 = {};
+    for (var i = 0; i < (行 || []).length; i++) {
+      var L = String(行[i] == null ? '' : 行[i]);
+      // `__HIDE__A` / `__SHOW__A` —— 名字可能不止一个（写成 `#隐藏 A B` 那种），逐个登记
+      var m = /^[ \t]*(?:__HIDE__|__SHOW__)(.*)$/.exec(L);
+      if (m) {
+        var 串 = m[1].match(/[A-Za-z_一-龥][0-9A-Za-z_一-龥]*/g);
+        if (串) for (var k = 0; k < 串.length; k++) 让开[串[k]] = 1;
+        continue;
+      }
+      if (/^[ \t]*(?:ShowLabel|SetLabelStyle|SetCaption)\s*\(/.test(L)) {
+        var 靶 = 样式靶子(L);
+        if (靶) 让开[靶] = 1;
+      }
+    }
+    var 名 = [];
+    try { 名 = api.getAllObjectNames() || []; } catch (e) { return; }
+    for (var j = 0; j < 名.length; j++) {
+      var n = 名[j];
+      try {
+        if (让开[n]) continue;
+        if (String(api.getObjectType(n) || '').indexOf('point') !== 0) continue;
+        if (!api.getVisible(n)) continue;          // 整件藏着 → 不碰
+        if (api.getLabelVisible(n)) continue;      // 已经有字（交点那种）→ 不碰
+        api.setLabelVisible(n, true);
+        api.setLabelStyle(n, 0);                   // 0 = 光名字：`O`、`A`、`B`
+      } catch (e) {}
+    }
+  }
+
+  // ★★ 2026-10-05：**把角弧放大一点，让「60°」那个数从顶点字母上让开**。
+  //
+  //   他原话：「角 aob，角的位置应该标 o」——字母有了（上一格刚补的），可这两个字
+  //   **叠在一起**。先量清楚是为什么（test/_zoom_vertex.cjs 拍的顶点放大图）：
+  //   GeoGebra 给点的标签默认摆在点的**右上**，而角的值摆在**角弧中点**；
+  //   一个 60° 的角朝右上开时，角平分线正好也指着右上 —— 两个位置重合了。
+  //
+  //   试过的三条路（都留了探针，别凭印象）：
+  //     ① `updateConstruction()` 重排一遍 —— **字节完全一样**，什么都没动。✗
+  //     ② 挪顶点那个字母：`setLabelOffset` 这个接口**实测不存在**（把 applet 上
+  //        跟标签有关的 19 个方法名全列出来看过）；只剩 XML 塞 `<labelOffset>`
+  //        一条路。管用（test/_lab_vertex_fix.cjs 的丙），但代价是得**先认出顶点**，
+  //        而且挪完字母离顶点挺远，看着不像课本。留作备胎。
+  //     ③ **放大角弧本身** —— 角的值挂在弧中点，弧一大，值就顺着角平分线自己往外走，
+  //        顶点字母原地不动。一个属性、不用算方向、不用认顶点。test/_lab_arcsize.cjs
+  //        拍的三档图（30/45/60）里，45 那档两个字母已经很干净地分开了，
+  //        而且**大弧本来就比小弧像课本**。选它。
+  //
+  //   ⚠ 弧半径不能一刀切：小三角形（边长几十像素）上摆 55px 的弧会盖掉半个边。
+  //     所以半径**跟着两侧边长走**，`min(相邻两边在屏幕上短的那条) × 0.5`，
+  //     再夹在 [30, 55] 里 —— 下界 30 就是 GeoGebra 的默认值（**只放大、不缩小**，
+  //     这样"改坏了"最多是没改，不会把本来好好的角画小）。
+  //     ★ 上界 **55** 是二次量的（2026-10-05，test/_lab_arcview.cjs 四档同屏对比）：
+  //       42 那档虽然分开了，可 O 的光晕还蹭着 6，缝只有几个像素；
+  //       55 那档两个之间留得下一条清楚的空档，值也还挂在弧上没飘走；
+  //       70 那档弧开始抢戏、值离它标的那个角有点远了。所以取 55。
+  //       另注：`×0.5` 已经保证弧半径 ≤ 最短边的一半，绝不会画过两个端点，
+  //       上界纯粹是"好不好看"的闸，不是安全闸。
+  //   ⚠ 顶点认不准就**一律不动**。判据走两道、必须对上（见 `认顶点`）：
+  //     挪错一个点，比不挪难查得多。
+  //   ⚠ 一次 getXML/setXML 把所有角改完。**实测往返是安全的**（test/_lab_setxml_side.cjs）：
+  //     件数/取值/字母/隐藏状态一个不差，之后还能接着往图上添要素，
+  //     视角那个数（coordSystem）一个都没变，纯往返 5ms。
+  //   ⚠ 幂等：算的是"该是多少"，不是"再加多少"，所以每批重复喊是安全的。
+  function 认顶点(角名) {
+    // 两道判据，都指向同一个点才认：
+    //   甲 `getCommandString` → `角度(A, Z, B)`：参数用逗号隔开，**中间那个是顶点**
+    //   乙 `getDefinitionString` → `∠AZB`：GeoGebra 自己写的角记号，中间那个是顶点
+    // 为什么要两道：单看甲，"参数顺序会不会被引擎重排"没法证；单看乙，多字母的名字
+    // （`A1`、中文名）没有分隔符、切不开。两句**互相印证**就都补上了。
+    // 实测（test/_lab_vertex_id.cjs）：顶点特意起名叫 Z、`角(A,Z,B)` →
+    // 定义式回 `∠AZB`、命令式回 `角度(A, Z, B)`，两道都指 Z。✓
+    var 命令 = '', 定义 = '';
+    try { 命令 = String(api.getCommandString(角名) || '') } catch (e) { return '' }
+    try { 定义 = String(api.getDefinitionString(角名) || '') } catch (e) { return '' }
+    var m = /\(([^,()]+),([^,()]+),([^,()]+)\)/.exec(命令);
+    if (!m) return '';                       // 不是三点的角（`∠(f, g)` 那种）→ 不认
+    var 甲 = m[1].trim(), 顶点 = m[2].trim(), 乙 = m[3].trim();
+    // 乙那一句：把命令式那三个名字拼回角记号，跟引擎写的对一遍（空格不算数）
+    if (定义.replace(/\s+/g, '') !== ('∠' + 甲 + 顶点 + 乙).replace(/\s+/g, '')) return '';
+    // 三个都得是板上活着的点 —— 少一个就整条作废
+    var 三 = [甲, 顶点, 乙];
+    for (var i = 0; i < 3; i++) {
+      try {
+        if (!api.isDefined(三[i])) return '';
+        if (String(api.getObjectType(三[i]) || '').indexOf('point') !== 0) return '';
+      } catch (e) { return '' }
+    }
+    return 顶点;
+  }
+
+  function 角弧放大() {
+    if (!api || !api.getAllObjectNames || !api.getXML || !api.setXML) return;
+    var 名 = [];
+    try { 名 = api.getAllObjectNames() || [] } catch (e) { return }
+    var 要改 = [];                            // {角, 顶点, 两点}
+    for (var i = 0; i < 名.length; i++) {
+      var n = 名[i];
+      try {
+        if (String(api.getObjectType(n) || '').indexOf('angle') !== 0) continue;
+        if (!api.getVisible(n)) continue;     // 整件藏着 → 不碰
+      } catch (e) { continue }
+      var 顶点 = 认顶点(n);
+      if (!顶点) continue;                    // 认不准 → 这一件不动（别的角照做）
+      var 三点 = /\(([^,()]+),([^,()]+),([^,()]+)\)/.exec(String(api.getCommandString(n) || ''));
+      if (!三点) continue;
+      要改.push({ 角: n, 顶点: 顶点, 甲: 三点[1].trim(), 乙: 三点[3].trim() });
+    }
+    if (!要改.length) return;                 // 这一批没有角（或都认不准）→ 白跑一趟都不跑
+
+    var xml = '';
+    try { xml = String(api.getXML() || '') } catch (e) { return }
+    if (!xml) return;
+    // 屏幕上"一个数学单位是多少像素" —— 弧半径的单位是**像素**，两点距离是**单位**，
+    // 不换算的话，缩放一改，这个系数就不对了。
+    var cs = /<coordSystem\s+xZero="[-.\d]+"\s+yZero="[-.\d]+"\s+scale="([-.\d]+)"\s+yscale="([-.\d]+)"/.exec(xml);
+    var 横 = cs ? parseFloat(cs[1]) : 50, 纵 = cs ? parseFloat(cs[2]) : 50;
+    var 新xml = xml, 动了几件 = 0;
+    for (var k = 0; k < 要改.length; k++) {
+      var it = 要改[k];
+      try {
+        var vx = api.getXcoord(it.顶点), vy = api.getYcoord(it.顶点);
+        var ax = api.getXcoord(it.甲) - vx, ay = api.getYcoord(it.甲) - vy;
+        var bx = api.getXcoord(it.乙) - vx, by = api.getYcoord(it.乙) - vy;
+        // 屏幕方向：x 直接乘，y 要翻号（屏幕往下走、数学坐标往上走）
+        var LA = Math.hypot(ax * 横, ay * 纵), LB = Math.hypot(bx * 横, by * 纵);
+        var L = Math.min(LA, LB);
+        if (!isFinite(L) || L <= 0) continue;
+        var r = Math.round(L * 0.5);
+        if (r < 30) r = 30;                   // 下界＝GeoGebra 默认：只放大、不缩小
+        if (r > 55) r = 55;                   // 上界＝量出来"分得开又不抢戏"的那个数
+        // 在这一件自己的 <element> 段里换 arcSize（**只在这段里**，别误伤别的角）
+        var 头 = '<element type="angle" label="' + it.角 + '">';
+        var 起 = 新xml.indexOf(头);
+        if (起 < 0) continue;
+        var 止 = 新xml.indexOf('</element>', 起);
+        if (止 < 0) continue;
+        var 段 = 新xml.slice(起, 止);
+        var 旧 = /<arcSize val="([-.\d]+)"\s*\/>/.exec(段);
+        if (!旧) continue;
+        if (Math.abs(parseFloat(旧[1]) - r) < 0.5) continue;   // 已经是这个数 → 不动
+        新xml = 新xml.slice(0, 起) + 段.replace(旧[0], '<arcSize val="' + r + '"/>') + 新xml.slice(止);
+        动了几件++;
+      } catch (e) {}
+    }
+    if (!动了几件) return;
+    // 装回去。**整张重装**是实测过安全的（见函数上面那段），装不上就算了，
+    // 绝不能让"让图更好看"这件事把图弄坏。
+    try { api.setXML(新xml) } catch (e) {}
+  }
+
+  // ★★ 2026-10-05：**多边形顶点上的字母，往外让开角的值**。
+  //
+  //   角弧放大 不是已经把这件事解决了吗？—— 在**三角形上解决不了**。实测
+  //   （test/_lab_tribarc.cjs）：把那个角的弧从 55 一路拧到 110，`48.81°`
+  //   **一个像素都没再动**（值挂在弧中点那条路在三角形上已经拧到头），
+  //   而它是三段里最长的一个，右端照样顶在顶点字母 B 上 —— 度号就压在 B 上。
+  //
+  //   ⚠ 闸：**只动多边形的顶点**（`三角形`／`多边形` 建出来的那些点）。
+  //     射线那张图的顶点 O 不在任何多边形上 → 一个字都不碰 ——
+  //     那一张 55 的弧已经留得下空档了，不拿已经好看了的图去冒险。
+  //   ⚠ 方向：往**角的外侧**挪，也就是角平分线的反方向。角的值在内侧的平分线上，
+  //     字母挪到外侧，两个就再也撞不上。这恰好也是课本的样子：**字在外、数在内**。
+  //   ⚠ 距离 **26px** 是量出来的。挪字母只有 XML 塞 `<labelOffset>` 一条路
+  //     （没有接口，见 点名字显出来 上面那段老账）。**单位是屏幕像素、x 向右、y 向下**
+  //     —— 这一条也是量出来的，不是猜的（test/_lab_vlabel.cjs：塞 (30,30) 字母落在右下、
+  //     塞 (−30,30) 落在左下）。那一格上 (30,30) 已经让得很干净且还贴着顶点，取 26。
+  //   ⚠ 幂等：算的是"该是多少"，不是"再挪多少"；本来就是那个数 → 一个字节都不写。
+  //   ⚠ 认不准就**整件不动**（顶点认不出、坐标拿不到、两条边几乎相反让平分线不可靠，
+  //     同一个点被两个角判出相反方向）—— 挪错一个点比不挪难查得多。
+  function 角顶点字母让开() {
+    if (!api || !api.getAllObjectNames || !api.getXML || !api.setXML) return;
+    var 名 = [];
+    try { 名 = api.getAllObjectNames() || [] } catch (e) { return }
+    // 甲 板上所有多边形的顶点（`多边形(A, B, C)` 那条命令里就是顶点表）
+    var 多边形点 = {}, 点数 = 0;
+    for (var i = 0; i < 名.length; i++) {
+      var ty = ''; try { ty = api.getObjectType(名[i]) } catch (e) { continue }
+      if (ty !== 'polygon' && ty !== 'triangle' && ty !== 'quadrilateral') continue;
+      var cs = ''; try { cs = String(api.getCommandString(名[i]) || '') } catch (e) { continue }
+      var pm = /(?:多边形|Polygon)\s*\(([^)]*)\)/.exec(cs);
+      if (!pm) continue;
+      pm[1].split(',').forEach(function (x) {
+        var t = x.trim();
+        if (/^[A-Za-z][A-Za-z0-9_]*$/.test(t) && !多边形点[t]) { 多边形点[t] = 1; 点数++ }
+      });
+    }
+    if (!点数) return;                          // 板上没有多边形 → 白跑一趟都不跑
+
+    var xml = String(api.getXML() || '');
+    if (!xml) return;
+    var csm = /<coordSystem\s+xZero="[-.\d]+"\s+yZero="[-.\d]+"\s+scale="([-.\d]+)"\s+yscale="([-.\d]+)"/.exec(xml);
+    var 横 = csm ? parseFloat(csm[1]) : 50, 纵 = csm ? parseFloat(csm[2]) : 50;
+    var 要挪 = {};                              // 点名 → {x, y}
+    for (var j = 0; j < 名.length; j++) {
+      var n = 名[j];
+      try {
+        if (String(api.getObjectType(n) || '').indexOf('angle') !== 0) continue;
+        if (!api.getVisible(n)) continue;       // 整件藏着 → 不碰
+      } catch (e) { continue }
+      var V = 认顶点(n);
+      if (!V || !多边形点[V]) continue;          // 顶点认不出、或不是多边形顶点 → 不动
+      try { if (!api.getLabelVisible(V)) continue } catch (e) { continue }   // 本来就没字母 → 不用让
+      var 三 = /\(([^,()]+),([^,()]+),([^,()]+)\)/.exec(String(api.getCommandString(n) || ''));
+      if (!三) continue;
+      var vx = api.getXcoord(V), vy = api.getYcoord(V);
+      if (!isFinite(vx) || !isFinite(vy)) continue;
+      // 两条边在**屏幕上**的方向（y 翻号：屏幕上往下走、数学坐标往上走）
+      var a1 = (api.getXcoord(三[1].trim()) - vx) * 横, a2 = -(api.getYcoord(三[1].trim()) - vy) * 纵;
+      var b1 = (api.getXcoord(三[3].trim()) - vx) * 横, b2 = -(api.getYcoord(三[3].trim()) - vy) * 纵;
+      var na = Math.hypot(a1, a2), nb = Math.hypot(b1, b2);
+      if (!(na > 0) || !(nb > 0)) continue;
+      var ux = a1 / na + b1 / nb, uy = a2 / na + b2 / nb;   // 内角平分线（未归一化）
+      var nu = Math.hypot(ux, uy);
+      if (!(nu > 0.15)) continue;                 // 两条边几乎相反（≈180°）→ 平分线不可靠
+      var ox = Math.round(-ux / nu * 26), oy = Math.round(-uy / nu * 26);
+      var 旧 = 要挪[V];
+      if (旧 && (旧.x * ox + 旧.y * oy) < 0) { 要挪[V] = null; continue }   // 两个角要它往两边跑 → 整点放弃
+      if (旧) { ox = Math.round((旧.x + ox) / 2); oy = Math.round((旧.y + oy) / 2) }
+      要挪[V] = { x: ox, y: oy };
+    }
+    var 新xml = xml, 动了几件 = 0;
+    Object.keys(要挪).forEach(function (V) {
+      var o = 要挪[V];
+      if (!o) return;
+      var 头 = '<element type="point" label="' + V + '"';
+      var 起 = 新xml.indexOf(头);
+      if (起 < 0) return;
+      var 止 = 新xml.indexOf('</element>', 起);
+      if (止 < 0) return;
+      var 段 = 新xml.slice(起, 止);
+      var 想要 = '<labelOffset x="' + o.x + '" y="' + o.y + '"/>';
+      var 已有 = /<labelOffset[^>]*\/>/.exec(段);
+      if (已有) {
+        if (已有[0] === 想要) return;             // 已经是这个数 → 不动
+        段 = 段.replace(已有[0], 想要);
+      } else {
+        var 换行 = 段.indexOf('\n');
+        if (换行 < 0) return;
+        段 = 段.slice(0, 换行 + 1) + '\t' + 想要 + '\n' + 段.slice(换行 + 1);
+      }
+      新xml = 新xml.slice(0, 起) + 段 + 新xml.slice(止);
+      动了几件++;
+    });
+    if (!动了几件) return;
+    // 装回去（整张重装实测安全，见 角弧放大 上面那段）。装不上就算了，
+    // 绝不能让"让图更好看"这件事把图弄坏。
+    try { api.setXML(新xml) } catch (e) {}
+  }
+
   // ★★ 2026-10-05：**点一下板上的点，就把它的坐标写出来** —— 他要的那件事的字面做法。
   //
   //   实测（test/_ptclick4.cjs）：`registerClickListener` 收**一个**参数
@@ -3639,6 +4170,12 @@ SR.board = (function () {
     viewDim: 现在视角,
     // 给测试/工位用的：把"交点写坐标"这件事再手动跑一遍（正常是 `收尾` 自动喊）
     交点显坐标: 交点显坐标,
+    // 给测试用的：把"点上的字母显出来"再手动跑一遍（正常是 `收尾` 自动喊）
+    点名字显出来: 点名字显出来,
+    // 同上：把"角弧放大"再手动跑一遍（正常是 `收尾` 自动喊）
+    角弧放大: 角弧放大,
+    角顶点字母让开: 角顶点字母让开,
+    认顶点: 认顶点,
     // 工具条那三个按钮走这里（模型自己在围栏里写 #三维 时也会经 hooks.view 回头喊一声）
     // ★★ 2026-10-05：从两档扩到三档。原来那句 `if (v === '3d') show3D(); else showPlane();`
     //   有个**闷声改口径**的毛病：任何没认出来的档名（比如新加的 'blank'）都会掉进

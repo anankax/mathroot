@@ -27,10 +27,13 @@
 //   ② 所以尺子**只认三个位置**：工位那一行按钮的可见文字、关于列表里加粗的那几个名字、
 //      以及 config 里那两份。别的地方写什么都不管。
 //
-// ★ #badge 那一条是**对照组**：光比"三处文字一不一致"的话，一个根本没渲染出来的页面
-//   （或者按钮文字全是空字符串的页面）也能全绿。断言"高亮那一格底下的说明文字
-//   确实等于当前工位的 badge"，才说明这条链是活的。第三条"标签两两不同"是同一目的的
-//   第二道：复制粘贴漏改会出现两个「备课」，那时三处"一致"，但产品是坏的。
+// ★ 那条**对照组**（2026-10-05 换过信号）：光比"三处文字一不一致"的话，一个根本
+//   没渲染出来的页面（或者按钮文字全是空字符串的页面）也能全绿。所以另配一条更硬的：
+//   "点亮那一格的文字 == config 里当前工位的名字"——它同时钉住了"行画出来了""高亮没跑偏"
+//   "文字来自 config"三件事。第三条"标签两两不同"是同一目的的第二道：复制粘贴漏改会出现
+//   两个「备课」，那时三处"一致"，但产品是坏的。
+//   ⚠ 原来那条量的是 `#badge`（栏头那句说明话），**那句话 2026-10-05 被删了**。
+//     删元素不改断言 = 探针报红，而红的样子跟"产品坏了"一模一样——所以同一天一起换的。
 //
 // 用法（先起 node test/serve.cjs 8138，Chrome 在 9222）：
 //   node test/probe_labels.cjs
@@ -138,12 +141,22 @@ function closeTab(tid) {
      JSON.stringify(wantSet) === JSON.stringify(gotSet), { config: wantSet, 关于: gotSet });
 
   // ---- 对照组：这条链是活的 ----
+  //
+  // ★★ 2026-10-05 换的信号。原来这条量的是 `#badge`（栏头那句"当前这一格是干什么的"），
+  //   而那天**那句话整个删了**（孔老师：「对话以外的这些文字加了干什么啊…也没啥用」），
+  //   删了之后这条会红——**红的样子跟"产品坏了"长得一模一样**，所以同一天必须换掉。
+  // ★ 换成的这个信号比原来那个**更硬**：它量的是"高亮的那一格，文字等于 config 里
+  //   当前工位的名字"。这一条同时钉住了三件事：
+  //     ① 工位行真渲染出来了（不是空页 / 不是壳子）；
+  //     ② `.on` 跟着 `data-work` 走（高亮没跑偏）；
+  //     ③ 按钮文字确实来自 config（不是写死在 HTML 里的另一份）。
+  //   原来那条只钉住了 ③ 的一半（badge 来自 config），却没有检查"高亮对不对"。
   const cur = await q('document.body.getAttribute("data-work")');
-  const badgeShown = await q('(document.getElementById("badge")||{}).textContent||""');
-  ok('★ 对照：高亮那一格底下的说明，等于当前工位的 badge（证明这条链真在渲染，不是空页）',
-     cfg[cur] && badgeShown === cfg[cur].badge, { 当前: cur, 显示的: badgeShown, config: cfg[cur] && cfg[cur].badge });
-  ok('对照：当前工位拿得到 badge（空的话上面那条会比较两个空串）',
-     !!(cfg[cur] && (cfg[cur].badge || '').trim().length > 0), cfg[cur] && cfg[cur].badge);
+  const onLabel = await q('(function(){var b=document.querySelector(".workbtn.on");return b?b.textContent.trim():"（没有点亮的工位）"})()');
+  ok('★ 对照：点亮那一格的文字，等于 config 里当前工位的名字（证明这条链真在渲染，不是空页）',
+     !!(cfg[cur] && onLabel === cfg[cur].label), { 当前: cur, 点亮那格: onLabel, config: cfg[cur] && cfg[cur].label });
+  ok('对照：当前工位在 config 里有 name（空的话上面那条会比较两个空串）',
+     !!(cfg[cur] && (cfg[cur].label || '').trim().length > 0), cfg[cur] && cfg[cur].label);
 
   // ---- 红验：往**页面跑起来之后的 DOM** 里注入"漏改一处"，看这把尺子抓不抓得住 ----
   //

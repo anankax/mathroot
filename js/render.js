@@ -20,9 +20,22 @@ SR.render = (function () {
   //   pending —— 后半截还没闭合的围栏原文，**不要显示**，等它闭合
   // opts.stripAssign —— 多删一档"整行就是一条画板赋值"的行（见规则三）。
   //   备课／讲评工位开、画图／出题工位关（SR.WORKS[x].stripAssign）。
+  // opts.收尾 —— **这段文字已经是全文了吗**。默认 false（= 后面还能长）。
+  //   ★ 为什么非有这一档：捞回来的那种块（围栏头掉了的，见下面 RE_CMD_HEAD 那段）
+  //     **没有闭合标记可等**，只能靠"下一行像不像命令"起头。流式当中它必然**先短后长**：
+  //     "ggb ⏎ #" 这半截就已经长成一块了。而 chat.js 那边 `msg.ggbDone` 是个
+  //     **只增不减的下标**——半截那一块被当成"第 0 块画过了"，等完整命令到了，
+  //     `p.ggb` 仍然只有 1 块（只是内容变长了），`while (ggbDone < length)` 不成立，
+  //     **真命令永远上不了板**（实测：板上一件都没有，而右栏一切正常）。
+  //   ★★ 默认给 false 是**故意选的安全方向**：忘了传的调用方拿到的是"半截块先不画"，
+  //     而那正是对的；要画也是等全文到了再画，不会画出半张图。反过来（默认 true）
+  //     就会把"还没收口的块"当成品交出去，正是这个 bug。
+  //   ⚠ 判据是"**这一遍手里的文字还会不会更长**"，不是"块完不完整"——
+  //     收尾那一遍里，一个始终没闭合的块也该照画（流被截断时它就是最终形态）。
   function parseFences(text, opts) {
     var ggb = [], ggbInfo = [], say = [], mat = [];
     var stripAssign = !!(opts && opts.stripAssign);
+    var 收尾 = !!(opts && opts.收尾);
     var visible = String(text == null ? '' : text);
 
     // 先摘掉闭合的三个专用围栏
@@ -97,6 +110,8 @@ SR.render = (function () {
     //   ★ 撞上它就**就此打住、一个字不碰**（不 k++）：把那一行和它后面的全留给下面的
     //     "半截围栏"逻辑——没闭合就藏进 pending，闭合了就当正文/围栏处理。
     var RE_FENCEOPEN = /^[ \t]*`{3,}[ \t]*\S/;
+    // ★ 没等到收口、又不许当成品的那半块（见 opts.收尾 那段）。整块先攥在手里不交出去。
+    var 握住 = '';
     for (var 轮 = 0; 轮 < 8; 轮++) {
       var 行 = visible.split('\n');
       var 头 = -1;
@@ -110,12 +125,31 @@ SR.render = (function () {
         }
       }
       if (头 < 0) break;
-      var 体 = [], k = 头 + 1;
+      var 体 = [], k = 头 + 1, 收口了 = false;
       for (; k < 行.length; k++) {
-        if (RE_TICKLINE.test(行[k])) { k++; break; }
-        if (RE_FENCEOPEN.test(行[k])) break;    // ★ 又一个围栏的开头：不碰它，块到此为止
-        if (!行[k].trim()) break;
+        if (RE_TICKLINE.test(行[k])) { k++; 收口了 = true; break; }
+        if (RE_FENCEOPEN.test(行[k])) { 收口了 = true; break; }  // ★ 又一个围栏的开头：不碰它，块到此为止
+        if (!行[k].trim()) {
+          // ★★ 末行那个空串**只是结尾那个换行**，不是"空行结尾"。
+          //   模型的每一行命令后面都跟着换行，所以流式当中**几乎每一截都停在换行上**
+          //   ——按"空行即收口"判，等于每一截都交出一块半成品。
+          //   实测（test/_prefix.cjs）：`ggb ⏎ #清空 ⏎`（前缀 8 字）那一瞬就交出去了，
+          //   下标账记成"第 0 块画过了"，后面就再没有第 1 块了 → 板上一件没有。
+          //   ⚠ 只有"空行后面**还有内容**"才算块真的结束；收尾那一遍例外
+          //     （不会再长了，末尾的空行就是它最后的形状）。
+          if (k === 行.length - 1 && !收尾) break;
+          收口了 = true; break;
+        }
         体.push(行[k]);
+      }
+      if (体.length && !收口了 && !收尾) {
+        // 文字到头了，可这一块既没收口、也还没到收尾那一遍 —— 多半是流还没吐完。
+        // ★ 交出半块的代价（实测）：下标账把它记成"第 0 块画过了"，完整那一块**永远不画**。
+        //   所以跟半截围栏一个待遇：**藏起来，等它收口**（见下面 pending 那段）。
+        握住 = 体.join('\n');
+        行.splice(头, k - 头);
+        visible = 行.join('\n');
+        break;                                  // 后面不会再有收口的块了，收工
       }
       if (体.length) { ggb.push(体.join('\n')); ggbInfo.push(''); 行.splice(头, k - 头); visible = 行.join('\n'); }
       else { 行.splice(头, 1); visible = 行.join('\n'); }
@@ -128,6 +162,9 @@ SR.render = (function () {
       pending = '```' + parts[parts.length - 1];
       visible = parts.slice(0, -1).join('```');
     }
+    // ★ 上面攥住的那半块也并进来：它跟半截围栏是**同一回事**（都还没到给人看的时候）。
+    //   顺序按它在原文里的先后：攥住的那块在更前面。
+    if (握住) pending = 握住 + (pending ? '\n' + pending : '');
     visible = visible.replace(/`{1,2}$/, '');      // 末尾可能只到了一两个反引号
 
     // ★ 免费通道的 glm-4.1v-thinking-flash 会把整段回复包进 <answer>…</answer>

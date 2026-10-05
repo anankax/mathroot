@@ -291,9 +291,14 @@ function closeTab(tid) {
      !!(srcHas && srcHas.hidden), srcHas && srcHas.tag);
 
   // ---- 对照组：证明这条链真在渲染，不是空页 ----
-  const badgeShown = await q('(document.getElementById("badge")||{}).textContent||""');
-  ok('★ 对照：当前工位的说明文字有内容（空页也能让上面几条"通过"）',
-     String(badgeShown).trim().length > 0, badgeShown);
+  // ★★ 2026-10-05：原来量的是 `#badge`（栏头那句说明话），那天**那句话删了**。
+  //   换成"点亮那一格的文字 == config 里当前工位的名字"：它能同时证明
+  //   "工位行画出来了""高亮跟着 data-work""文字来自 config"——比原来那条更硬。
+  const 对照 = await q('({work:document.body.getAttribute("data-work"),'
+    + 'on:((document.querySelector("#works .workbtn.on")||{}).textContent||"").trim(),'
+    + 'want:((SR.WORKS[document.body.getAttribute("data-work")]||{}).label||"").trim()})');
+  ok('★ 对照：点亮那一格的文字等于 config 里当前工位的名字（空页也能让上面几条"通过"）',
+     对照.on.length > 0 && 对照.on === 对照.want, 对照);
 
   // ★ 收尾：把开工时那份 memo 原文写回去（只在真的清过时才写）。
   //   写回**原文**，不用 clear()——clear() 会连这一趟之前可能存在的东西一起抹掉，

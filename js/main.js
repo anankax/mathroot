@@ -26,11 +26,20 @@ SR.main = (function () {
 
   // 切工位。force = true 时不管规则一律重开一段（开机走这条）。
   //
-  // ★ 切工位的清空规则：**画图／出题 与 备课／讲评 互相切时清空，备课↔讲评不清。**
-  //   前两组不是一套提示词：画图／出题那两份里根本没有"台阶"这回事，
-  //   把备课时的那段对话带过去，模型会拿着一堆问句的历史去画图，串味。
-  //   而备课和讲评**用的是同一份提示词**（讲评 = 备课 + 整卷附注），
-  //   是"先列题号、挑一道、再展开"的两个阶段——切一下就清，那道卷子就没了。
+  // ★★ 2026-10-05：**上一版这条注释在撒谎，改掉。**
+  //   它原话是：「切工位的清空规则：画图／出题 与 备课／讲评 互相切时清空，备课↔讲评不清。」
+  //   ——**没有这回事了。** 清空是 2026-10-02 挪进 `SR.memo` 那时改的：
+  //   现在**只有点 ⟳**（走 `SR.chat.reset(w, {wipe:true})`）才真清，
+  //   切工位、刷新页面都不清（见 js/chat.js 的 reset 和 js/memo.js 顶上那三条）。
+  //   注释留着旧规则最坏的地方不是"过时"，是它**承诺了一道并不存在的闸**：
+  //   后来的人照着它推"画图时不会带着备课的历史"，而模型那边**就是带着的**。
+  //
+  // ★ 那"串味"的担心并没有消失，只是换了地方交代：请求是
+  //   `[新工位的系统提示] + [整段历史] + [新这一句]`（见 js/api.js 的 msgs 拼装），
+  //   历史来自**一本全局账**，切工位不清它就是会带过去。这是**故意的**——
+  //   「备课聊的那道题，切到作图把它画出来」正需要它。要治串味，方向是
+  //   在换体系的第一轮补一句"交接口"，**不是**清空（清空会把上面那件正事也砍掉）。
+  //   ⚠ 交接口**还没做**，别把这句注释当成它已经做了。
   function applyWork(w, force) {
     if (!SR.WORKS[w]) w = SR.DEFAULT_WORK || 'prep';
     var last = work;
@@ -64,14 +73,52 @@ SR.main = (function () {
     for (var i = 0; i < btns.length; i++) {
       btns[i].classList.toggle('on', btns[i].getAttribute('data-work') === w);
     }
-    var el = $('badge');
-    if (el) el.textContent = (SR.WORKS[w] && SR.WORKS[w].badge) || '';
+
+    // ★★ 2026-10-05：这两行**删了**——原来往栏头 `<span id="badge">` 里写
+    //   「当前这一格是干什么的」。孔老师的原话：「对话以外的这些文字加了干什么啊…
+    //   也没啥用。」那句话一共出现三次，这是第三次（另两次见 index.html 那条注释）。
+    //   ⚠ `SR.WORKS[w].badge` 本身没死：首屏六行右边、工位按钮的 title 还用着它。
+    //     要删的是"往栏头写"这个动作，不是那句话。
+
+    paintToolrail();
 
     var stepsOf = function (id) { return !!(SR.WORKS[id] && SR.WORKS[id].steps); };
     // 同体系（备课↔讲评）：对话留着，档位按历史重推——**不能打回零**，
     // 那条链还接着呢，打回零等于告诉老师"刚才走的都不算"。
     if (!force && stepsOf(last) && stepsOf(w)) SR.chat.repaintSteps();
     else SR.chat.reset(w);                                              // 换了体系：重开
+  }
+
+  // ★★ 2026-10-05：左边那条工具栏该给谁看。
+  //
+  // ★ 为什么要有这个函数，而不是写死在 css 里（原来是
+  //   `body[data-work="draw"] #drawtplbtn{display:block}`）：
+  //   这条栏是孔老师要求"以后还可以放更多工具"的地方。写死在 css 里的话，
+  //   每加一件工具都得回来改 css、再加一条 `body[data-work="xxx"]`，
+  //   加两个工位就要写四条——**漏掉一条不报错，只是那件工具在某个工位不来**。
+  //   现在改成只看按钮自己写的 `data-only`（工位 id，空格分开；不写 = 哪都露）：
+  //   加一件工具 = 在 index.html 里多写一颗按钮，别处一个字不用动。
+  //
+  // ★ 一个工具都不该露的时候，**整条栏一起藏**（`rail.hidden`）：一条空的
+  //   白色悬浮栏比没有更糟——它会一直在那儿，让老师去点它。
+  //   ⚠ 2026-10-05：这条**现在几乎不会触发**了——📐 撤了 `data-only`，六个工位都露，
+  //     所以 `n` 恒 ≥ 1、栏恒在。留着这段是因为它是对的：哪天工具全被收走，
+  //     空栏自己会消失，不用谁记着去关。
+  // ★ 顺带把 `body[data-toolrail]` 挂上：css 靠它给 `main` 让左边的地方
+  //   （见 css 里 `body[data-toolrail="1"] main`）。挂在 body 上而不是栏自己身上，
+  //   是因为要让位的是 `main`，不是栏。
+  function paintToolrail() {
+    var rail = $('toolrail');
+    if (!rail) return;
+    var tools = rail.querySelectorAll('.railtool'), n = 0;
+    for (var i = 0; i < tools.length; i++) {
+      var only = (tools[i].getAttribute('data-only') || '').trim();
+      var on = !only || only.split(/\s+/).indexOf(work) >= 0;
+      tools[i].hidden = !on;
+      if (on) n++;
+    }
+    rail.hidden = (n === 0);
+    document.body.setAttribute('data-toolrail', n ? '1' : '0');
   }
 
   // ============================================================
@@ -512,6 +559,41 @@ SR.main = (function () {
     if (!SR.board || !SR.board.refit) return;
     SR.board.refit();
     setTimeout(function () { if (SR.board && SR.board.refit) SR.board.refit(); }, 340);
+    // ★ 2026-10-05：顺手补量一次输入条。上面那串定时重试（见 boot 里 `[0,800,…]`）
+    //   只覆盖开机后 12 秒 —— 那天 GeoGebra 慢过这个窗口，`--ggb-inbar` 从此
+    //   没被写过，四颗画笔按钮退回静态位置、滑到左上角压住顶栏。
+    //   `refitBoard` 是"板子刚排完版"的那一个信号（开抽屉、改窗口大小都走它），
+    //   挂在这儿比再加一串定时器干净：**事件驱动，量到为止，不花钱。**
+    //   量不到也不要紧 —— css 里 `:root` 那条兜底顶着，最坏是让开 52px。
+    setTimeout(量输入条, 380);
+  }
+
+  // ★ 2026-10-05：量出 GeoGebra 底下那条输入条有多高，写进 `:root` 的 `--ggb-inbar`。
+  //   孔老师发截图来说："你这个调整大小按钮也挡住输入的位置了啊"——那两颗「−／＋」
+  //   原来坐在 936–970 上，而输入条从 928 就开始了，正压着它。
+  //   吃这个值的有两处：板子上那两颗（css `.zoomctl`）和右下角那四颗画笔按钮
+  //   （css `.pendock`）—— 后者是整页 fixed 的，所以变量必须落在 `:root`，
+  //   挂 `.boardwrap` 它看不见。
+  //   ★ **不写死**：输入条多高是 GeoGebra 自己那套 DOM 说了算的（类名一版一换，
+  //     换个语言、换个字号都可能变）。量不到就**不设**，让 css 里兜底的 52px 顶着
+  //     —— 那是 2026-10-05 在 1680×980 上实测的数（test/_lab_ui.cjs）。
+  //   ⚠ 别写成"量不到就设 0"：那等于把按钮按回输入框上，而且屏幕上看着只是
+  //     "贴底了一点"，跟没改一个样。
+  function 量输入条() {
+    var 垫 = $('ggb');
+    if (!垫) return;
+    var wb = 垫.getBoundingClientRect();
+    if (!wb.height) return;
+    var 候 = 垫.querySelectorAll('.InputPanel, .AlgebraInput');
+    var 高 = 0;
+    for (var i = 0; i < 候.length; i++) {
+      var b = 候[i].getBoundingClientRect();
+      if (b.height < 8) continue;
+      var d = Math.round(wb.bottom - b.top);
+      // 只认"贴着底部那一条"：别把别处冒出来的同名盒子当成输入条
+      if (d > 0 && d < wb.height * 0.4 && d > 高) 高 = d;
+    }
+    if (高 > 0) document.documentElement.style.setProperty('--ggb-inbar', 高 + 'px');
   }
 
   function boot() {
@@ -569,6 +651,17 @@ SR.main = (function () {
     //   ⚠ 这一句只是**把画布开出来**，导图仍然是关着的（css 里 display:none），
     //     老师点「导图」那一下才第一次真画——所以它不拖慢开机。
     if (SR.mm) SR.mm.init('mm');
+
+    // 画笔（见 js/pen.js，整页一层 + 右下角四颗）。★ 它谁也不靠，只自己那一层画布，
+    //   所以排哪儿都行；放这儿是因为上面几条都装完了，它接按钮的时候页已经长齐。
+    if (SR.pen) SR.pen.init();
+
+    // 板子底下那条输入条有多高（见 量输入条）。★ GeoGebra 是**后注进来**的，
+    //   走到这一句的时候 `#ggb` 里面还是空的，当场量不到 —— 所以按几个时间点补量几次。
+    //   ⚠ 这不是"等一个固定时长"（按秒表读状态，网一慢就读错），是**反复试**，
+    //     试到有为止；量到了就设变量，量不到就一直是 css 里那个兜底的 52px。
+    //     多试几次不花钱。
+    [0, 800, 2000, 4000, 7000, 12000].forEach(function (t) { setTimeout(量输入条, t); });
 
     // 流水线（见 js/flow.js）。★ 排在 chat.init 之后：init 里要读 SR.chat.getWork()
     //   才判得出现在是哪个工位（判据是那个工位身上有没有 retrieve 这个开关，
@@ -864,6 +957,14 @@ SR.main = (function () {
     //   `SR.memo` 里已经落盘的对话——顺序反过来也不出错（它取数是惰性的），
     //   摆在这儿只是"开机这一串里，挂监听的跟挂监听的一起"。
     if (SR.project) SR.project.init();
+
+    // 作图模板（见 js/drawui.js）。★ 就压在 applyWork **前面**：它只挂三颗按钮的
+    //   监听（📐 / ✕ / 照着画）+ 一条 Esc，不读 `body[data-work]`（那一位是 css 在管，
+    //   `body[data-work="draw"] #drawtplbtn`）——所以它跟工位是谁没有先后关系。
+    //   ⚠ 那颗 📐 的 id 是 `drawtplbtn`，**不是 `tplbtn`**：`tplbtn` 是底下
+    //     「模板库」那颗按钮的名字（就是下面 main.js 里 `$('tplbtn')` 抓的那颗），
+    //     撞名会让模板库的点击挂到 📐 上、两个功能一起坏。原因写在 index.html 那儿。
+    if (SR.DRAWUI) SR.DRAWUI.init();
 
     applyWork(readSavedWork(), true);
 

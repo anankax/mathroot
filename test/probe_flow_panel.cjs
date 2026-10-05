@@ -198,11 +198,17 @@ function closeTab(tid) {
   // ★ 2026-10-03：原来写死 `ctrl.n === 5`（那时候五个工位）。加了「学情」之后它是 6，
   //   这条当场红——**红的是这个写死的 5，不是产品**。改成关系式：屏幕上那一行工位按钮，
   //   跟 `SR.WORK_ORDER`（工位顺序与名字的唯一真相）逐颗对得上。
+  // ★★ 2026-10-05：原来这一条还跟着量 `#badge`(栏头那句说明话)非空，那天那句话**删了**。
+  //   换成的信号**比原来那个更能说明"这是产品那一页"**：点亮的那一颗，文字要等于
+  //   `SR.WORKS[data-work].label`——行画出来 + 高亮跟得上 + 文字来自 config，一次全钉住。
   const ctrl = await q('({n:Object.keys(SR.WORKS).length, order:(SR.WORK_ORDER||[]).length,'
     + 'btns:document.querySelectorAll("#works .workbtn").length,'
-    + 'badge:((document.getElementById("badge")||{}).textContent||"").trim().length})');
-  ok('★ 对照：这一页真是产品那一页（工位按钮跟 SR.WORK_ORDER 逐颗对得上 + 状态栏有字）',
-    ctrl.n > 0 && ctrl.btns === ctrl.n && ctrl.n === ctrl.order && ctrl.badge > 0, ctrl);
+    + 'work:document.body.getAttribute("data-work"),'
+    + 'on:((document.querySelector("#works .workbtn.on")||{}).textContent||"").trim(),'
+    + 'want:((SR.WORKS[document.body.getAttribute("data-work")]||{}).label||"").trim()})');
+  ok('★ 对照：这一页真是产品那一页（工位按钮跟 SR.WORK_ORDER 逐颗对得上 + 点亮那颗的字等于 config）',
+    ctrl.n > 0 && ctrl.btns === ctrl.n && ctrl.n === ctrl.order
+      && ctrl.on.length > 0 && ctrl.on === ctrl.want, ctrl);
 
   // ---------- A. 显隐跟着工位自己的开关走 ----------
   // ★ 关系式：不写死哪个工位该亮，拿 SR.WORKS 每个工位身上的 retrieve 去比。

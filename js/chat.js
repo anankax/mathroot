@@ -555,7 +555,8 @@ SR.chat = (function () {
     if (!SR.render || !SR.render.parseFences) {
       return { visible: raw, ggb: [], ggbInfo: [], say: [], mat: [], pending: '', matBody: '' };
     }
-    var p = SR.render.parseFences(raw, { stripAssign: !!w.stripAssign });
+    //    ★ 重画这条路手里的 `raw` 一定是**全文**（它来自存下来的那条记录）→ 收尾。
+    var p = SR.render.parseFences(raw, { stripAssign: !!w.stripAssign, 收尾: true });
     var v = p.visible;
     var matBody = '';                    // 这份卷子的正文（编号行原文），重画那张卡要用
     if (tw === 'material' && SR.produce && SR.produce.pickSource) {
@@ -990,7 +991,7 @@ SR.chat = (function () {
     var rows = [];
     for (var i = 0; i < list.length; i++) {
       if (list[i].r !== 'a') continue;
-      var p = SR.render.parseFences(list[i].t, { stripAssign: !!w.stripAssign });
+      var p = SR.render.parseFences(list[i].t, { stripAssign: !!w.stripAssign, 收尾: true });
       rows.push({ visible: p.visible, ggb: p.ggb || [] });
     }
     SR.pack.__seed(rows, (SR.memo && SR.memo.pocket().topic) || '');
@@ -1832,7 +1833,8 @@ SR.chat = (function () {
         setStatus('没认：' + 没认.slice(0, 3).join(' ／ '));
         return;
       }
-      var p = SR.render.parseFences(String(res.text || ''), { stripAssign: !!((SR.WORKS[work] || {}).stripAssign) });
+      //    ★ 自修这一趟等的是 `ask` 收完的整段话 → 收尾。
+      var p = SR.render.parseFences(String(res.text || ''), { stripAssign: !!((SR.WORKS[work] || {}).stripAssign), 收尾: true });
       var 行 = (p.ggb && p.ggb[0]) ? p.ggb[0].split('\n') : null;
       if (!行 || !行.length) {
         noteUnder(el, '让它改，它这一趟没给画板指令。没认的还是原来那 ' + 没认.length + ' 条。');
@@ -1928,7 +1930,12 @@ SR.chat = (function () {
     // ★ 备课／讲评多删一档"整行就是一条画板赋值"的行（掉围栏时漏出来的 A=(-2,0)）。
     //   画图／出题不删——那两处的正文里出现一行 y=(x+1)(x-2) 是正常的。见 render.js 三条规则。
     var w = (SR.WORKS && SR.WORKS[work]) || {};
-    var p = SR.render.parseFences(msg.raw, { stripAssign: !!w.stripAssign });
+    //    ★★ `收尾: !msg.streaming` —— **这一条是作图能不能上板的关键**。
+    //       paint 每收到一截就调一次（见下面 onChunk），流式当中 `msg.raw` 是半截的；
+    //       图省事写成 `收尾: true` 的话，围栏头掉了的那种块会被**半截**交出去
+    //       （实测："ggb ⏎ #" 这一瞬就长成一块），而 `msg.ggbDone` 是个只增不减的
+    //       下标 → 完整那一块永远轮不到画（板上一件都没有）。见 render.js 的 opts.收尾。
+    var p = SR.render.parseFences(msg.raw, { stripAssign: !!w.stripAssign, 收尾: !msg.streaming });
 
     // ★ 2026-10-02：把这一轮围栏里的画板命令留在消息对象上，**给打包用**。
     //   打包（js/pack.js）要的是"这一场从头到底一共画了哪几张图"，
@@ -2195,7 +2202,8 @@ SR.chat = (function () {
         //   （这就是 [[scanner-numbers-are-not-what-they-claim]] 那条教训——
         //    口袋上那个数，老师会当成事实读）。
         if (SR.memo) {
-          var wp = SR.render.parseFences(res.text, { stripAssign: !!((SR.WORKS[work] || {}).stripAssign) });
+          //    ★ 到这儿流已经收完了（上面 `msg.streaming = false`）→ 收尾。
+          var wp = SR.render.parseFences(res.text, { stripAssign: !!((SR.WORKS[work] || {}).stripAssign), 收尾: true });
           SR.memo.produced(work, {
             fig: (wp.ggb || []).length,                                  // 这一轮开了几个 ```ggb 围栏 = 几张图
             // ★ 数法在 js/memo.js 的 countProbs 里，跟口袋里的题号共用同一对正则——
@@ -2230,8 +2238,16 @@ SR.chat = (function () {
         // ★ 2026-10-02：先把它记进打包的账本，再挂按钮——按钮拿的是这个**序号**
         //   （"到这一段为止"）。顺序反了的话，按钮上写着的序号会带着这一条还没进账的
         //   空档，点下去少一段。
-        var ti = SR.pack ? SR.pack.note(msg.lastVisible || res.text, msg.ggbAll || []) : null;
-        if (SR.WORKS[work] && SR.WORKS[work].copy) attachCopy(b, msg.lastVisible || res.text, ti);
+        // ★★ `msg.lastVisible != null ? … : res.text`——**不能用 `||`**。
+        //   `lastVisible` 初值是 `null`（= 压根没渲染过），而"渲染出来是空的"是个**合法的结果**：
+        //   整条回复就是一块被捞回来的命令围栏时，`p.visible` 就是空串（实测那一轮：64 字的
+        //   原始输出里一个字都不该给老师看）。`||` 把空串跟 `null` 一视同仁 → 回退成 `res.text`
+        //   → **一串 `A=(-2,0)` 直接进了打包账本和「复制这段」的剪贴板**，
+        //   老师是要把这些贴进教案里的。见记忆「检测脚本的数字不是它宣称的那件事」同族：
+        //   读数的意思错了，不是读数错了。
+        var 看得见 = msg.lastVisible != null ? msg.lastVisible : res.text;
+        var ti = SR.pack ? SR.pack.note(看得见, msg.ggbAll || []) : null;
+        if (SR.WORKS[work] && SR.WORKS[work].copy) attachCopy(b, 看得见, ti);
         // ---- 冻图：这一轮的每一份 ```ggb 围栏，各截一张钉在这条气泡底下 ----
         // ★★ 时机就在这里，**不在 paint() 那个流式循环里**：paint 每收到一截正文
         //   就调一次（一轮几十次），在那儿出图会把画板洗几十遍，老师眼看着板子抽风；
@@ -2352,6 +2368,15 @@ SR.chat = (function () {
       //   而这条补话要读的正是"换完之后板上有不有播放键"。
       //   两条都挂在同一条气泡底下（各自一句），互不挡道。
       if (!msg.出错) 说播放这一茬(el, msg);
+
+      // ---- 作图模板那一份骨架，用完就作废（见 js/drawtpl.js 的 `收`）----
+      // ★ 治的是这么一件很具体的坏事：老师从模板点了一张图，下一轮随口问句别的，
+      //   骨架要是还赖着不走，模型会**莫名其妙又画一遍那张图**——而老师什么都没要。
+      // ★ 位置放在**这一串的最后**（不是开头）：上面 `试自修` 那一趟也走模型、
+      //   也过 buildSystem，留着骨架它才改得准。
+      // ⚠ 挂在收工 `.then` 里而不是挂在 `extra` 自己身上：`extra` 一轮可能被调两次
+      //   （重试 / 自修），在它里面清会把后面那次要用的骨架弄丢。
+      if (SR.DRAWT) SR.DRAWT.收();
     });
   }
 
