@@ -303,6 +303,15 @@ SR.WORKS = {
   //   提示词里没有对应章节，硬塞附注会把模型带跑，实测出图率 8/8→6/8）。
   material: {
     id: 'material', label: '组卷', badge: '套你学校的模板 · 打开就能印',
+    // ★★ 2026-10-06 新增 `takes`：首屏那一块**悬停时才出来**的那行「拿走：…」。
+    //   为什么放这儿、不写在 landing.js：这一行是六块的名字和说明的**唯一真源**
+    //   （见上面 SR.WORK_ORDER 那段），"这一件办完手里拿到什么"跟它们是同一件事。
+    //   劈开写两处，改一处漏一处的那天没人会想起来。
+    //   ⚠ 形态是**悬停／键盘聚焦才出**（孔老师 2026-10-06 拍的）：手机上永远看不到，
+    //     认下来——它是一句补充，六块的主文是 `badge` 那句，不是它。
+    //   ⚠ 六句一律「拿走：…」起头，说的是同一件事（这件办完手里有什么），别混两种句式。
+    //     措辞照 test/_mock/mock.html 那六句逐字搬（那是设计稿里核过的一版）。
+    takes: '拿走：一份 Word——套的是你上传的本校版式，打开就能印。',
     prompt: function () { return window.SR.PROMPT_MATERIAL; },
     // ★ extra：**每轮现拼**的一段 system（api.js 的 buildSystem 会接在提示词后面）。
     //   出材料挂的是"老师这份模板认出来的格式号表"——它随模板变，写不进常量提示词。
@@ -315,6 +324,7 @@ SR.WORKS = {
   },
   draw: {
     id: 'draw', label: '作图', badge: '平面立体同一块板 · 存图贴进课件',
+    takes: '拿走：一张 PNG——带署名，直接拖进你的课件。',   // 见 material 那格 `takes` 的说明
     prompt: function () { return window.SR.PROMPT_DRAW; },
     // ★ extra（2026-10-05）：作图模板的骨架走**共用口 `SR.料`**。
     //   ⚠ 原来这儿挂的是 `SR.DRAWT.骨架简报` **只挂在这一个工位**——
@@ -368,6 +378,7 @@ SR.WORKS = {
   //     真正该给几路的是**老师挑定一道之后**那一轮（见 js/api.js buildSystem 里那段）。
   prep: {
     id: 'prep', label: '备课', badge: '学生怎么答 · 你接哪一句',
+    takes: '拿走：一条追问链——这节课问哪几句、学生大概怎么答、他怎么接下去。',   // 见 material 那格 `takes` 的说明
     prompt: function () { return window.SR.PROMPT_PREP; },
     lean: function () { return window.SR.PROMPT_PREP_LEAN; },
     // ★ 2026-10-05：原来**没有这一行**——所以工具栏里的东西在这一格发不出去。
@@ -377,6 +388,7 @@ SR.WORKS = {
   },
   vary: {
     id: 'vary', label: '命题', badge: '换个数字改个条件 · 每道都配图',
+    takes: '拿走：几道变式题——每道都配好图，能直接进卷子。',   // 见 material 那格 `takes` 的说明
     prompt: function () { return window.SR.PROMPT_VARY; },
     // ★ multiFig：这一轮会带**好几个** ```ggb（每个变式一张图）。
     //   ★★ 2026-10-02 起它的含义变了：右栏多页上线后，**每个围栏各进自己的一页**
@@ -399,6 +411,7 @@ SR.WORKS = {
   //     口袋空着就排不出名次——那张表上 40 道题不都是他的题，不能整张都用。
   grade: {
     id: 'grade', label: '学情', badge: '拖成绩表进来 · 先讲哪三道',
+    takes: '拿走：一张得分率表 + 该讲的题号——按从低到高排，一眼看见先讲哪几道。',   // 见 material 那格 `takes` 的说明
     prompt: function () { return window.SR.PROMPT_GRADE; },
     extra: SR.料,   // ★ 2026-10-05 补：原来没有这一行（同上）
     retrieve: false, tail: false, listPaper: false, stripAssign: false, chain: 'role'
@@ -408,6 +421,7 @@ SR.WORKS = {
   //   先只列题号、等他挑一道再摆链子（附注在 api.js 里）。
   review: {
     id: 'review', label: '讲评', badge: '先列题号 · 定一道再展开',
+    takes: '拿走：一份讲评方案——先列题号，你点定一道，它再展开那道怎么讲。',   // 见 material 那格 `takes` 的说明
     prompt: function () { return window.SR.PROMPT_PREP; },
     lean: function () { return window.SR.PROMPT_PREP_LEAN; },
     extra: SR.料,   // ★ 2026-10-05 补：原来没有这一行（同上）

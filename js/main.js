@@ -909,7 +909,21 @@ SR.main = (function () {
       //   {wipe:true} 只在这一个调用点出现——见 js/chat.js 的 reset 和 js/memo.js 的 clear。
       //   别把它加到 applyWork 上去：那样切一次工位就抹一场，
       //   而"切工位顺手清掉了"在屏幕上和"本来就没记住"完全一样。
-      nb.addEventListener('click', function () { SR.chat.reset(work, { wipe: true }); });
+      // ★★ 2026-10-06：**这一轮还在答的时候不许按**。跟上面工位那道守卫同一个道理、
+      //   同一句口气（跟着它写），理由是 read 出来的、不是猜的：
+      //   `reset()` 里**没有 abort**，它 wipe 记忆、清空 `#msgs`、清画板、清多页；
+      //   而**主答复那一路没有守卫**——`局面数`（js/chat.js）只挡了自修那一趟
+      //   （见 chat.js 的 `试自修`）。所以按下去之后，上一轮那个答复还会飘回来，
+      //   落进这场刚 wipe 过的对话里：屏幕上写着"重开了"，底下自己冒出上一段的答案。
+      //   ⚠ 状态的措辞不写"再清空"写"再重开"——屏幕上那颗就是一个 ⟳，没字，
+      //     说"重开"老师才知道说的是它。
+      nb.addEventListener('click', function () {
+        if (SR.chat && SR.chat.isAsking && SR.chat.isAsking()) {
+          SR.chat.setStatus('这一轮还在答，等它说完再重开');
+          return;
+        }
+        SR.chat.reset(work, { wipe: true });
+      });
     }
 
     // ---- 平面 / 三维 / 空白 / 导图（这一排是"右栏显示什么"，见 js/mindmap.js）----

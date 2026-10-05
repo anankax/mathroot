@@ -1057,6 +1057,24 @@ body[data-flow="on"] .flowbox {
   font-style: normal; font-size: 11.5px; letter-spacing: .5px;
   background: var(--brand); color: #fff;
 }
+/* 「拿走：…」——"这一件办完手里拿到什么"。★ 2026-10-06 加的，**悬停／键盘聚焦才出**
+   （文字在 js/config.js 的 SR.WORKS 里，见 landing.js 的 paintBlocks）。
+   ★ 为什么是悬停不是常显：六块一屏，常显这行字每块多占一行，六块就是一百多像素，
+     首屏装不下；而它是补充——六块的主文是上面那句 `.lblock i`（badge）。
+   ⚠ 手机上（没有悬停这件事）**永远看不到这句**。这是认下来的取舍，不是漏了。
+   ⚠ `grid-column: 2` 跟上面 `.lblock em` 同一个道理：名字那一列只有 4.6em，
+     这行字挤进去会把名字顶变形。`max-height` 从 0 撑开是"原地展开"，
+     代价是**下面那几块会整体往下让一行**（约 26px，鼠标划过时轻微上下一串）；
+     要压掉就得六块常留白，那首屏又装不下了——所以认这点位移，只做在悬停那一瞬。
+   ⚠ 没给 `.lblock.on`（被"最像这个"点亮的那块）加这一条：那是**常驻**高亮，
+     挂上去那块就会一直摊着，等于把上面那点位移变成永久的。 */
+.lblock .prod {
+  grid-column: 2; display: block; overflow: hidden;
+  max-height: 0; opacity: 0; margin-top: 0;
+  font-size: 12.5px; color: var(--ink-2); line-height: 1.65;
+  transition: max-height .26s cubic-bezier(.2,.7,.3,1), opacity .18s ease, margin-top .26s ease;
+}
+.lblock:hover .prod, .lblock:focus-visible .prod { max-height: 60px; opacity: 1; margin-top: 5px; }
 .ltip { margin: 18px 0 0; max-width: 640px; font-size: 13px; color: var(--ink-3); }
 
 /* 首屏亮着的时候，对话那一栏**还没开始**：气泡、缩略图、链子条、选项全让开，

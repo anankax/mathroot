@@ -228,9 +228,15 @@ SR.landing = (function () {
     for (var i = 0; i < SR.WORK_ORDER.length; i++) {
       var w = SR.WORK_ORDER[i], o = SR.WORKS[w] || {};
       var tip = mark && mark.indexOf(w) >= 0 ? '<em>最像这个</em>' : '';
+      // ★★ 2026-10-06：`takes` = 那行「拿走：…」。**悬停（或键盘聚焦）才出来**，
+      //   文字在 config.js 的 SR.WORKS 里（跟 label／badge 同一个真源）。
+      //   取不到就整块不渲染——宁可没有这行，也不要屏幕上出现一个空壳
+      //   （"有对象"当"板上有东西"那一族的错法）。
+      var tk = o.takes ? '<span class="prod">' + esc(o.takes) + '</span>' : '';
       html += '<button type="button" class="lblock" data-work="' + esc(w) + '">'
             +   '<b>' + esc(o.label || w) + '</b>'
             +   '<i>' + esc(o.badge || '') + '</i>'
+            +   tk
             +   tip
             + '</button>';
     }
@@ -364,6 +370,23 @@ SR.landing = (function () {
   // ============================================================
   //  三、归完那一行（"我按【备课】办的"）
   // ============================================================
+  // ★★ 2026-10-06：**这一轮还在答的时候，不许把这一栏重建掉。**
+  //   跟工位那道守卫（main.js 的 `.workbtn`）是同一件事、同一句口气，跟着它写：
+  //   **不许悄悄吞掉这一下**——点了没反应跟坏了长得一模一样（这个项目栽过一次），
+  //   所以要说一句，说在状态栏上。那一行会被这一轮收工的用量文字顶掉，正好不会一直挂着。
+  //
+  //   为什么"换一件"也得挡（它看着只是换个说法，其实不是）：
+  //   `rework()` 底下走的是 `applyWork()` → `SR.chat.reset()`，跟 ⟳ 同一条路；
+  //   而 `reset()` 里**没有 abort**，主答复那一路又没有守卫（`局面数` 只挡自修那一趟）。
+  //   于是"换一件"按在这一轮中间，同样会让上一轮的答复飘回来落在新一栏里。
+  function 还在答() {
+    if (SR.chat && SR.chat.isAsking && SR.chat.isAsking()) {
+      SR.chat.setStatus('这一轮还在答，等它说完再换一件');
+      return true;
+    }
+    return false;
+  }
+
   function strip(w, sure, why) {
     var bar = els.bar;
     if (!bar) return;
@@ -374,6 +397,9 @@ SR.landing = (function () {
     bar.hidden = false;
     var chg = $('routechg'), pick = $('routepick');
     if (chg) chg.addEventListener('click', function () {
+      // ★ 挡在**第一次点击**上，不是挡在底下那六颗上：不然老师点了"换一件"、
+      //   看着六颗摊开（这一栏已经动了），再去点一颗才被告知在忙——两次点击换一句话。
+      if (还在答()) return;
       // 展开成五颗小按钮。★ 文案上说清"换一件=重开一段"：换的若是另一套体系，
       //   上面那半截对话会被清掉（见 main.js applyWork 那条清空规则），
       //   不先说清的话，老师会以为是"把这句话转给另一件"，回头找不到刚才那段。
@@ -417,6 +443,11 @@ SR.landing = (function () {
   //   那份附件还在框上挂着，这儿一个字都不用管。（搬一遍反而会变成两份。）
   function rework(w) {
     if (!SR.WORKS[w]) return;
+    // ★ 挡在**这条路**上，不是只挡「换一件」那颗按钮：六颗小按钮点了也走这儿，
+    //   而它们**可能是在这一轮开始之前就摊开着的**——那颗按钮早藏了，守卫够不着。
+    //   （首屏"不确定"那一屏上点一块也走这儿，那时手上是 `held`、还没发，
+    //    `isAsking()` 是 false，这道守卫一拳打空、不会挡住那条正路。）
+    if (还在答()) return;
     var was = SR.chat.getWork();
     var keep = sameSystem(w, was);
     var text = held || lastSent;    // 见 lastSent 那条注释：归得出来那趟存在这儿
