@@ -2149,8 +2149,26 @@ SR.chat = (function () {
     var msg = { raw: '', bubble: b, streaming: true, ggbDone: 0, ggbReal: 0, lastVisible: null, lastSay: [], ask: text };
     setStatus('');
 
+    // ★★ 2026-10-05：这一轮算哪个工位，**在这儿定下来，之后不许再变**。
+    //
+    //   病（孔老师截图 + 原话「提示词为啥变成组卷的了。切换回作图还是这样」）：
+    //   上面那个 `work` 是**发请求那一刻**读的，而下面 `.then` 里记进账本的
+    //   `work` 是**回答回来之后**才读的 —— 中间隔着十几秒到几十秒，而工位那一行
+    //   **没有 busy 闸**（`js/main.js` 的「工位切换」那一段直接 applyWork）。
+    //   老师等得不耐烦点一下工位，这一个值就换人了：
+    //   请求走的是作图（回复确实是作图的口径，画了 ggb），账本却记成组卷。
+    //   而气泡底下那三颗按钮是照账本里的 `t.w` 挑的（见 js/chips.js 的分派与
+    //   `repaintLog` 那条重画路），于是那一条底下**永远顶着另一个工位的词**，
+    //   而且怎么切工位都改不回来 —— 重画读的还是这条记录。
+    //
+    //   ★ 隔离探针里量到的（`C:\tmp\查串工位.cjs`）：发出去时 getWork=draw，
+    //     回答没回来把工位点到组卷，账本记 `w="material"`。
+    //
+    //   所以这一轮的身份跟着**出发时**那一个走：跟模型说话、记进账本、
+    //   底下挑那三颗按钮，三处用的是同一个值。**别再改回 `work` 去读。**
+    var wk = work;                        // 这一轮的工位（下同：ask／lastMeta／账本／底下那排按钮）
     SR.api.ask({
-      work: work,
+      work: wk,
       history: history.slice(0, -1),      // 最后一条（刚推入的）由 api 自己拼
       text: text,
       parts: parts,
@@ -2162,7 +2180,7 @@ SR.chat = (function () {
       //   排查"是不是悄悄降级到会解题的那颗了"必须能看出来，光看回复内容看不出来。
       var hadImg = false;
       for (var qi = 0; qi < parts.length; qi++) if (parts[qi].kind === 'image') { hadImg = true; break; }
-      SR.chat.lastMeta = { model: res.model || '', image: hadImg, work: work, error: res.error || '' };
+      SR.chat.lastMeta = { model: res.model || '', image: hadImg, work: wk, error: res.error || '' };
       if (res.error) {
         msg.出错 = true;                 // 这一轮压根没答成 → 别去自修（见文件末尾 试自修 那一句）
         paint(msg);
@@ -2185,8 +2203,8 @@ SR.chat = (function () {
           // ⚠ 这里一律写**长的那套词**（'user'/'assistant'），别写 'u'/'a'：
           //   memo.js 两种都收（见那边 pushTurn 的注释），照抄上面 history.push 的措辞
           //   读起来才对得上——这是"同一件事的两个朝向"该有的样子。
-          SR.memo.pushTurn('user', SR.api.userContent(text, parts), work);
-          SR.memo.pushTurn('assistant', res.text, work);
+          SR.memo.pushTurn('user', SR.api.userContent(text, parts), wk);
+          SR.memo.pushTurn('assistant', res.text, wk);
         }
         paint(msg);
         // ★ 2026-10-01 砍掉了原来那段**空气泡兜底**（学生说"画不出来"时本地补一张空数轴、
@@ -2348,7 +2366,7 @@ SR.chat = (function () {
         }
         dimTexts.push(String(res.text || ''));
         showChips(modelChips.length ? modelChips : SR.fallbackChips({
-          work: work, first: isFirstTurn, lastUser: text, prevAssistant: prevAssistant,
+          work: wk, first: isFirstTurn, lastUser: text, prevAssistant: prevAssistant,
           is3D: SR.dimFromTexts(dimTexts),
           texts: dimTexts   // ★ 跟重画那条路（restoreText）传的是同一个东西，见 chips.js 那段
         }), b);
@@ -2501,6 +2519,12 @@ SR.chat = (function () {
     getStatus: function () { return els.status ? (els.status.textContent || '') : ''; },
     setWork: function (w) { work = w; },
     getWork: function () { return work; },
+    // ★ 2026-10-05：「这一轮从发出去到收工」这段中间。外面要判"现在能不能动"就看它
+    //   （底下那排按钮早就有一条同样的闸，见 showChips 里那句 `if (busy) return`；
+    //   工位那一行是后来补的，见 js/main.js 的「工位切换」那一段）。
+    //   ⚠ 名字不叫 isBusy：`SR.board.isBusy()` 已经有一个，那是"画板还在画"，
+    //     跟"模型还没答完"是两件事，名字撞上了调用处迟早看串。
+    isAsking: function () { return busy; },
     // 「这一份」那三格改完名字要把焦点还给输入框（见 js/memo.js 的 edit）。
     // ★ 不给回来的话：改完课题，光标落在一个刚被删掉的元素上，老师接着敲字
     //   **一个字都进不去**——而屏幕上什么都正常，看着像键盘坏了。

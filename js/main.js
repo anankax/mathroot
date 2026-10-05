@@ -865,8 +865,31 @@ SR.main = (function () {
     });
 
     // ---- 工位切换 ----
+    // ★★ 2026-10-05：**这一轮还在等回答的时候，不许换工位。**
+    //   病（孔老师截图 + 原话「提示词为啥变成组卷的了。切换回作图还是这样」）：
+    //   换工位走的是 `applyWork` → `SR.chat.reset()`，它把这一栏 `#msgs` 重建一遍，
+    //   而那一轮的回答**还在路上**——回来之后画进的是一个已经被换掉的气泡（脱档）：
+    //   屏幕上那条回复**当场看不见**了，要等下一次重画（再切一次工位／刷新）才回来。
+    //   跟"记错工位"是同一根（见 js/chat.js 的 `var wk = work`），但这是另一件事：
+    //   `wk` 那一刀只管记在谁名下，管不了气泡被换掉。
+    //
+    //   底下那排按钮**早就有**同一道闸（js/chat.js 的 showChips：`if (busy) return`），
+    //   工位这一排原来漏了。★ 隔离探针量的（C:\tmp\查串工位.cjs）：发出去之后把工位
+    //   点到组卷，`#msgs` 只剩 1 条、底下按钮空、那一轮的回答不在屏幕上。
+    //
+    //   ⚠ 不许**悄悄**吞掉这一下：点了没反应跟坏了长得一模一样（这个项目栽过：
+    //     投影层那个 `.proj` 撞名的按钮"存在、可点、点了就开"，唯独不可见）。
+    //     所以要说一句，说在状态栏上——那一行会被这一轮收工时的用量文字顶掉
+    //     （见 js/chat.js submit 收拾尾里那句 `setStatus(SR.api.usageText())`），
+    //     不会一直挂在那儿让人以为还在忙。
     document.querySelectorAll('.workbtn').forEach(function (b) {
-      b.addEventListener('click', function () { applyWork(b.getAttribute('data-work')); });
+      b.addEventListener('click', function () {
+        if (SR.chat && SR.chat.isAsking && SR.chat.isAsking()) {
+          SR.chat.setStatus('这一轮还在答，等它说完再换工位');
+          return;
+        }
+        applyWork(b.getAttribute('data-work'));
+      });
     });
 
     // ---- 清空重开（顶栏那一排最右边那颗 ⟳）----
