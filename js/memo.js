@@ -384,10 +384,20 @@ SR.memo = (function () {
     paintWorks();
     if (!els.box) return;
     var p = pocket();
-    els.topic.textContent = p.topic || '还没定';
-    els.topic.classList.toggle('empty', !p.topic);
-    els.cls.textContent = p.cls || '哪个班';
-    els.cls.classList.toggle('empty', !p.cls);
+    // ★★ 2026-10-05：`op-topic`／`op-cls` 两格已从 index.html 删掉（孔老师：
+    //   「还有这边什么哪一个班，给我去掉，标题也是不用写出来。」）。
+    //   所以这儿**不许再无条件读 `els.topic.textContent`**——那两个元素现在是 null，
+    //   一读就抛，整条绿行（连同下面的口袋计数、「打包」两颗按钮）当场不刷新。
+    //   `pocket().topic`／`.cls` 这两个**字段仍然留着**：老账本里存过，读回来不该丢，
+    //   只是屏幕上不再摆出来。
+    if (els.topic) {
+      els.topic.textContent = p.topic || '还没定';
+      els.topic.classList.toggle('empty', !p.topic);
+    }
+    if (els.cls) {
+      els.cls.textContent = p.cls || '哪个班';
+      els.cls.classList.toggle('empty', !p.cls);
+    }
     els.date.textContent = p.date || today();
     els.date.classList.toggle('empty', !p.date);
     els.bag.textContent = bagText();
@@ -431,13 +441,17 @@ SR.memo = (function () {
   function mountBar() {
     els.box = document.getElementById('onep');
     if (!els.box) return;
-    els.topic = document.getElementById('op-topic');
-    els.cls = document.getElementById('op-cls');
+    els.topic = document.getElementById('op-topic');   // 已删，留着是 null
+    els.cls = document.getElementById('op-cls');       // 已删，留着是 null
     els.date = document.getElementById('op-date');
     els.bag = document.getElementById('op-bag');
-    if (!els.topic || !els.cls || !els.date || !els.bag) { els.box = null; return; }
-    els.topic.addEventListener('click', function () { edit('topic', '这节课讲什么'); });
-    els.cls.addEventListener('click', function () { edit('cls', '哪个班'); });
+    // ★★ 这道闸原来写的是「四个 id 缺一个就把 els.box 置空」——那是**删 HTML 时的地雷**：
+    //   照那个写法删掉 op-topic／op-cls 两格，整条绿行会**一声不响地全废**
+    //   （口袋计数、「选择内容」、「打包」全挂），而屏幕上看着只是"少了两格字"。
+    //   现在只把**真正还在用的那两格**算进这道闸。
+    if (!els.date || !els.bag) { els.box = null; return; }
+    if (els.topic) els.topic.addEventListener('click', function () { edit('topic', '这节课讲什么'); });
+    if (els.cls) els.cls.addEventListener('click', function () { edit('cls', '哪个班'); });
     els.date.addEventListener('click', function () { edit('date', '哪一天'); });
     paintBar();
   }
