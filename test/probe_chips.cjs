@@ -188,10 +188,92 @@ if (!DIM.some(c => c.want === '3d') || !DIM.some(c => c.want === 'plane')) {
   bad5++; console.log('  ✗ 用例里 3d/plane 没有各出现一次 —— **这一节自己是恒绿的**，重写');
 } else console.log('  ✓ 鲁棒：3d 与 plane 两种期望都在用例里出现过（不是"全填 plane"的恒绿题）');
 
-const total = CASES.length + MODE_CASES.length + DIM.length, badAll = bad + bad2 + bad3 + bad4 + bad5;
+// ============================================================
+//  ⑥ 照图挑词（作图那一档的第二刀，2026-10-05）
+// ============================================================
+// ★ 起因：孔老师 2026-10-05 截图——三角形加一条角平分线，底下摆的是
+//   「加个滑动条，让这点动起来」。原话「和出的图一点关系没有，纯瞎扯」。
+//   查下来那三句是 SR.CHIPS.draw 那张**写死的平面表**，而它留着的理由是
+//   「三件事在任何一张平面图上都成立」——"在任何一张图上都成立"就是没看图。
+//
+// ★ 这一节量三件事：
+//   ① 挑出来的话，**得跟那张图有关**（第一格用他截的那张图，逐字钉住）；
+//   ② **图上已经有的必须划掉**（这是 prompt-say.js 要模型自己做的那个自检动作，
+//      本地兜底也照做一遍）；
+//   ③ 认不出图就**原样退回老表**——最坏等于没做，不许比今天更差。
+const G = t => ['```ggb\n' + t + '\n```'];
+const 挑 = (t) => S.drawChipsFromTexts(G(t));
+// 他截的那张图的命令原文（形状照 board.js 实际收到的写）
+const 三角形 = '#清空\nA=(0,0)\nB=(6,0)\nC=(3,5)\n三角形ABC=多边形(A,B,C)\na1=角平分线(B,A,C)';
+
+const DRAW = [
+  { name: '★ 他截图那张（三角形+角平分线）：第一句得说**另一个角**，不是泛泛的"标字母"',
+    t: 三角形,
+    须有: ['把 ∠B 的角平分线也画出来', '标出它跟 BC 的交点'],
+    须无: ['把图上的点都标上字母', '加个滑动条，让这点动起来', '把辅助线画上，用虚线'] },
+  { name: '★★ 图上已经有交点 → "标出交点"这句必须**划掉**（自检动作真的在跑）',
+    t: 三角形 + '\nP=交点(a1,直线(B,C))',
+    须无: ['标出它跟 BC 的交点'] },
+  { name: '★★ 图上有滑动条 → 一切"让它动起来"的话都不许出现',
+    t: 'A=(0,0)\nB=(2,0)\nf(x)=x^2-2x-3\nk=滑动条(0,3)',
+    须无: ['加个滑动条，让它动起来'] },
+  { name: '圆那张图 → 挑的是圆的话（"切线"只有圆才说得出来）',
+    t: 'O=(0,0)\n圆1=圆(O,2)\nA=交点(圆1,直线(O,(1,0)))',
+    须有: ['画一条切线，标出切点'] },
+  { name: '认不出是哪类图（没有任何图元）→ 返回 null，调用方走老表',
+    t: '#清空\n坐标系',
+    wantNull: true },
+  { name: '一条图都没画过 → null',
+    texts: ['老师好，你想画什么？'],
+    wantNull: true }
+];
+console.log('');
+console.log('===== ⑥ 照图挑词 =====');
+let bad6 = 0;
+const 挑出来的 = [];
+for (const c of DRAW) {
+  const got = c.texts ? S.drawChipsFromTexts(c.texts) : 挑(c.t);
+  const 有没 = (arr, s) => Array.isArray(arr) && arr.some(x => String(x).indexOf(s) >= 0);
+  let ok = true, why = '';
+  if (c.wantNull) {
+    ok = got === null;
+    why = '期望 null，拿到 ' + JSON.stringify(got);
+  } else {
+    if (!Array.isArray(got) || got.length !== 3) { ok = false; why = '期望三句，拿到 ' + JSON.stringify(got); }
+    else {
+      if (got.join('\n').indexOf('undefined') >= 0) { ok = false; why = '拼出了 undefined：' + JSON.stringify(got); }
+      for (const s of (c.须有 || [])) if (!有没(got, s)) { ok = false; why = '少了「' + s + '」'; }
+      for (const s of (c.须无 || [])) if (有没(got, s)) { ok = false; why = '多了「' + s + '」（图上已经有了，或者在跨类套老话）'; }
+      if (ok) 挑出来的.push(got.join('|'));
+    }
+  }
+  if (!ok) bad6++;
+  console.log((ok ? '  ✓ ' : '  ✗ ') + c.name);
+  if (!ok) console.log('      ' + why + '\n      实际：' + JSON.stringify(got));
+  else if (Array.isArray(got)) console.log('      → ' + got.join(' ／ '));
+}
+// ★ 反例（这条不判产品，判**尺子**）：上面那些"挑出来的"不能全是同一组。
+//   恒绿的老毛病就藏在这儿——分派写错、永远返回同一档，逐条比对照样绿。
+if (挑出来的.length >= 2 && new Set(挑出来的).size === 1) {
+  bad6++; console.log('  ✗ 几类图挑出来的是**同一组话** —— 分类等于没做（这一节自己是恒绿的）');
+} else if (挑出来的.length >= 2) {
+  console.log('  ✓ 鲁棒：' + 挑出来的.length + ' 次成功里挑出 ' + new Set(挑出来的).size + ' 组不同的话（不是恒绿题）');
+}
+// ★ 还要钉一条**它得真比老表强**：老表那三句一句都不许出现在三角形那格里。
+//   这条防的是"照图挑"退化成"把老表换个顺序"。
+{
+  const got = 挑(三角形) || [];
+  const 抄老表 = got.filter(s => S.CHIPS.draw.indexOf(s) >= 0);
+  if (抄老表.length) { bad6++; console.log('  ✗ 三角形那格挑出来的话里有老表原句：' + 抄老表.join('、')); }
+  else console.log('  ✓ 三角形那格一句老表的话都没用上（照图挑是真的换了词）');
+}
+
+const total = CASES.length + MODE_CASES.length + DIM.length + DRAW.length,
+  badAll = bad + bad2 + bad3 + bad4 + bad5 + bad6;
 console.log('\n===== 按钮：防抄 ' + (CASES.length - bad) + '/' + CASES.length
   + '，分派 ' + (MODE_CASES.length - bad2) + '/' + MODE_CASES.length
   + '，互不串 ' + KEYS.length + ' 档 ' + (bad3 ? '✗' : '✓')
   + '，名单同步 ' + (bad4 ? '✗' : '✓')
-  + '，维度判定 ' + (DIM.length - bad5) + '/' + DIM.length + ' =====');
+  + '，维度判定 ' + (DIM.length - bad5) + '/' + DIM.length
+  + '，照图挑词 ' + (DRAW.length - bad6) + '/' + DRAW.length + ' =====');
 process.exit(badAll ? 1 : 0);

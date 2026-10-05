@@ -467,7 +467,8 @@ SR.chat = (function () {
       var sl = (lastSay && lastSay[0]) ? lastSay[0].split('\n') : [];
       sl = SR.filterCopiedChips(sl);
       showChips(sl.length ? sl : SR.fallbackChips({
-        work: lastWork, first: lastFirst, is3D: SR.dimFromTexts(dimTexts)
+        work: lastWork, first: lastFirst, is3D: SR.dimFromTexts(dimTexts),
+        texts: dimTexts     // ★ 作图这一档照图挑词要它（见 chips.js「图上画的到底是什么」那段）
       }), lastB);
     }
     scroll();
@@ -2348,7 +2349,8 @@ SR.chat = (function () {
         dimTexts.push(String(res.text || ''));
         showChips(modelChips.length ? modelChips : SR.fallbackChips({
           work: work, first: isFirstTurn, lastUser: text, prevAssistant: prevAssistant,
-          is3D: SR.dimFromTexts(dimTexts)
+          is3D: SR.dimFromTexts(dimTexts),
+          texts: dimTexts   // ★ 跟重画那条路（restoreText）传的是同一个东西，见 chips.js 那段
         }), b);
       }
     }).catch(function (e) {

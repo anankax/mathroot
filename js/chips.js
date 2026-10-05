@@ -39,7 +39,13 @@ SR.CHIPS = {
   //     这一档原来连 `opts` 里别的东西都不看（见下面 SR.fallbackChips）。
   //   ⚠ 判据是**文本**不是板子，理由在下面 SR.dimFromTexts 那一段。
   //
-  //   平面这一档：**标注／动态／辅助线**，三件事在任何一张平面图上都成立。
+  //   ★★ 2026-10-05：平面这一档现在是**老表**——正常路径走 SR.drawChipsFromTexts
+  //     （照图挑词，见下面「图上画的到底是什么」那一段）。这一张只在
+  //     "没传 texts／认得是哪类图但顶点名字取不到"时兜底。
+  //     ⚠ 原来这三句留着的理由是「三件事在任何一张平面图上都成立」——而
+  //     "在任何一张图上都成立"就是没看图。孔老师 2026-10-05 的原话：
+  //     「和出的图一点关系没有，纯瞎扯」。**别再照着这个理由往回加词。**
+  //     平面这一档（老表）：**标注／动态／辅助线**。
   draw: [
     '把图上的点都标上字母',
     '加个滑动条，让这点动起来',
@@ -693,6 +699,118 @@ SR.dimFromTexts = function (texts) {
   return 'plane';                             // 一条图都没画过 → 平面（平面那档贴到哪儿都不会错）
 };
 
+// ============================================================
+//  图上画的到底是什么 —— 给「想说」挑词用（第二刀，2026-10-05）
+// ============================================================
+// ★★ 第一刀（2026-10-04）只把作图这一档分成了"立体／平面"，平面那三句留着的
+//   理由是「三件事在任何一张平面图上都成立」——而"在任何一张图上都成立"就是
+//   **没看图**的意思。孔老师 2026-10-05 又截了一张图：一个三角形加一条角平分线，
+//   底下摆的却是「加个滑动条，让这点动起来」。他的原话：「和出的图一点关系没有，纯瞎扯」。
+//   最要命的是第一句「把图上的点都标上字母」——`多边形(A,B,C)` 建完，GeoGebra
+//   **本来就把三个顶点标着字母**，这句在几乎每一张多边形图上都是空话。
+//
+// ★ 所以这一刀按**图上是什么**挑：把最近那条画了图的回复里的 `ggb` 命令原文刮出来，
+//   认成几类（多边形／圆／函数图象／直线点／认不出），再按类挑词。
+// ★ 证据仍然是**文本**、不是画板——理由跟上面 SR.ggbLooks3D 那段一模一样
+//   （重画那条路上画板是空的，判画板会让刷新前后给出两套词）。
+//   两个调用点手里都已经攒着这份 `dimTexts` 了，一个字都不用新加。
+// ★ 挑完还要过一遍「**图上已经有的划掉**」——这正是 js/prompt-say.js 要模型
+//   自己做的那个动作。本地兜底也照做一遍，两边守同一条规矩。
+//   ⚠ 判"有没有"的条件一律写**窄**：拿不准就当"没有"、让这句话留下。
+//     留下的代价只是不够贴；划错的代价是又一句瞎扯——两边代价不对等。
+var RE_GGB_BODY = /```[ \t]*ggb[ \t]*\r?\n([\s\S]*?)```/;
+
+// 最近一条**真画了图**的回复里那份 `ggb` 命令原文。一条图都没画过 → ''。
+//   规则跟 SR.dimFromTexts 一字不差（最近一条带围栏的说了算），证据也是同一份文本。
+SR.drawCodeFromTexts = function (texts) {
+  var list = texts || [];
+  for (var i = list.length - 1; i >= 0; i--) {
+    var t = String(list[i] == null ? '' : list[i]);
+    if (!RE_GGB_FENCE.test(t)) continue;
+    var m = t.match(RE_GGB_BODY);
+    return m ? m[1] : '';
+  }
+  return '';
+};
+
+// 命令原文认成哪一类。认不出 → 'plain'（调用方会走回今天那张老表）。
+//   ⚠ 顺序有讲究：**多边形排最前**——一张三角形图上多半还画着直线、交点、圆，
+//     先认"直线"会把三角形判成数轴。宁可判粗，不可判错。
+SR.figureKind = function (code) {
+  var c = String(code || '');
+  if (!c) return 'plain';
+  if (/(?:三角形|多边形|矩形|正方形|平行四边形|梯形|Polygon|Triangle|Rectangle)\s*\(/.test(c)) return 'poly';
+  if (/(?:圆|扇形|圆弧|Circle|Semicircle|Arc)\s*\(/.test(c)) return 'circle';
+  if (/(?:[fgh]\s*\(\s*x\s*\)|y)\s*=[^=]/.test(c)) return 'func';
+  if (/(?:直线|线段|射线|向量|Line|Segment|Ray|Vector)\s*\(/.test(c)) return 'axis';
+  return 'plain';
+};
+
+// 多边形的顶点名字，只认单个大写字母（`多边形(A,B,C)` 这种写法）。
+//   取不到（用了中文点名之类）就返回空数组，调用方自然退回老表。
+SR.polyVerts = function (code) {
+  var m = String(code || '').match(/(?:三角形|多边形|Polygon|Triangle|Rectangle)\s*\(\s*([^)]*)\)/);
+  if (!m) return [];
+  return m[1].split(',').map(function (s) { return s.trim(); })
+    .filter(function (s) { return /^[A-Z]$/.test(s); });
+};
+
+// 已经作过哪个角的平分线？`角平分线(B,A,C)` 的**中间那个字母是顶点** → 'A'。没有 → ''。
+SR.bisectedVertex = function (code) {
+  var m = String(code || '').match(/(?:角平分线|AngleBisector)\s*\(\s*[A-Za-z][\w'’]*\s*,\s*([A-Za-z][\w'’]*)\s*,\s*[A-Za-z][\w'’]*\s*\)/);
+  return m ? m[1] : '';
+};
+
+// 照图挑三句话。认不出／图太小 就返回 null，让调用方走回老表（最坏等于没做）。
+SR.drawChipsFromTexts = function (texts) {
+  var code = SR.drawCodeFromTexts(texts);
+  if (!code) return null;
+  var kind = SR.figureKind(code);
+  if (kind === 'plain') return null;
+  var 有 = function (re) { return re.test(code); };
+  var vs = SR.polyVerts(code);
+  var 已平分 = SR.bisectedVertex(code);
+  var 其它 = vs.filter(function (v) { return v !== 已平分; });
+  var 对边 = 其它.join('');
+  var 池 = [];                                  // [{话, 已经有了}]
+  var 加 = function (话, 已经有了) { if (话) 池.push({ 话: 话, 已经有了: !!已经有了 }); };
+  var 条数 = (code.match(/角平分线|AngleBisector/g) || []).length;
+
+  if (kind === 'poly' && vs.length >= 3) {
+    if (已平分 && 其它.length) 加('把 ∠' + 其它[0] + ' 的角平分线也画出来', 条数 >= 2);
+    else if (vs[0]) 加('作 ∠' + vs[0] + ' 的角平分线', false);
+    if (已平分 && 对边) 加('标出它跟 ' + 对边 + ' 的交点', 有(/交点\s*\(|Intersect\s*\(/));
+    if (vs[0]) 加('在图上量一量 ∠' + vs[0] + ' 是多少度', 有(/(?:^|[\s(])(?:角|Angle)\s*\(/));
+    加('把三条边的长度标上去', 有(/距离\s*\(|Distance\s*\(/));
+    if (对边) 加('标出 ' + 对边 + ' 边上的高', 有(/垂线\s*\(|Perpendicular/));
+  } else if (kind === 'circle') {
+    加('把圆心和半径都画出来', 有(/距离\s*\(|Distance\s*\(|半径|Radius/));
+    加('在圆上放一个动点，让它绕着跑', 有(/滑动条|Slider/));
+    加('画一条切线，标出切点', 有(/切线\s*\(|Tangent/));
+    加('量一量圆心角是多少度', 有(/(?:^|[\s(])(?:角|Angle)\s*\(/));
+  } else if (kind === 'func') {
+    加('把图象的顶点标出来', 有(/交点\s*\(|Intersect\s*\(|顶点|Vertex/));
+    加('把对称轴画出来', 有(/对称轴|SymmetryAxis/));
+    加('加个滑动条，让它动起来', 有(/滑动条|Slider/));
+    加('把和 x 轴的两个交点标出来', 有(/交点\s*\(|Intersect\s*\(/));
+    加('把图象的解析式写到图上', 有(/文本\s*\(|Text\s*\(/));
+  } else if (kind === 'axis') {
+    加('在这条线上放一个动点，让它来回走', 有(/滑动条|Slider/));
+    加('把这两点之间的距离标上去', 有(/距离\s*\(|Distance\s*\(/));
+    加('把中点标出来', 有(/中点\s*\(|Midpoint/));
+    加('再画一条跟它平行的线', 有(/平行\s*\(|Parallel/));
+  } else {
+    return null;                                // 多边形但顶点取不到 → 老表
+  }
+
+  var 出 = [];
+  池.forEach(function (x) { if (!x.已经有了 && 出.indexOf(x.话) < 0) 出.push(x.话); });
+  // 划剩下的不够三句，就**在同一类里**放宽"已经有了"再补——补进来的至少是这一类图的话，
+  //   比跨类抓老表那三句强。（老表只在 kind 认不出时才用得上。）
+  池.forEach(function (x) { if (出.length < 3 && 出.indexOf(x.话) < 0) 出.push(x.话); });
+  return 出.length >= 3 ? 出.slice(0, 3) : null;
+};
+
 // 挑哪一档按钮。按工位分派。
 //   opts: { work 工位 id, first 是不是第一轮,
 //           lastUser 老师刚说的话, prevAssistant 数根上一句,
@@ -706,7 +824,16 @@ SR.fallbackChips = function (opts) {
   //   ⚠ 判不出来／没传（`''`、`undefined`、`null`）一律走**平面**那一档：
   //     平面上是初中数学的常态；而平面那三条贴到立体图上只是"没那么贴"，
   //     立体那三条贴到数轴上就是**一次跑题**——两边代价不对等，所以往平面这边偏。
-  if (work === 'draw') return opts.is3D === '3d' ? SR.CHIPS.draw3d : SR.CHIPS.draw;
+  if (work === 'draw') {
+    // ★★ 2026-10-05 第二刀：平面这一档**照图挑词**（见上面"图上画的到底是什么"那一段）。
+    //   ⚠ 立体那一档一个字没动——孔老师抱怨的是平面那三句，而 draw3d 那三条
+    //     本来就以"你正在看一个立体图"为前提，是贴的。
+    //   ⚠ 照图挑不出来（没传 texts／认不出是哪类图／顶点名字取不到）一律落回老表：
+    //     最坏等于没做，绝不会比今天更差。
+    if (opts.is3D === '3d') return SR.CHIPS.draw3d;
+    var 照图 = opts.texts ? SR.drawChipsFromTexts(opts.texts) : null;
+    return 照图 && 照图.length ? 照图 : SR.CHIPS.draw;
+  }
   if (work === 'vary') return SR.CHIPS.vary;
   if (work === 'material') return SR.CHIPS.material;
   if (work === 'grade') return SR.CHIPS.grade;
