@@ -616,6 +616,15 @@ SR.main = (function () {
     // 顺序要紧：chat 先把 DOM 句柄和按钮接好，board 才能挂牌，
     // applyMode 最后跑（它会重置对话、写开场白）。
     SR.chat.init();
+    // 绿行（「这一份」那一行）上带走用的两颗按钮：挑内容 + 打包（见 js/packui.js）。
+    // ★ 必须排在 chat.init() **后面**：chat.init 里那条重画的路会把上一场从记忆里
+    //   摆回来，摆的过程中就在往打包账本里记账、给每条气泡钉 `data-turn`。
+    //   反过来的话，packui 第一次 sync 数到的账本是空的，那两颗按钮会显示
+    //   "没有东西可打"，而屏幕上对话明明摆着——同族：两位数码表各读一次，
+    //   读到同一个值就没事，读到不同的值没人会报。
+    //   ⚠ 这一句**不能省**：packui 装在 chat 后面，chat 里那些 `SR.packui.sync()`
+    //     只会安全地跳过（`if (SR.packui)`），跳过之后没有任何东西会回头补喊一声。
+    if (SR.packui) SR.packui.init();
     SR.board.init('ggb', {
       playState: SR.chat.onPlayState,
       stepState: SR.chat.onStepState,   // 分步那条按钮条（见 js/board.js 里"分步"那段）

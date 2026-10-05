@@ -247,6 +247,69 @@ body[data-work="vary"] .tick::after { border-color: rgba(95, 107, 18, .5); }
 .onep .bag { margin-left: auto; flex: 0 0 auto; color: var(--ink-3); }
 .onep .bag.has { color: var(--brand-deep); }
 
+/* 这一行右端那两颗**动作**：「选择内容」和「打包」（见 js/packui.js）。
+   ★ 摆在「口袋」后面：那三格是**条件**（课题/班级/日期），口袋是**结果**
+     （这一份装了几件），这两颗是**动手**。读的顺序跟上面那条注释是一路的。
+   ★ 白底 + 细边，不用主色：这一行整个是 `--brand-soft`（浅绿），
+     再放两块实心主色的按钮，这一行就成了"一排警告"。
+     跟气泡底下那颗 `.copybtn` 同一套形状，只是底色得从"凹槽"翻成"面板"——
+     凹槽色（`--sunken`）在这条绿带子上是**比底色更淡**的，按钮会陷进去。
+   ⚠ `.onep .opbtn` 是 (0,2,0)，`.packbtn` 那几条是 (0,1,0)：所以就算
+     `.packbtn` 那条写在文件更后面，这儿也压得住。反过来的话（只写 `.opbtn`）
+     就会被 `.packbtn` 的 `background: var(--sunken)` 悄悄盖掉——
+     **不报错，只是按钮看着陷进去了**。 */
+.onep .opbtn {
+  flex: 0 0 auto; margin-left: 6px;
+  font: inherit; font-size: 11.5px; letter-spacing: .3px;
+  padding: 3px 10px; cursor: pointer;
+  border: 1px solid var(--brand-line); border-radius: 3px;
+  background: var(--panel); color: var(--brand-deep);
+  transition: border-color .15s ease, color .15s ease, background .15s ease;
+}
+.onep .opbtn:hover { border-color: var(--brand); color: var(--brand); background: #fff; }
+.onep .opbtn:disabled { cursor: default; opacity: .55; }
+.onep .opbtn:disabled:hover { border-color: var(--brand-line); color: var(--brand-deep); background: var(--panel); }
+/* 打好了那两秒换口气（"打包好了"）。用 .done 不用 :active——打包是异步回来的，
+   :active 在手指抬起来的时候就没了，看不见反馈。（跟 .copybtn.done 同一个理由。） */
+.onep .opbtn.done { border-color: var(--brand); color: var(--brand); font-weight: 700; }
+/* 「打包」那颗沿用 `.packbtn` 的 ↓ 记号，但把它在**这条绿带子上**调暗一档：
+   主色的箭头在白底小按钮里没问题，可它俩挨着「选择内容」，一个带记号一个不带，
+   记号太亮会让两颗看着不像一路的。 */
+.onep .packbtn::before { color: var(--brand-deep); }
+/* ★★ 裸 `[hidden]` 在这儿会**失效**：UA 样式表永远排在作者样式表前面，
+   上面那条 `.onep .opbtn { … }` 一旦给了 display（哪怕是 flex/inline-block），
+   `hidden` 就再也藏不住它——**不报错，只是藏不住**。
+   （同族：`.toolrail` 那条，见本文件里那段。）现在没地方用到，先钉在这儿。 */
+.onep .opbtn[hidden] { display: none; }
+
+/* ---------- 挑选模式：每条回答左边那个圆圈（见 js/packui.js） ----------
+   微信那套：勾中的进包，没勾的不进。圆圈的形状照着微信来（空心圆 → 实心带勾），
+   因为它不需要解释——老师天天用微信。
+   ★ 靠 `.msg` 自己的 `display:flex` 当第一格，**不用绝对定位**：
+     绝对定位要自己算每一层的偏移，而气泡有内边距、有左边框、有的还夹着分隔线，
+     算出来的位置迟早对不上（同族：`float`/`marginLeft` 拼出来的对齐）。
+     当成 flex 的第一格之后，"被勾中的那条气泡往右让一格"是布局自己算的。 */
+.pickbox {
+  flex: 0 0 auto; align-self: flex-start;
+  width: 20px; height: 20px; margin: 9px 10px 0 0; padding: 0;
+  border: 2px solid var(--line); border-radius: 50%;
+  background: var(--panel); cursor: pointer; position: relative;
+  transition: border-color .15s ease, background .15s ease;
+}
+.pickbox:hover { border-color: var(--brand); }
+/* 勾：用两条边拼出来的对勾（一个方块转 42°）。★ 不用 ✓ 这个字符：
+   它在不同字体里大小、粗细、基线都不一样，而这一圈只有 20px。 */
+.msg.picked .pickbox { border-color: var(--brand); background: var(--brand); }
+.msg.picked .pickbox::after {
+  content: ''; position: absolute; left: 4.5px; top: 1px;
+  width: 5px; height: 10px;
+  border-right: 2px solid #fff; border-bottom: 2px solid #fff;
+  transform: rotate(42deg);
+}
+/* 上面那句"跟着一起走"的问句。★ 它**不是**被勾上的，所以不能长得跟勾中的一样
+   （那样老师会以为有两处可以分别取消）——只给它一圈淡淡的环，读作"这句跟着一起"。 */
+.msg.user.pickedq .bubble { box-shadow: 0 0 0 2px var(--brand-line); }
+
 /* ---------- 顶栏 ---------- */
 header {
   flex: 0 0 auto;

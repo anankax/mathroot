@@ -21,10 +21,16 @@
 //   他会觉得**这个文件是坏的**。三个字节换一条命，值。
 //
 // ★ 它是**会话级**的，不是"这一条回复"级的：包里装的是从头到点击处为止
-//   全部的图和全文。挂在「复制这段」旁边（见 js/chat.js 的 attachCopy），
-//   是因为老师想"带走"这个念头就是在那时候冒出来的，而且
-//   「复制这段」＝**这一段**文字带走、「打包」＝**到这一段为止整包**带走，
-//   两个刻度挨着放，不用学第二个地方。
+//   全部的图和全文。
+//
+// ★★ 2026-10-05：上面那句话从第一版起就是这么写的，可那颗按钮一直挂在
+//   **每一条回复底下的 bar** 上（跟真正"这一段"的「复制这段」挤在一起）——
+//   位置在说"这是这一条的东西"，注释在说"这是整场的东西"，两句话对不上。
+//   孔老师那天把它点破了：「打包按钮就应该放在这个绿行才对，放对话里面干什么」。
+//   ⇒ 入口搬到「这一份」那一行（`#onep`，见 js/packui.js），那一行本来就是
+//     "这一场对话是哪一份"，打包打的正是这一份；跟「复制这段」的刻度也终于分开了。
+//   ⇒ 顺带多了一种打法：绿行上那颗「选择内容」进挑选模式，只打勾上的那几条
+//     （`make` 的入参因此有三态，见下面 `pick`）。
 var SR = (window.SR = window.SR || {});
 
 SR.pack = (function () {
@@ -40,9 +46,56 @@ SR.pack = (function () {
   function setTopic(t) { if (!topic && t) topic = String(t); }
 
   // 记下一条回复，返回它的序号（打包时按序号取"到这一段为止"）。
-  function note(visible, ggb) {
-    turns.push({ visible: String(visible || ''), ggb: (ggb || []).slice() });
+  //
+  // ★ 2026-10-05 多收一格 `ask`：**这一条回复上面那句老师说的话**。
+  //   孔老师那天定了勾选模式，勾的单位是「一问一答成对」——勾一条回答，
+  //   它上面那句问题跟着进包。以前包里只有助手说的话，老师翻开一个只有答案、
+  //   没有问题的 .md，看不出在答什么（那正是他要成对的原因）。
+  // ⚠ 缺省是**空串**不是 null：markdown 那边要 `t.ask || ''` 拼，null 会拼出 "null"。
+  function note(visible, ggb, ask) {
+    turns.push({
+      visible: String(visible || ''),
+      ggb: (ggb || []).slice(),
+      ask: String(ask == null ? '' : ask)
+    });
     return turns.length - 1;
+  }
+
+  // ---- 要打哪几条 ----
+  //
+  // ★★ 2026-10-05：这一格的入参有**三态**，因为打包的入口从"每条回复底下挂一颗"
+  //   改成了绿行上那一颗（孔老师：「打包按钮就应该放在这个绿行才对，放对话里面干什么」）。
+  //     ① 一个**数组**  → 只打这几个下标。勾选模式走这条。
+  //     ② 一个**数** n  → 0..n。老口径「到这一段为止」。
+  //        ★ 留着它不是怀旧：`make` 的旧调用点和几把探针还在传数字，
+  //          而且绿行那颗不按「选择内容」时打的是**整场**（下面第 ③ 条）。
+  //     ③ null/undefined → 全部。
+  //   ⚠ 三条路都**只认合法的下标、去重、升序**。
+  //     升序不是顺手排的：`figures` 给图起名是 `01-`、`02-`，顺序就是它给的，
+  //     数组要是按勾选的先后排，老师会拿到 `03-` 排在 `01-` 前面的包。
+  //   ⚠⚠ 别用 `sel[k] | 0` 那种写法。字符串下标（"1"）看着能过，可
+  //     `undefined | 0 === 0`，于是数组里任何一个空洞都会把**第 0 条**悄悄带上——
+  //     包里凭空多一段，而包看着是完整的（同族坑见记忆「检测脚本的数字不是它宣称的
+  //     那件事」：读数的意思错了，不是读数错了）。
+  function pick(sel) {
+    var out = [], n = turns.length, i, seen, k;
+    if (sel == null) { for (i = 0; i < n; i++) out.push(i); return out; }
+    if (typeof sel === 'number') {
+      if (!isFinite(sel)) return out;
+      for (i = 0; i <= sel && i < n; i++) out.push(i);
+      return out;
+    }
+    if (typeof sel === 'string') sel = sel ? sel.split(',') : [];
+    if (!sel || typeof sel.length !== 'number') return out;
+    seen = {};
+    for (i = 0; i < sel.length; i++) {
+      k = Number(sel[i]);
+      if (!isFinite(k) || k !== Math.floor(k) || k < 0 || k >= n || seen[k]) continue;
+      seen[k] = 1;
+      out.push(k);
+    }
+    out.sort(function (a, b) { return a - b; });
+    return out;
   }
 
   // ---- 名字 ----
@@ -87,11 +140,12 @@ SR.pack = (function () {
 
   // ---- 这一包里该有哪几张图（纯函数，node 里能测） ----
   // 同一串命令在链子里出现两次（"再看一眼刚才那张图"）只收一张。
-  function figures(upto) {
+  //   ★ 参数走 `pick`：一个数（到这一段为止）或一个数组（勾上的那几条）都收。
+  function figures(sel) {
     var out = [], seen = {};
-    var end = (upto == null ? turns.length - 1 : upto);
-    for (var i = 0; i <= end && i < turns.length; i++) {
-      var g = turns[i].ggb || [];
+    var idx = pick(sel);
+    for (var ii = 0; ii < idx.length; ii++) {
+      var g = turns[idx[ii]].ggb || [];
       for (var j = 0; j < g.length; j++) {
         var k = (SR.figures && SR.figures.key) ? SR.figures.key(g[j]) : String(g[j]).trim();
         // ★ 只有 `#清空` 的围栏不算图（模型空发一个围栏是常态，见 chat.js 里 ggbReal 那段）
@@ -108,16 +162,44 @@ SR.pack = (function () {
   }
 
   // ---- 全程文字 ----
-  function markdown(upto) {
-    var end = (upto == null ? turns.length - 1 : upto);
+  //
+  // ★ 抽成两层：`textOf` 是**真内容**（各条拼起来，没有标题、没有页脚），
+  //   `markdown` 在外面套上标题和页脚。分开的理由是 make() 那句
+  //   "还没有东西可以打包"判的是**有没有真内容**——它原来拿
+  //   `md.replace(/^#\s*备课全程\s*/, '')` 去判，**那个判据永远为真**：
+  //   页脚那行 `© 2026 KAX` 从来没被剥掉，所以哪怕一条回复都没有，
+  //   剩下的也是 `'---\n\n© 2026 KAX · 数根 mathroot'`（非空）。
+  //   ⇒ 那一档是个**死分支**，老师点打包只会拿到一个只有页脚的 zip。
+  //     2026-10-05 顺手修掉：判据直接问 textOf。
+  //
+  // ★ 一问一答成对（孔老师 2026-10-05 定的勾选单位）：问题在**前**、回答在后。
+  //   老师翻这个 .md 是要贴进教案的，只有答案没有问题的段落读不出在答什么。
+  function textOf(sel) {
+    var idx = pick(sel);
     var parts = [];
-    for (var i = 0; i <= end && i < turns.length; i++) {
-      var t = turns[i].visible.trim();
-      if (t) parts.push(t);
+    for (var ii = 0; ii < idx.length; ii++) {
+      var t = turns[idx[ii]];
+      var vis = String(t.visible || '').trim();
+      var q = String(t.ask || '').trim();
+      var one = [];
+      if (q) one.push('**问：** ' + q);
+      if (vis) one.push(vis);
+      if (one.length) parts.push(one.join('\n\n'));
     }
+    return parts.join('\n\n---\n\n');
+  }
+
+  function markdown(sel) {
+    var idx = pick(sel);
+    // ★ 标题**说实话**：打了 10 条里的 3 条，就别管它叫「全程」。
+    //   老师会把这一份发给备课组，名字说"全程"而内容只有三段，别人不会怀疑，
+    //   只会以为自己漏看了。文件名同理（见 make 里那个 files.push）。
+    var full = (idx.length === turns.length);
+    var head = full ? '# 备课全程'
+                    : '# 备课节选（' + turns.length + ' 条里挑了 ' + idx.length + ' 条）';
     // ⚠ 空场也**要出这个文件**：老师点了打包，包里却连一个文字文件都没有，
     //   他会以为打包坏了。（那种情况下面 make() 会另外说一句"没有东西可打"。）
-    return '# 备课全程\n\n' + parts.join('\n\n---\n\n') + '\n\n---\n\n© 2026 KAX · 数根 mathroot\n';
+    return head + '\n\n' + textOf(sel) + '\n\n---\n\n© 2026 KAX · 数根 mathroot\n';
   }
 
   // 加 BOM（理由见顶上"坑三"）
@@ -140,19 +222,23 @@ SR.pack = (function () {
   function isBusy() { return busy; }
 
   // ---- 打一个包 ----
-  //   upto   到第几条回复为止（null = 全部）
+  //   sel    打哪几条：null = 全部；一个数 = 0..n（"到这一段为止"）；
+  //          一个数组 = 只打这几个下标（勾选模式）。判据在 pick 那儿，有注释。
   //   onStep(现在第几张, 一共几张)   进度，界面拿它写状态栏
   //   cb({ ok, name, bytes, figs, missed, back, why })
   //
   // ★ 全程**不弹窗、不写库**，只有最后一步 save 会碰 DOM。
   //   所以探针可以先 make 拿到字节，自己拿去验，不惊动下载。
-  function make(upto, onStep, cb) {
+  function make(sel, onStep, cb) {
     if (typeof onStep === 'function') onStep(0, 0);
-    var list = figures(upto);
-    var md = markdown(upto);
-    var body = md.replace(/^#\s*备课全程\s*/, '').trim();
+    var list = figures(sel);
+    var md = markdown(sel);
+    var idx = pick(sel);
+    var 全 = (idx.length === turns.length);
 
-    if (!list.length && !body) {
+    // ★ 空判据问 `textOf`（真内容），**不是**拿 markdown 剥标题（那个永远为真，
+    //   见上面 textOf 那段）。图也没有、字也没有，才是真没东西。
+    if (!list.length && !textOf(sel).trim()) {
       cb({ ok: false, why: '还没有东西可以打包——先在对话里摆出几节，或者让它画张图。' });
       return;
     }
@@ -220,7 +306,8 @@ SR.pack = (function () {
         } catch (e) { mm = false; }
       }
 
-      files.push({ name: '备课全程.md', data: withBom(md) });
+      // ★ 名字跟着范围走：挑了 3 条出来，文件就不该叫「全程」（同上，标题那段）。
+      files.push({ name: (全 ? '备课全程.md' : '备课节选.md'), data: withBom(md) });
       cb({
         ok: true, name: fileName(), bytes: zip(files),
         // ★ figs 数是**图上**的张数（含导图）。真正装进包里的图片文件
@@ -243,6 +330,10 @@ SR.pack = (function () {
   return {
     note: note, setTopic: setTopic, reset: reset,
     fileName: fileName, shapeOf: shapeOf, figures: figures, markdown: markdown,
+    // ★ 2026-10-05 露给绿行那两颗按钮（js/packui.js）和探针：
+    //   `pick` 是"勾选 → 下标"那一步的唯一一份实现，界面不该自己再算一遍
+    //   （两处各算一遍，早晚一处认"勾上的"、另一处认"到这段为止"）。
+    pick: pick, textOf: textOf,
     withBom: withBom, make: make, save: save, isBusy: isBusy,
     count: function () { return turns.length; },
     // ★ 2026-10-02 露给思维导图用（js/mindmap.js 的 refresh）。
@@ -252,7 +343,7 @@ SR.pack = (function () {
     turns: function () { return turns; },
     topic: function () { return topic; },
     // 测试用：直接塞一批回复进去，不走界面（界面那条路见 js/chat.js 的 submit）
-    __seed: function (list, t) { reset(); topic = t || ''; (list || []).forEach(function (x) { note(x.visible, x.ggb); }); }
+    __seed: function (list, t) { reset(); topic = t || ''; (list || []).forEach(function (x) { note(x.visible, x.ggb, x.ask); }); }
   };
 })();
 

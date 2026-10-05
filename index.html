@@ -262,6 +262,16 @@ window.SRlib = (function () {
 <script defer src="js/memo.js"></script>
 <script defer src="js/landing.js"></script>
 <script defer src="js/chat.js"></script>
+<!-- 绿行上那两颗按钮（见 js/packui.js）。
+     ★ 排在 chat.js **后面**：chat.js 每收完一轮、以及刷新之后按记忆重建完，
+       会喊一声 `SR.packui.sync()` 让这两颗重算条数。
+       ⚠ 顺序反了**不报错、也不崩**——那一句挂在 `if (SR.packui)` 下面，
+         packui 还没装就直接跳过去，屏幕上看着一切正常，只是那两颗按钮
+         永远停在 HTML 里的默认字上（没有条数、点了也进不了挑选模式）。
+         这种"静默失效"就是这条注释存在的理由。
+     ★ 它要的 SR.pack（账本）在上面 pack.js 那句就装好了；
+       SR.chat 那几件（setStatus/getStatus）只在这儿的事件回调里才求值。 -->
+<script defer src="js/packui.js"></script>
 <!-- 投影（见 js/project.js）。★ 排在 chat.js **后面**：台阶条末尾那颗「⛶ 投影」
      是 chat.js 的 renderSteps 挂的，它要问 `SR.project.can()` 才决定画不画。
      ⚠ 这个顺序反过来**也读得到**（两边都只在运行时互相找，谁也不在装载时用谁），
@@ -508,6 +518,21 @@ window.SRlib = (function () {
       <span class="of" id="op-cls" title="点一下改班级"></span>
       <span class="of" id="op-date" title="点一下改日期"></span>
       <span class="bag" id="op-bag"></span>
+      <!-- 带走这一份的两个入口（见 js/packui.js）。
+           ★ 「打包」原来挂在**每一条回复底下**，跟真正"这一段"的「复制这段」并排摆着
+             ——位置在说"这是这一条的东西"，而 js/pack.js 从第一版写的都是"从头到
+             点击处为止"，两句话对不上。孔老师 2026-10-05 把它点破了：
+             「打包按钮就应该放在这个绿行才对，放对话里面干什么。」
+           ★ 「选择内容」是他同一天多要的那一种打法：进挑选模式，每条回答左边长一个
+             微信那样的圆圈，勾中的才进包（勾一条回答，它上面那句问跟着一起走）。
+           ★ 为什么放最右边（`.bag` 后面）：`.bag` 上写着"这一份装了几件"，
+             是**结果**；这两颗是**动作**。读的顺序是 条件(课题/班级/日期) →
+             结果(装了几件) → 动手(挑/打包)，跟这一行原本"条件先读、结果后读"
+             那条注释是一路的。
+           ⚠ 这两颗的默认文字由 js/packui.js 的 paintLabels() 写（带上条数），
+             HTML 里留空不是漏了。 -->
+      <button type="button" id="op-pick" class="opbtn">选择内容</button>
+      <button type="button" id="op-pack" class="opbtn packbtn">打包</button>
     </div>
     <!-- 空对话区里那块浅到几乎看不见的大字。★ 学生一进来，这一栏九成是白的，
          光放一句「告诉我你的问题。」，上面那大片留白看着像"没做完"。

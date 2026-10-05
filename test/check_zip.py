@@ -14,7 +14,7 @@
 #      ⚠ 清单**只给名字、不给 sha256** 时，这条自动降级成"名字对不对"，
 #        并在 info 里明写"只对名字，没比内容"——别把那种绿当成内容也验过了。
 #   4. 条目顺序：01、02…连不连得上                  ← 序号断了 = 解压顺序不再是讲课顺序
-#   5. `备课全程.md` 头三个字节是不是 EF BB BF      ← 没有 BOM，Windows 记事本整篇乱码
+#   5. 那个 .md 的头三个字节是不是 EF BB BF          ← 没有 BOM，Windows 记事本整篇乱码
 #   6. 每张 .png 的签名 + IHDR 里的宽高是不是正整数 ← "图真的是图、有尺寸"
 #
 # 用法：
@@ -38,7 +38,18 @@ except Exception:
 
 PNG_SIG = b'\x89PNG\r\n\x1a\n'
 UTF_FLAG = 0x0800
-MD = '备课全程.md'
+
+# ★★ 2026-10-05：那一份文字**有两个合法的名字**。
+#   整场打 → 「备课全程.md」；绿行上勾了其中几条打 → 「备课节选.md」
+#   （见 js/pack.js 的 markdown / make：名字跟着范围走）。
+#   ⚠ 这儿原来写死 `MD = '备课全程.md'`，于是"挑几条打"的那个包会被这一关判成
+#     「包里没有「备课全程.md」—— 老师拿到的只有图，链子全文丢了」：
+#     **产品是对的，闸报红**，而且红的话术完全说得通（同族坑见记忆
+#     「检测脚本的数字不是它宣称的那件事」：读数的意思错了，不是读数错了）。
+#   ⇒ 改成"任何一个 .md 都算数"。**名字该是哪一个**由探针按范围断言
+#     （test/probe_pack.cjs 第 3 节），这一关只管"有没有、有没有 BOM"。
+MD_NAMES = ('备课全程.md', '备课节选.md')
+MD = MD_NAMES[0]            # 自检造夹具用（两个名字都合法，取第一个）
 
 
 def png_size(b):
@@ -115,7 +126,7 @@ def check(path, manifest=None):
     else:
         info['清单'] = '没给（第 3 条没查）'
 
-    # 4. 序号连不连得上 + 备课全程.md 在不在
+    # 4. 序号连不连得上 + 那份 .md 在不在
     nums = []
     for n in names:
         head = n.split('-', 1)[0]
@@ -125,14 +136,18 @@ def check(path, manifest=None):
     if nums and nums != list(range(1, len(nums) + 1)):
         bad.append('图的序号不连续：' + ', '.join('%02d' % x for x in nums) +
                    '（解压出来的默认顺序就不再是讲课顺序了）')
-    if MD not in names:
-        bad.append('包里没有「' + MD + '」——老师拿到的只有图，链子全文丢了')
+    # ★ 名字不写死（两个都合法，见上面 MD 那段）：这一关只问"有没有一份文字"。
+    md = next((n for n in names if n.lower().endswith('.md')), None)
+    if md is None:
+        bad.append('包里**一份 .md 都没有**（「' + '」「'.join(MD_NAMES) + '」都行）——'
+                   '老师拿到的只有图，链子全文丢了')
+    info['文字'] = md or '★ 没有'
 
     # 5. BOM
-    if MD in names and rd(MD) is not None:
-        head = rd(MD)[:3]
+    if md is not None and rd(md) is not None:
+        head = rd(md)[:3]
         if head != b'\xef\xbb\xbf':
-            bad.append('「' + MD + '」没带 UTF-8 BOM（头三个字节是 ' +
+            bad.append('「' + md + '」没带 UTF-8 BOM（头三个字节是 ' +
                        head.hex(' ') + '，应该是 ef bb bf）——'
                        'Windows 记事本打开会整篇乱码，老师会以为文件坏了')
 
@@ -250,9 +265,9 @@ def main(args):
             continue
         tag = '干净' if not bad else '★ %d 处问题' % len(bad)
         print('%-30s %-12s' % (os.path.basename(f), tag))
-        print('     条目 %s（%s）　图 %s　尺寸 %s　清单 %s　%s'
+        print('     条目 %s（%s）　图 %s　尺寸 %s　文字 %s　清单 %s　%s'
               % (info['条目'], info['压缩方式'], info['图'], info['尺寸'],
-                 info['清单'], ''))
+                 info.get('文字', '?'), info['清单'], ''))
         print('     包里：' + '、'.join(names))
         for b in bad:
             print('     · ' + b)

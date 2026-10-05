@@ -209,7 +209,27 @@ function ok(cond, name, why) {
   // ---- 刷新之后还在（这个产品的记忆得扛得住刷新，灯也一样）----
   await q(`SR.memo.setPocket({topic:'6.3 相交线', cls:'七(7)班'}); SR.memo.produced('prep', {chain: 2}); SR.memo.flush(); 1`);
   await send('Page.navigate', { url: SITE });
-  for (let i = 0; i < 80; i++) { if (await q('!!(window.SR && SR.memo)')) break; await sleep(250); }
+  // ★★ 2026-10-05 补：等的**不是** `SR.*` 在不在 —— 那几件是 defer 脚本一执行就有了，
+  //   而**工位那一行是"开机"画出来的**（`SR.main.boot()`，挂在 DOMContentLoaded 上、
+  //   前面还压着一道"等第三方库（最多 8 秒）"的闸门，见 index.html/main.js 末尾）。
+  //   只等 `SR.*` 的话，下面量的是一行**还没画出来的空壳**：
+  //     · `HASS()` 数出 0 个按钮 →「刷新之后灯还亮着」当场变红；
+  //     · 紧接着【三】那把自检报 `{"h":0,"w":972,"btns":0}` → 整节 `process.exit(3)`。
+  //   2026-10-05 拿 HEAD 的 worktree 对照过：**两处红在这一版之前就在**，
+  //   跟当天的改动无关，是尺子起跑太早（同族：等 `SR.*` 等于等"脚本加载完了"，
+  //   **不等于**"这个功能能用了"。probe_pack / probe_restore_bar 都栽过同一跤）。
+  //   ⇒ 等**画出来的东西**：`#works .workbtn` 真的在 DOM 里了，再往下量。
+  const awaitWorks = async () => {
+    for (let i = 0; i < 60; i++) {
+      if (await q('!!document.querySelector("#works .workbtn")')) return true;
+      await sleep(250);
+    }
+    return false;
+  };
+  if (!(await awaitWorks())) {
+    console.log('⛔ 尺子坏了：等不到工位那一行画出来，这一趟不算数。');
+    await fetch(`http://${HOST}/json/close/${t.id}`); ws.close(); process.exit(3);
+  }
   await sleep(400);
   ok(await HASS() === 'prep', '刷新之后灯还亮着（照 localStorage 那一份重画）',
      '实际：' + await HASS());
