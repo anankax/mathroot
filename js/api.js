@@ -106,6 +106,107 @@ SR.api = (function () {
   }
 
   // ============================================================
+  //  ★★ 2026-10-05 孔老师定的第八件事：**发历史之前，把有图那几轮里的画板命令摘掉。**
+  //
+  //  病根：`SR.memo.history()` 把助手上一轮的**原话**发回去，而原话里带着 ```ggb 围栏
+  //  （一段二十来行画板命令）。模型看到的"对话"于是是：老师问一句 → 我吐二十行命令 →
+  //  老师问一句 → …… 它接着往下写的就是**再吐一遍那二十行**。
+  //  实测（历史清干净了再问）：同一句话围栏 **1** 块；历史上带着旧回复时围栏 **5** 块。
+  //  「一句话拿回五页」整件事就是从这儿来的。
+  //
+  //  ★ 治法照大角几何那个 `list` 的形状来：**别重放文字，告诉它板子上真有什么**。
+  //    那个 list 当年加在"纠错重试"那一步上，A/B 里六趟一次都没触发（记账见 js/chat.js），
+  //    搁在**历史层**就不一样——每一轮都有话要说，每一轮都算数。
+  //
+  //  ★ 边界（都是故意划的，别顺手往外扩）：
+  //    · **只动助手那几轮**。老师说的话一个字不改——他要接着说的就是那些话。
+  //    · **只动有图的那几轮**（解析出来 ggb 非空）。没图的轮**原样奉还**：组卷那份
+  //      ```材料、备课那份正文，围栏得留着给下一轮改。
+  //    · 轮里还带着 ```材料 的，**整轮不碰**（见下面那句 return t）——那是整份卷子，
+  //      摘掉它下一轮就没东西可改了。
+  //    · 围栏的识别**整份借 render.js 的 parseFences**，不在这儿另写一份正则。模型经常
+  //      把开头的 ``` 或 `ggb` 那一行掉了，那些形状 render.js 会捞回来（js/render.js:68
+  //      起那三段）——自己写一份就捞不着，而**没捞着的那种恰恰是最该摘的**（它就是原料
+  //      原味的命令裸在正文里）。
+  //    ⚠ 顺带一个后果，认下它：```想说 那三个选项也在 history 里被一起摘了。那是**它自己
+  //      上一轮给过的选项**，下一轮用不上，摘了是净赚——但这是副作用，不是这一刀的目的。
+  //    ⚠ SR.render / SR.board 的 `<script>` 都比本文件**晚**（index.html 227 行 vs 232／236），
+  //      所以只能在**这会儿**（真要发请求时）问它们，不能在文件顶层问。
+  //
+  //  ⚠ 调用点挑在 trimHistory **之前**（见 ask 里那句）：先摘后裁，省下来的额度就还给
+  //    正文了，能多留住几轮；反过来先裁的话，围栏先把额度吃光，裁掉的是真话。
+  function 板上现在有() {
+    //  ★ 只能问板子自己。数 DOM 两条都不行，实测过：`inject` **600ms 就注进来一个空壳**
+    //    （"元素在"不等于"画好了"），而 `#清空` **绕过 `clear()`**（"有个对象"也不等于
+    //    "老师要的那张图在"）。理由整段在 js/board.js 的 `objects` 那儿。
+    try {
+      var a = (SR.board && SR.board.objects) ? SR.board.objects() : null;
+      return (a && a.length) ? a : [];
+    } catch (e) { return []; }
+  }
+
+  // 这一轮该报给模型的"板上有这些"。
+  //  ★ 直接报 getAllObjectNames() 不行——实测（喂真画板跑一个三角形加一条高）它吐回来的是：
+  //      A、B、C、t1、c、a、b、f、h、H
+  //    其中 `t1`（三角形）`c/a/b`（三条边）`f`（直线AB）是**画板自己起的名**，模型压根没见过，
+  //    写进提示词只会添乱。所以候选名只从**模型自己写过的赋值左边**取（`h=垂线(...)` 里的 h），
+  //    再拿板子的名单**验一遍它在不在**——**板子说了算**。
+  //  ★ 一个都没验上（比如那轮其实没画出来、板子是空的）就退到"板上有 N 件东西"：
+  //    宁可说少，也不报一串模型不认识的名字。
+  function 报板上有什么(块们) {
+    var 板上 = 板上现在有();
+    if (!板上.length) return '';
+    var 有 = {}, i;
+    for (i = 0; i < 板上.length; i++) 有[板上[i]] = 1;
+    var 见过 = {}, 名单 = [];
+    for (var b = 0; b < 块们.length; b++) {
+      var 行们 = String(块们[b] || '').split(/\r?\n/);
+      for (var j = 0; j < 行们.length; j++) {
+        var m = 行们[j].match(/^\s*([A-Za-z一-龥][A-Za-z0-9_一-龥]*)\s*=/);
+        if (!m) continue;
+        var n = m[1];
+        if (见过[n] || !有[n]) continue;   // ★ 板子上没有的，一个都不许报
+        见过[n] = 1; 名单.push(n);
+      }
+    }
+    if (!名单.length) return '板子上现在有 ' + 板上.length + ' 件东西（名字是画板起的，不念了）';
+    return '板子上现在有：' + 名单.slice(0, 20).join('、')
+      + (名单.length > 20 ? ' 等 ' + 名单.length + ' 个' : '');
+  }
+
+  // 把助手那几轮里的 ```ggb 围栏换成一行。老师的话、没图的轮，一律原样奉还。
+  function 摘掉画板命令(轮们) {
+    if (!轮们 || !轮们.length) return 轮们;
+    if (!(SR.render && SR.render.parseFences)) return 轮们;   // 装配还没起来就别动它
+    var 末 = -1, i;
+    for (i = 轮们.length - 1; i >= 0; i--) {
+      if (轮们[i] && 轮们[i].role === 'assistant') { 末 = i; break; }
+    }
+    return 轮们.map(function (t, k) {
+      if (!t || t.role !== 'assistant') return t;
+      var 原 = String(t.content == null ? '' : t.content);
+      if (原.indexOf('ggb') < 0) return t;            // 粗筛：连这三个字母都没有，肯定没图
+      var p;
+      try { p = SR.render.parseFences(原, { 收尾: true }); } catch (e) { return t; }
+      if (!p || !p.ggb || !p.ggb.length) return t;    // ★ 没图 → 一个字不改
+      if (p.mat && p.mat.length) return t;            // ★ 这一轮还带着整份材料 → 整轮不碰
+      var 行 = p.ggb.map(function (_, n) {
+        var 名 = (p.ggbInfo && p.ggbInfo[n]) ? ('「' + p.ggbInfo[n] + '」') : '';
+        return '（第 ' + (n + 1) + ' 张图' + 名 + '：画板命令已经画在右边那块板上了，这里不再抄一遍原文。）';
+      }).join('\n');
+      // 末轮再补一句"板上现在有什么"——**这一轮的问题紧接着它**，位置最贴。
+      var 尾 = (k === 末) ? 报板上有什么(p.ggb) : '';
+      var 正文 = String(p.visible || '').trim();
+      //  ★ 复制一份再改：`hist` 是 chat.js 那个跨轮复用的数组，就地改等于把记忆也改了
+      //    （下一轮再取一次就是摘过的，重跑／回滚那些路会读到跟首轮不一样的东西）。
+      var o = {};
+      for (var key in t) if (Object.prototype.hasOwnProperty.call(t, key)) o[key] = t[key];
+      o.content = 正文 + '\n' + 行 + (尾 ? '\n' + 尾 : '');
+      return o;
+    });
+  }
+
+  // ============================================================
   //  正文的组装（chat.js 也用它，别在两处各写一遍）
   // ============================================================
   // parts 收两种形状：
@@ -560,7 +661,7 @@ SR.api = (function () {
     //   而一整张卷子的五六页图本来就占掉两千多字符当量，再用 7000 去裁，
     //   历史会被裁到只剩最后一轮——学生上一句说"我算到 x=4"就白说了。
     var budget = (anyImg && b.budgetImage) ? b.budgetImage : b.budget;
-    var hist = trimHistory(opts.history || [], budget);
+    var hist = trimHistory(摘掉画板命令(opts.history || []), budget);
     // 真发出去的那一份里还有没有图——**裁完再判一次**。真被裁掉了就退回文字链，
     // 否则等于让文字模型去啃一个根本没发给它的东西。
     var hasImg = roundImg || histHasImage(hist);
@@ -778,6 +879,10 @@ SR.api = (function () {
     probeKey: probeKey,
     backend: backend, getBackendId: getBackendId, setBackend: setBackend,
     userContent: userContent, trimHistory: trimHistory, estTokens: estTokens,
+    // ★ 2026-10-05 跟 trimHistory 并排露出来，同一个理由：**它俩是一对**（都是"发之前
+    //   把历史收拾一遍"），而且这一条**必须有办法单独量**——它在 ask 里面，
+    //   不露出来就只能靠真跑一轮去猜它生效没有，那正是最难查的那种坏。
+    摘掉画板命令: 摘掉画板命令,
     usage: usage, usageText: usageText, pickTextbook: pickTextbook, buildSystem: buildSystem
   };
 })();
