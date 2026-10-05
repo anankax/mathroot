@@ -1193,7 +1193,24 @@ body[data-landing="1"] .ghost { display: none; }
 /* ---------- 左：对话 ---------- */
 #msgs { flex: 1 1 auto; overflow-y: auto; padding: 18px 18px 6px; scroll-behavior: smooth; }
 
-.msg { display: flex; margin-bottom: 14px; }
+/* ★★ 2026-10-05 `flex-wrap: wrap` 是**修一个真 bug**，不是调节距。
+   孔老师截图：「而且这个右侧的小字也很丑」——那条小字（`.localnote`，
+   11.5px）本该在气泡**底下**，实际却挂在气泡**右边**，被挤成两三个字一行。
+   根子在这一行和 `js/chat.js` 的 `noteUnder`：
+     · `noteUnder(el, …)` 里的 `el` 是**这条 .msg 自己**（chat.js:2126 建的那个），
+       它 `el.appendChild(p)` 把 `<p class="localnote">` 挂成 .msg 的孩子；
+     · 而 .msg 是 `display:flex`，默认 `nowrap` —— 那个 `<p>` 就不是"底下一行"，
+       而是**气泡的兄弟**，跟气泡平分这一行。
+   量到的（1440×900，一条 11.5px 的补话）：
+     挂之前  .msg 954 / 气泡 840（max-width:88%）
+     挂之后  .msg 954 / 气泡 **486** / 小字 **466**（x=760..1226，在气泡右边）
+   气泡越长越糟：气泡顶到 88% 时小字只剩 954-840=**114px**，
+   11.5px 一行两个字——正是他截图里那道竖条。
+   而且它**顺手把气泡也挤瘦了**（上面 840→486），图跟着被压。
+   ⇒ 两处一起改：这里允许换行，`.localnote` 那条给它 `flex-basis:100%`
+     钉在自己一整行上（见下面 `.localnote` 那段）。少任何一处都还是并排。
+   ⚠ `.msg.user` 的 `justify-content:flex-end` 不受影响：只有一个孩子时不换行。 */
+.msg { display: flex; flex-wrap: wrap; margin-bottom: 14px; }
 .msg.user { justify-content: flex-end; }
 
 /* 「换到「作图」」——六道工序之间的那道接缝（见 js/chat.js 的 addDivider）。
@@ -2807,8 +2824,15 @@ footer .r {
 .pv-figwait { font-size: 11px; color: var(--ink-3); }
 /* 画图进度。★ 一句实话：这几秒里右栏是"半成品"，不说清楚老师会以为卡住了。 */
 p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
-/* 本机在气泡底下补的一句（不是模型说的）。压暗一档，跟气泡里的话区分开。 */
-.localnote { margin: 5px 0 0 2px; font-size: 11.5px; color: var(--ink-3); line-height: 1.6; }
+/* 本机在气泡底下补的一句（不是模型说的）。压暗一档，跟气泡里的话区分开。
+   ★★ 2026-10-05 `flex: 0 0 100%` 跟 `.msg{flex-wrap:wrap}` 是**同一处修复的两半**，
+   缺一个都不管用（少上面那个：这里没有可以换的行；少这个：短气泡旁边它还是并排）。
+   为什么要 100% 而不是靠"装不下自己会换行"：**短气泡旁边装得下**——
+   一段两行的小字搁在 300px 的气泡右边绰绰有余，那就又回到他截图那个样子了。
+   钉成 basis:100% = 无论气泡多短，它都占满自己一整行。
+   ⚠ 它只对 flex 父亲有意义；`.localnote` 用在非 flex 的地方时这条被忽略，不影响。 */
+.localnote { margin: 5px 0 0 2px; font-size: 11.5px; color: var(--ink-3); line-height: 1.6;
+             flex: 0 0 100%; }
 /* 跟在这句话后面的小按钮（"要不要照它重画一遍"）。做小、做轻——它不是主按钮，
    是一句询问的落点；抢眼就等于逼老师点它，而这一步**本来该由他决定**。 */
 .localnote .lnbtn { margin-left: 6px; padding: 1px 8px; font: inherit; font-size: 11px;

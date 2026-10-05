@@ -110,20 +110,52 @@ SR.render = (function () {
     //   ★ 撞上它就**就此打住、一个字不碰**（不 k++）：把那一行和它后面的全留给下面的
     //     "半截围栏"逻辑——没闭合就藏进 pending，闭合了就当正文/围栏处理。
     var RE_FENCEOPEN = /^[ \t]*`{3,}[ \t]*\S/;
+    // ★★ 2026-10-05 夜加：**连 `ggb` 那三个字母都没写的块头** —— 一整行只有 `#清空`／`#三维`。
+    //
+    //   为什么非加不可（`test/_replay.cjs 21` 当场拍下来的）：
+    //     老师打「做一个合并同类项的数形结合动画演示」，模型**画对了**——
+    //     `#清空 / 坐标系 / 条1=多边形((0,0),(1,0),(1,3),(0,3)) / … / 条5=… / α=Slider / #播放 α`，
+    //     五根一模一样的长条并排拼。可它**没写开头的三个反引号，也没写 `ggb` 这一行**，
+    //     整份命令是光秃秃从 `#清空` 起头的。上面那条捞回只认"一整行 `ggb`"，接不住它 →
+    //     板子上**一件都没有**，老师看见的是一张白纸；而正文里那句"点播放键，右边那两条 2x 会滑过来"
+    //     照样在念。**这是这个工位最糟的那种失败：话说了，图没有，还一声不吭。**
+    //
+    //   闸门两道（缺一条就会把大白话当命令喂给画板）：
+    //     ① 这一行**只**是 `#清空` 或 `#三维` 四个字。这两个词在这份产品里不可能出现在正文里，
+    //        而且围栏齐全时它们早被上面主正则摘走了 —— 能走到这儿的只有"头掉了"的那种。
+    //     ② 它后面**紧挨着至少两条**也长得像命令的行。孤零零一个 `#清空` 后面跟大白话，不动。
+    //   ⚠ 不认别的起头行（`坐标系`／`数轴`）：那几个词老师自己就会打在问句里
+    //     （"画个坐标系"），拿它当块头会把老师那句话本身喂给画板。
+    var RE_CMD_HEADLINE = /^(#清空|#三维)$/;
+    function 找光头(行们) {
+      for (var i = 0; i < 行们.length; i++) {
+        if (行们[i].trim() !== 'ggb') continue;
+        var j = i + 1;
+        while (j < 行们.length && !行们[j].trim()) j++;
+        if (j < 行们.length) {
+          var 首 = 行们[j].trim();
+          if (RE_CMD_HEAD.test(首) || RE_CMD_ASSIGN.test(首)) return i;
+        }
+      }
+      // 第二条路：光秃秃的 `#清空`／`#三维` 打头
+      for (var k = 0; k < 行们.length; k++) {
+        if (!RE_CMD_HEADLINE.test(行们[k].trim())) continue;
+        var 数 = 0;
+        for (var m = k + 1; m < 行们.length; m++) {
+          var s = 行们[m].trim();
+          if (!s) break;
+          if (!(RE_CMD_HEAD.test(s) || RE_CMD_ASSIGN.test(s))) break;
+          数++;
+        }
+        if (数 >= 2) return k;
+      }
+      return -1;
+    }
     // ★ 没等到收口、又不许当成品的那半块（见 opts.收尾 那段）。整块先攥在手里不交出去。
     var 握住 = '';
     for (var 轮 = 0; 轮 < 8; 轮++) {
       var 行 = visible.split('\n');
-      var 头 = -1;
-      for (var i = 0; i < 行.length; i++) {
-        if (行[i].trim() !== 'ggb') continue;
-        var j = i + 1;
-        while (j < 行.length && !行[j].trim()) j++;
-        if (j < 行.length) {
-          var 首 = 行[j].trim();
-          if (RE_CMD_HEAD.test(首) || RE_CMD_ASSIGN.test(首)) { 头 = i; break; }
-        }
-      }
+      var 头 = 找光头(行);
       if (头 < 0) break;
       var 体 = [], k = 头 + 1, 收口了 = false;
       for (; k < 行.length; k++) {

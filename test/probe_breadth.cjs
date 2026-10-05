@@ -21,7 +21,7 @@
 //   所以最后留一行"这几格你得自己看图"。
 //
 // 用法：node test/probe_breadth.cjs [从第几格] [到第几格]
-const path = require('path'), http = require('http');
+const path = require('path'), http = require('http'), fs = require('fs');
 const WebSocket = require(path.join(process.env.USERPROFILE, '.claude', 'skills', 'browser', 'browser', 'node_modules', 'ws'));
 const put = p => new Promise((res, rej) => { const r = http.request({ host: 'localhost', port: 9222, path: p, method: 'PUT' }, x => { let s = ''; x.on('data', c => s += c); x.on('end', () => res(s)) }); r.on('error', rej); r.end() });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -347,6 +347,18 @@ const 判 = (名, ok, 附) => { console.log('  ' + (ok ? '✓' : '✗') + ' ' + 
     }
     await sleep(1500);                       // 冻图是收流之后才做的，得给它几步
     const m = await q(量);
+    // ★★ 2026-10-05 夜加：**把模型这一轮的原文存下来**。
+    //   为什么非加不可：这一把的每一格都要**重新问一次模型**，问出来的那一份原文当场就没了。
+    //   于是红了一格，我能看见的只有「没认 1 / 空壳 ["P1"]」这种**结果**，
+    //   看不见**它到底写了哪一行**——想查根因只能再问一遍，可再问一遍写出的是**另一份**。
+    //   老账：[[scanner-numbers-are-not-what-they-claim]] —— 读数没错，可它不够回答"为什么"。
+    //   ★ 从 `SR.memo.log()` 取，不从 DOM 取（KaTeX 渲过的 DOM 里公式会变成 LaTeX 源码，见 js/project.js 那段）。
+    const 原文 = await q('(function(){try{var L=SR.memo.log();for(var i=L.length-1;i>=0;i--){if(L[i]&&L[i].r==="a"&&L[i].t)return L[i].t}return ""}catch(e){return ""}})()');
+    try {
+      const 匣 = path.join(__dirname, '_bench_out', 'raw');
+      if (!fs.existsSync(匣)) fs.mkdirSync(匣, { recursive: true });
+      fs.writeFileSync(path.join(匣, String(i + 1).padStart(2, '0') + '.txt'), 原文 || '', 'utf8');
+    } catch (e) { /* 存不下不该拖垮整场 */ }
     // ⑦ 取墨：放在 ④⑤ 之前 —— 那两步会开关播放、挪自由点，量到的是被它们动过的板子。
     await q('(async function(){ window.__P = await window.__照(); return 1 })()');
     const 墨 = await q('window.__比2(window.__空, window.__P)');
@@ -370,7 +382,8 @@ const 判 = (名, ok, 附) => { console.log('  ' + (ok ? '✓' : '✗') + ' ' + 
       能播: m.能播, 键亮: m.键亮, 是滑块: m.是滑块, 动的: 动, 图: m.图, 占位: m.占位, 净: 净, 动好: 动好,
       栏: 栏, 自称: 自称, 墨: 墨数, 换尺: 墨 && 墨.换尺 || null,
       自由点: 拖.炸 ? null : 拖.自由点, 惰性: 惰, 可达: 拖.炸 ? null : 拖.可达.length,
-      惰性是谁: 拖.炸 ? null : 拖.惰性自由点, 拖好: 拖好, 拖炸: 拖.炸 || null, 拖脏: 拖.炸 ? null : 拖.没复原.length });
+      惰性是谁: 拖.炸 ? null : 拖.惰性自由点, 拖好: 拖好, 拖炸: 拖.炸 || null, 拖脏: 拖.炸 ? null : 拖.没复原.length,
+      原文: 原文 || '' });
     判('① 板上有东西（**有命名对象 或 有墨**）', 有物,
       '对象 ' + m.对象数 + ' / 墨 ' + 墨数 + ' / 冻图 ' + m.图 + ' / 占位 ' + m.占位 + ' / 围栏 ' + 栏
       + (m.对象数 === 0 && 墨数 > 0 ? '　★ 只有轴、没有命名对象 —— 旧判据在这儿是**假红**' : '')
