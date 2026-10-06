@@ -28,6 +28,20 @@ SR.chat = (function () {
   var MAX_TURNS = 24;
   var lastFail = null;       // 上一轮失败的提问，切完 Key 可以一键重发
 
+  // ★★ 2026-10-06：气泡底下那根小条上的三件事（复制／修改／重新发送）。
+  //
+  // `pendingTrunc` —— 按过「修改」之后，**发送时该从第几条重来**。
+  //   为什么是"挂起来等发送"而不是"按下去就删"：老师点「修改」往往只想**看一眼
+  //   自己原来是怎么说的**，看完反悔、或者干脆不改了。按下去就删的话，
+  //   他没有回头路。挂起来的话，只要不按发送（或者按 Esc），一个字节都没动。
+  //   ★ 它跟 `pendingParts` 是一对：那个挂的是"要发什么"，这个挂的是"从哪重来"。
+  var pendingTrunc = null;   // { n: 第几条, 原话: '…' }
+  //
+  // ★ 附件**不用另存一份**：那条气泡建出来的时候，`text` 和 `parts` 就已经
+  //   被闭包攥住了（见 addUser 底下那段）。刷新之后 `SR.memo` 里没有图
+  //   （memo.js 顶上那个老取舍），重画出来的气泡本来也就没有图 ——
+  //   两边**同时**没有，看着是一致的，不需要在这儿补一句"图丢了"。
+
   // 开场白。★ 每个工位**一句话**，就这么长。
   //   2026-10-01 孔老师定了两回，第二回是骂醒的：他要的就是「告诉我你的问题」这一句。
   //   ★ 别再加第二句。加什么都算跑偏，试过两版都是这个下场：
@@ -120,7 +134,19 @@ SR.chat = (function () {
 
     els.send.addEventListener('click', function () { submit(); });
     els.input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); return; }
+      // ---- Esc = 反悔（2026-10-06）----
+      // ★ 只办一件事：把按「修改」挂起来的那一刀**卸掉**（见文件开头 `pendingTrunc`）。
+      //   按「修改」之后输入框里是他原来那句话，**发送键就在手边** ——
+      //   他可能只是想看一眼、然后顺手清空走人。清空走人倒是不会触发那一刀
+      //   （`submit` 头一句就把空话挡了），可万一他清到一半又打了几个字发出去，
+      //   丢掉的就是后面那几轮。
+      // ★ 只卸刀，**不清输入框**：那是他自己的字，Esc 不该替他删掉。
+      // ⚠ 跟工位那一行的 Esc（如果有）不冲突：这一句只在输入框里按的时候才响。
+      if (e.key === 'Escape' && pendingTrunc) {
+        pendingTrunc = null;
+        setStatus('不改了，后面那几轮都留着。');
+      }
     });
     els.input.addEventListener('input', autoGrow);
     // 提示语分长短两版，窗口跨过 900px 那条线时要换过来。
@@ -390,7 +416,19 @@ SR.chat = (function () {
       // t.w = 说这句话的时候在哪个工位。变了就插一条分界线。
       if (t.w && prev && t.w !== prev) addDivider(t.w);
       if (t.w) prev = t.w;
-      if (t.r === 'u') { ask = t.t; addUser(t.t, []); continue; }
+      if (t.r === 'u') {
+        ask = t.t;
+        // ★ 2026-10-06：老师这一条也要钉门牌 —— 「修改 / 重新发送」要按它算
+        //   "从第几条重来"（见 账本号 / 从这儿重来）。重画这条路跟当场那条路
+        //   **必须钉同一个号**，不然刷新之后这两颗按钮要么失灵、要么切错地方，
+        //   而屏幕上两种表现看着都像"按钮坏了"。
+        //   ⚠ 传 `[]`：账本里没存图（memo.js 顶上那个老取舍），重画出来本来就没图，
+        //     所以 attachUserActs 拿到的 parts 是空的 —— 那一颗「重新发送」
+        //     重发出去的也就只有字，**跟屏幕上这条看着一致**，不会出现"图悄悄少了"。
+        var ue = addUser(t.t, []);
+        if (ue) ue.setAttribute('data-mi', String(i));
+        continue;
+      }
       dimTexts.push(String(t.t || ''));     // 助手回复的原文——挑兜底按钮用（见上面 dimTexts）
       // ★ 2026-10-03 起用 restoreParts（`restoreText` 是它的薄包装）：
       //   重画这条路**不只要正文了** —— 每条回复底下还要钉回它自己那块冻图，
@@ -418,14 +456,19 @@ SR.chat = (function () {
       //   绿行勾第 3 条勾中的是第 4 条的内容，而包看着是完整的。
       //   ⚠ ai 要数**每一条**助手回复，不受下面 copy 那道闸影响。
       //
-      // ★★ 2026-10-05：`data-turn` 从这儿起**无条件**挂（原来它是 `attachCopy` 的第三个
-      //   参数，只喂给 copy 那三格）。绿行那套勾选覆盖**六个工位**，可 `copy: true` 的
-      //   只有备课／命题／讲评三格（见 js/config.js）——把序号跟 copy 绑在一起，
-      //   作图那几格的回复就**永远勾不上**：勾选框照样出现、点下去照样变蓝，
-      //   只有那个号是空的。所以序号归序号（这儿），「复制这段」归「复制这段」。
-      var cfg = (SR.WORKS && SR.WORKS[t.w]) || {};
+      // ★★ 2026-10-06：`copy: true` 那道闸**撤了** —— 六个工位一律挂「复制这段」。
+      //   孔老师这一轮的原话是「每个会话都有一个复制功能？你看看 deepseek 做的事情」，
+      //   而 DeepSeek 那边每一条都带复制。回头再看原来那道闸也不成立：
+      //   `copy: true` 只有备课／命题／讲评三格（见 js/config.js），可**另外三格的
+      //   回复也是一段文字**——作图那轮它讲"这几个点要落在数轴上"，出材料那轮
+      //   它讲"这份卷子我排了哪几道"，老师一样要往教案、往群里贴。
+      //   当年只在"产物本身就是一段文字"的三格上挂，是把"这段的字好不好用"
+      //   当成了"要不要给复制"的判据；可判据该是**有没有一段话**，而回复都有话。
+      // ⚠ 原来这儿还有一行 `var cfg = SR.WORKS[t.w] || {}` —— 撤了那道闸之后
+      //   它一个读者都没有了（`restoreParts` 是照 `t.w` 自己查工位的），
+      //   别留着：留着一个没人读的变量，下一个人会以为"这儿还分着工位"。
       if (b && SR.pack && SR.pack.__seed) b.setAttribute('data-turn', String(ai));
-      if (cfg.copy) attachCopy(b, v, ai);
+      attachCopy(b, v, ai);
       lastSay = pr.say; lastWork = t.w; lastFirst = (ai === 0);
       ai++;
       // 冻图跟着摆回来。★ 会话内有缓存（比如点 ⟳ 切工位触发的那次重画）就直接贴图；
@@ -1025,6 +1068,14 @@ SR.chat = (function () {
   function reset(newWork, opts) {
     work = newWork || work;
     局面数++;          // ★ 换工位／点 ⟳ = 翻篇了：自修那一趟要等的"原来那一局"没了（见文件开头 局面数）
+    // ★★ 2026-10-06：「修改」挂起来的那一刀，到这儿作废。
+    //   它挂的是"从**第几条**重来"，而这个号是照账本数的 —— 换工位／点 ⟳
+    //   之后账本换了（⟳ 还会整个清空），那个号指向的就是**别人**了。
+    //   挂着一个已经指错地方的号，比不挂危险得多：老师下一句一发，
+    //   被丢掉的是一段他根本没想动的话。
+    //   （同族教训见记忆「检测脚本的数字不是它宣称的那件事」：号本身没错，
+    //    错的是它量的那个东西已经换人了。）
+    pendingTrunc = null;
     // ★★ 只有 ⟳ 走这一条（main.js 传 {wipe:true}）。
     //   切工位、刷新页面**都不许清**——清空是一个动作，不是切工位的副作用。
     //   （见 js/memo.js 顶上那三条。孔老师的原话：「除非我靠一个刷新按钮给他清了」。）
@@ -1037,17 +1088,32 @@ SR.chat = (function () {
     if (SR.pack) SR.pack.reset();
     els.msgs.innerHTML = '';
     clearChips();
-    SR.board.clear();
-    // ★ 顺序不能反：**先把画板清干净，再让多页那边记下"开场那一页"**。
-    //   反过来的话，那一页的存档记的是上一条链子最后那张图——老师点 ⟳ 换了工位，
-    //   一开场就有一页带着上学期的图，而且他会以为是这一课画出来的。
-    if (SR.tabs) SR.tabs.reset();
-    // 导图让开，回那块干净的画板。★ 换工位／点 ⟳ 之后开场就是"一张空画板"，
-    //   这时候导图上只剩「还没有东西」一句——留着它盖在画板上，
-    //   老师第一眼看到的是那块空白而不是开场白。
-    //   ⚠ 不用在这儿 refresh：关掉之后它的盒子是 0 宽，refresh 自己会返回；
-    //     真要看它，点开「导图」那一下 show() 会现算一次（数据也是现读 pack 的账）。
-    if (SR.mm) SR.mm.yieldToBoard();
+    // ★★ 2026-10-06：右栏这四件（清板／多页复位／让开导图）**不是每一趟都要做**。
+    //
+    //   谁走 `keepBoard`：「重新发送」和「修改文字」截断之后那一趟。
+    //   它们跟 ⟳ 长得像（都是"这一场从头摆一遍"），但**不是同一件事**：
+    //   ⟳ 是"这一课重开"，板当然该空；截断是"我第 3 句说错了，从第 3 句重来"——
+    //   前三轮画的图**是对的、还要用**，老师可能还在上面手画了两笔。
+    //   照 ⟳ 那样清掉，等于拿"我要改一句话"换"我刚摆的教具全没了"，比不改还糟。
+    //   ⚠ 代价说清楚：被截掉那几轮画在图上的东西**留在板上**（板不会自己回退）。
+    //     这是两个坏结果里较轻的那个 —— 板是累积的（见 freezeFences 那段），
+    //     它从来没有"回到某一轮"这个能力；真想要那块干净的，
+    //     ⟳ 就在手边，那才是它的活儿。
+    if (!(opts && opts.keepBoard)) {
+      SR.board.clear();
+      // ★ 顺序不能反：**先把画板清干净，再让多页那边记下"开场那一页"**。
+      //   反过来的话，那一页的存档记的是上一条链子最后那张图——老师点 ⟳ 换了工位，
+      //   一开场就有一页带着上学期的图，而且他会以为是这一课画出来的。
+      if (SR.tabs) SR.tabs.reset();
+      // 导图让开，回那块干净的画板。★ 换工位／点 ⟳ 之后开场就是"一张空画板"，
+      //   这时候导图上只剩「还没有东西」一句——留着它盖在画板上，
+      //   老师第一眼看到的是那块空白而不是开场白。
+      //   ⚠ 不用在这儿 refresh：关掉之后它的盒子是 0 宽，refresh 自己会返回；
+      //     真要看它，点开「导图」那一下 show() 会现算一次（数据也是现读 pack 的账）。
+      if (SR.mm) SR.mm.yieldToBoard();
+    }
+    // ⚠ keepBoard 那一趟**也不动导图**：导图读的是 pack 的账（见 mm.js），
+    //   而 pack 上面已经 reset+seedPack 过了 —— 它是自己重算的，不用人去推。
     // 这一场还有东西 → 摆回来；记忆是空的才拿开场白开张。
     if (repaintLog()) seedPack();
     else { history = []; addAssistantText(OPENING[work] || OPENING.prep); }
@@ -1199,6 +1265,10 @@ SR.chat = (function () {
   function teacherSays(text) {
     var s = String(text || '').trim();
     if (!s) return false;
+    // ★ 2026-10-06：点导图上那条岔路 = 老师**自己另起了一句**，跟「修改」挂起来
+    //   那一刀没有关系了。不卸的话，他点一下岔路，"从第 N 条重来"会照样落下 ——
+    //   丢掉的是他根本没打算动的几轮，而屏幕上看着就是"点了条岔路，对话少了一截"。
+    pendingTrunc = null;
     clearChips();      // 换了路走，上一轮那几颗「接着问」就不作数了
     submit(s);
     return true;
@@ -1270,8 +1340,17 @@ SR.chat = (function () {
       b.appendChild(t);
     }
     el.appendChild(b);
+    // ---- 老师这一条底下那根小条（2026-10-06）----
+    // 复制 / 修改 / 重新发送。★ 三件都挂在**这条消息自己**底下，跟「复制这段」
+    // 挂在助手气泡里是同一条道理：它们办的是"对**这一条**做点什么"。
+    // ⚠ 传进去的是**闭包里的 text/parts**，不是等点击时再去 DOM 上读字：
+    //   气泡里这会儿还多了这根小条自己（"复制修改重新发送"六个字），
+    //   从 textContent 上读回来的是一串掺了按钮名的东西，
+    //   而它看着完全正常——重发出去的会是一句谁也没说过的话。
+    attachUserActs(el, b, text, parts);
     els.msgs.appendChild(el);
     scroll();
+    return el;
   }
 
   function scroll() { els.msgs.scrollTop = els.msgs.scrollHeight; }
@@ -1310,24 +1389,55 @@ SR.chat = (function () {
   //   ⚠ `turn` 也不再是"给打包按钮的序号"了，但**别删**——它现在没用处，
   //     留着是为了别让下面两处调用点看着像"这个参数可以省"：绿行那套勾选
   //     要的是**同一个号**，而那个号只在这两处现成（`data-turn`，见调用点）。
+  // ---- 气泡底下那根小条：唯一的造法（2026-10-06）----
+  //
+  // 老师的气泡和数根的气泡共用它，只是上面摆的"颗"不一样（见 attachUserActs / attachCopy）。
+  // ★ 合到一处是为了**形状一样**：同一根条、同一档字号、同一个浮现时机。
+  //   两边各写一遍的话，按钮会慢慢长得不一样，而"不一样"只在并排看时才发现。
+  // ★ 默认是**看不见的**（css 里 `.copybar{opacity:0}`，鼠标移到那条消息上才现身）。
+  //   看不见它也**占着位置**（不用 `display:none`）：用 display 藏的话，鼠标一移
+  //   上去整条对话会往下跳一下——而跳动的那一下正好落在你准备点的那颗按钮上。
+  function 动作条(bubble, 颗) {
+    var bar = document.createElement('div');
+    bar.className = 'copybar';
+    for (var i = 0; i < 颗.length; i++) {
+      (function (it) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'copybtn';
+        btn.textContent = it.字;
+        if (it.提示) btn.title = it.提示;
+        btn.addEventListener('click', function () { it.点(btn); });
+        bar.appendChild(btn);
+      })(颗[i]);
+    }
+    bubble.appendChild(bar);
+    return bar;
+  }
+
+  // 「复制」那一颗。两颗气泡上长得一模一样，只差**字**。
+  // ★ 数根那条为什么还写「复制这段」：那是它从 2026-10-02 起就在用的词，
+  //   而「关于」面板里明写着「备好的追问链可以「复制这段」带走」。
+  //   改成「复制」就得连那段说明一起改，而这么改没有任何好处。
+  // ★ 拷的是**传进来的那份文字**，不是 `btn` 旁边那份——理由见 addUser 里那段。
+  function 复制颗(text, 字) {
+    var t = String(text || '').trim();
+    return {
+      字: 字, 提示: '把这一条原样拷进剪贴板',
+      点: function (btn) {
+        SR.copyText(t, function (ok) {
+          btn.textContent = ok ? '复制好了' : '没拷成，手动选一下吧';
+          btn.className = ok ? 'copybtn done' : 'copybtn';
+          setTimeout(function () { btn.textContent = 字; btn.className = 'copybtn'; }, 1600);
+        });
+      }
+    };
+  }
+
   function attachCopy(bubble, text, turn) {
     var t = String(text || '').trim();
     if (!t) return;
-    var bar = document.createElement('div');
-    bar.className = 'copybar';
-    var b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'copybtn';
-    b.textContent = '复制这段';
-    b.title = '把这一条回复原样拷进剪贴板';
-    b.addEventListener('click', function () {
-      SR.copyText(t, function (ok) {
-        b.textContent = ok ? '复制好了' : '没拷成，手动选一下吧';
-        b.className = ok ? 'copybtn done' : 'copybtn';
-        setTimeout(function () { b.textContent = '复制这段'; b.className = 'copybtn'; }, 1600);
-      });
-    });
-    bar.appendChild(b);
+    动作条(bubble, [复制颗(t, '复制这段')]);
 
     // ---- 这颗「打包」**搬走了**（2026-10-05），留一条墓志铭，别再加回来 ----
     //
@@ -1353,8 +1463,152 @@ SR.chat = (function () {
     //
     // ⚠ `css/main.css` 里的 `.packbtn` 那几条**留着**：绿行那两颗按钮
     //   跟「复制这段」是同一套形状（`.copybtn`），删了样式那边就没地方挂了。
+    //
+    // ★ 2026-10-06：这一格现在只挂「复制这段」了 —— 具体挂法在 `动作条()` 里，
+    //   杆子由它自己 append，这里**不要再 append 第二根**。
+  }
 
-    bubble.appendChild(bar);
+  // ============================================================
+  //  老师那一条底下的三件事：复制 / 修改 / 重新发送（2026-10-06）
+  // ============================================================
+  //
+  // 孔老师 2026-10-06：「我觉得发出的消息可以加一个别的智能体有的重新发送和修改文字功能，
+  // 以及每个会话都有一个复制功能？你看看 deepseek 做的事情。」
+  //
+  // ★ 跟 DeepSeek 对过的口径（他定的两条）：
+  //   · 「重新发送」和「修改文字」在那边是**同一个动作** —— 从这一条起重来，
+  //     后面那几轮一起丢掉。区别只是"重来之前要不要先把字改一改"。
+  //   · 复制**每一条**都给（他自己发的 + 数根发的）。
+  //   ⇒ 所以真正的地基只有一件事：**把账本从第 n 条截断**（`SR.memo.截到`），
+  //     两件事共用它。这一点写在 js/memo.js 的「三·五、截断」那一段里。
+  //
+  // ★ 三颗都**只在自己这条消息悬停时**才现身（css 里 `.copybar{opacity:0}`）——
+  //   不悬停时它们照旧占着位置，只是看不见（理由见 `动作条()` 那段：用 display 藏
+  //   会让对话在鼠标移上去的那一下整条往下跳，而跳的那一下正好落在你要点的地方）。
+
+  // 这条消息在**账本**（`SR.memo`）里是第几条。
+  //
+  // ★ 门牌挂在 `.msg` 上（`data-mi`），跟助手气泡挂的是**同一个名字**——
+  //   两边各钉各的元素，不冲突。助手那条钉的是"补卡要用的号"（见 repaintLog），
+  //   这条钉的是"重来要从哪儿切"。
+  //
+  // ⚠ 取不到时返回 **-1**，不许返回 0。
+  //   "这一条不在账本里"（上一轮**没答成**，那条压根没进账本）和"这一条是第 0 句"
+  //   是两件完全不同的事：前者按「重新发送」只是**再说一遍**，后者按下去要把
+  //   **整场对话**丢掉。拿 0 当默认值，前者就会做出后者的事。
+  //   （同族教训见记忆「检测脚本的数字不是它宣称的那件事」：数字本身没错，
+  //    错的是它量的那个东西。）
+  function 账本号(el) {
+    if (!el) return -1;
+    var v = el.getAttribute('data-mi');
+    if (v == null || v === '') return -1;
+    var n = parseInt(v, 10);
+    return isNaN(n) ? -1 : n;
+  }
+
+  // 从账本第 n 条起重来：n 及其后面的全丢，然后照新账本把屏幕摆一遍。
+  //
+  // ★ 为什么是"切账本 + 重画"，而不是"在屏幕上删掉几个气泡"：
+  //   屏幕上每一块东西都是账本某一条推出来的（见 repaintLog 顶上那段）——
+  //   账本一变、重画一遍，六处就一起对齐了：气泡、工位分界线、卷子卡、
+  //   冻图占位、底下那三颗兜底按钮、绿行的账本。
+  //   反过来在 DOM 上删，六处得自己各删一遍，**漏一处屏幕上看不出来**
+  //   （少了一条分界线、或者绿行里还留着已经删掉的那一轮）。
+  //
+  // ★ 返回"真丢了没有"。`SR.memo.截到` 在 n 落在账本外面时返回 false ——
+  //   那种情况不算重来，调用方该当"重发一遍"办。
+  function 从这儿重来(n) {
+    if (!SR.memo || !SR.memo.截到) return false;
+    if (typeof n !== 'number' || n < 0) return false;
+    if (!SR.memo.截到(n)) return false;
+    // ★ `keepBoard`：右栏那块板**一动不动**（理由见 reset 里那段长注释）。
+    reset(work, { keepBoard: true });
+    return true;
+  }
+
+  // 「复制 / 修改 / 重新发送」这一排，挂到**老师自己那一条**底下。
+  //
+  // ⚠ 传进来的 `text`/`parts` 是**闭包里那一份**，不是点击时去 DOM 上读的。
+  //   理由跟 `复制颗` 一样，而且在这儿更凶险：气泡底下这会儿还多了这根小条
+  //   自己（"复制 修改 重新发送"八个字），从 textContent 读回来的是一串
+  //   掺着按钮名的东西 —— 而它看着完全正常，重发出去的会是一句谁也没说过的话。
+  function attachUserActs(el, bubble, text, parts) {
+    var t = String(text || '').trim();
+    var 颗 = [];
+    // 复制：有字才给。只发了图没打字的那一条，拷出来是个空串——
+    //   按钮在那儿、"复制好了"也报，粘出来什么都没有。
+    if (t) 颗.push(复制颗(t, '复制'));
+    // 修改：没字就没什么可改的（那种一条只有图，要改就是重发）。
+    if (t) 颗.push({
+      字: '修改', 提示: '把这句话放回输入框，改完再发；发出去就从这条重来',
+      点: function () { 改这条(el, t, parts); }
+    });
+    // 重新发送：**每一条都给**，包括只发了图的那一条（图和字一起原样再发一遍）。
+    if (t || (parts && parts.length)) 颗.push({
+      字: '重新发送', 提示: '原样再发一遍，后面那几轮丢掉',
+      点: function () { 重发这条(el, t, parts); }
+    });
+    if (颗.length) 动作条(bubble, 颗);
+  }
+
+  // 把一批附件摆回输入框上面那一行（`#thumb`）。
+  // ★ 这一份 `pendingParts` 是"要发什么"的**唯一**一份（submit 读的就是它）——
+  //   想让重发带上原来的图，只能摆回这儿来。
+  // ★ 摆回**看得见**的地方而不是悄悄挂在心里：老师得能在发出去之前点 × 撤掉。
+  function 收附件(parts) {
+    if (!parts || !parts.length) return;
+    var room = SR.files.maxFiles - pendingParts.length;
+    if (room <= 0) { setStatus('一次最多 ' + SR.files.maxFiles + ' 个文件，先去掉几个再加。'); return; }
+    pendingParts = pendingParts.concat(parts.slice(0, room));
+    pendingNote = '';
+    renderStrip();
+  }
+
+  // 「修改」：把原话放回**输入框**，然后**挂起**那一刀（见文件开头 `pendingTrunc`）。
+  //
+  // ★★ 为什么不在这儿直接截：老师点「修改」十有八九只是想**看一眼自己原来是怎么说的**。
+  //   按下去就删的话，他看完觉得"还是原话好"——已经没有回头路了。
+  //   挂起来的话，只要不按发送（或者按 Esc），一个字节都没动。
+  //
+  // ★ 为什么放回输入框、而不是把气泡变成可以直接改的框（DeepSeek 那种内联编辑）：
+  //   见 js/memo.js 里 `edit()` 那段 —— 不同的浏览器从 contenteditable 里读出来的
+  //   换行和看不见的字符**不是同一套**，读回来的一串"看着一样"的文本，
+  //   发出去可能是另一句话。输入框这条路是产品里**唯一**一份"把字变成消息"的地方，
+  //   代价是少一次点击，换来的是不会多一条谁也说不清是怎么来的消息。
+  function 改这条(el, text, parts) {
+    var n = 账本号(el);
+    pendingTrunc = { n: n, 原话: String(text || '') };
+    els.input.value = String(text || '');
+    autoGrow();
+    收附件(parts);
+    els.input.focus();
+    // 光标搁在**末尾**：他是要接着改，不是要全选重打。
+    try {
+      var L = els.input.value.length;
+      els.input.setSelectionRange(L, L);
+    } catch (e) {}
+    // ★ 先把"会发生什么"讲清楚。截断是**不可撤销**的（后面那几轮真没了），
+    //   这种事不该等他按完发送才发现。
+    setStatus(n < 0
+      ? '这句话不在记录里（上一轮没发成）。改完直接发就行。'
+      : '改完点发送，就从这一条重来 —— 后面那几轮会一起丢掉。不想这样按 Esc。');
+  }
+
+  // 「重新发送」：原样再发一遍，从这条重来。
+  function 重发这条(el, text, parts) {
+    if (busy) { setStatus('这一轮还在答，等它说完再重来。'); return; }
+    var n = 账本号(el);
+    收附件(parts);
+    // ★ 那一刀**不在这儿落下**，挂给 submit：在它里面 `landing.intercept()` 之后、
+    //   `busy = true` 之前。理由有两条——
+    //   ① 走到那儿才算"这句话真要发了"。在这儿先截了，万一后面因为没配 Key
+    //      早退回来，屏幕上就是"后半场没了，而且什么也没发生"；
+    //   ② 那一趟 `reset({keepBoard:true})` 会清空 `#msgs` 再重画，
+    //      而"刚摆上去的那条新气泡"必须是重画**之后**才画的。
+    // ⚠ `n < 0`（这一条不在账本里，上一轮没发成）→ 不挂刀。那种情况要的是
+    //   "再说一遍"，不是"丢掉一段"。
+    pendingTrunc = (n >= 0) ? { n: n, 原话: String(text || '') } : null;
+    submit(String(text || ''));
   }
 
   // 拷进剪贴板。
@@ -1464,6 +1718,10 @@ SR.chat = (function () {
       els.msgs.removeChild(el);
     }
     pendingParts = f.parts || [];
+    // ★ 2026-10-06：「再试一次」办的是**这一轮没答成**，跟「修改」挂起来的那一刀
+    //   是两码事。卸掉它 —— 不卸的话，切完 Key 点一下"再试一次"，
+    //   会把一条跟它无关的、之前按过「修改」的位置上的几轮悄悄吃掉。
+    pendingTrunc = null;
     // 文件也得回到输入框上——学生要看得见"那几张图/那份卷子还在"，才敢按下发送
     renderStrip();
     submit(f.text);
@@ -2066,6 +2324,13 @@ SR.chat = (function () {
   // ---- 发一条 ----
   function submit(forced) {
     if (busy) return;
+    // ★★ 2026-10-06：「从这条重来」那一刀，先**接过来**（见文件开头 `pendingTrunc`）。
+    //   接手就置空 —— 这一句下面紧跟着好几条 early return（没配 Key、空话、
+    //   首屏拦下）。**任何一条早退都不该把那把刀留到下一句去**：
+    //   留着的话，老师下一句随口的提问会把跟他没关系的几轮悄悄吃掉，
+    //   而且屏幕上什么都不会说（他不是从这儿走的，不会往这上面想）。
+    var 待截 = pendingTrunc;
+    pendingTrunc = null;
     // ★★ 老师一开口，"补图"那一队立刻作废（2026-10-04，见 补图 那段）。
     //   为什么非收不可：补图是**借板**干活的（一趟十几秒），而老师这一问后面
     //   多半跟着一张要画的图 —— 不收手的话，他等的那张图会**排在一堆旧图后面**，
@@ -2101,6 +2366,20 @@ SR.chat = (function () {
     //   换工位照旧跳得过去——所以这不是把入口弄丢，是把它让开。
     if (SR.landing && SR.landing.hide) SR.landing.hide();
 
+    // ---- 「从这条重来」：真丢那几轮（2026-10-06）----
+    //
+    // ★ 位置就钉在这儿，两边各有一条理由：
+    //   · 不能再早 —— 上面那几条 return 是"这一句没发成"，没发成就不该丢东西；
+    //     而且 `landing.intercept()` 得先有机会把首屏那一下处理掉（它只在这一场
+    //     的第一句话上生效，而走到这儿说明**这场早就有话**了，正常走不到它）。
+    //   · 不能再晚 —— 下面 `busy = true` 之后紧接着就要 `addUser`，
+    //     而 `从这儿重来` 走的那趟 `reset()` 会把 `#msgs` 清空重画；
+    //     顺序反了的话，新气泡先摆上去、紧接着被重画抹掉，老师按了发送**什么都没发生**。
+    // ★ 截断失败（`n` 不在账本里）不报错、也不拦：那一刀没落下去，
+    //   这一句就照常当"又说了一遍"发出去 —— 那正是老师按「修改」之后
+    //   说"不改了、原话重说一遍"时想要的。
+    if (待截 && 待截.n >= 0) 从这儿重来(待截.n);
+
     busy = true;
     els.send.disabled = true;
     // ★ 收敛保护翻篇（2026-10-04，见 js/converge.js）：老师又发了一句 = **上一轮到此为止**，
@@ -2123,7 +2402,10 @@ SR.chat = (function () {
     renderStrip();
 
     seamIfWorkChanged();
-    addUser(text, parts);
+    // ★ 2026-10-06：把这条气泡**攥在手上** —— 收到答复之后要往它身上钉门牌
+    //   （`data-mi`，见下面 `.then` 成功那一支），「修改 / 重新发送」按它算
+    //   "从第几条重来"。钉在这儿而不是 addUser 里面：那会儿账本还没写进去。
+    var userEl = addUser(text, parts);
     // 兜底按钮要判"这段对话走到哪儿了"，所以在推入这一轮之前先记两个东西
     var isFirstTurn = !history.some(function (m) { return m.role === 'assistant'; });
     // 这一场的第一句话就是**课题**，拿去给压缩包起名（见 js/pack.js 的 fileName）。
@@ -2205,6 +2487,15 @@ SR.chat = (function () {
           //   读起来才对得上——这是"同一件事的两个朝向"该有的样子。
           SR.memo.pushTurn('user', SR.api.userContent(text, parts), wk);
           SR.memo.pushTurn('assistant', res.text, wk);
+          // ★★ 2026-10-06：门牌**只在这一支钉**（成功、两条都进了账本之后）。
+          //   失败那一支上面刚把 user 从 history 里 pop 掉了，账本里也**没有**这一轮——
+          //   在这儿钉号的话，那条气泡会顶着一个**别人的号**（账本里那个位置是上一轮），
+          //   老师按「重新发送」，丢掉的是一段跟他点的那条没关系的话。
+          //   没有号（`账本号` 返回 -1）时那三颗按钮退化成"再说一遍"，正是失败那轮该有的样子。
+          // ⚠ `length - 2`：刚推进去的是 user、assistant 两条，user 在前。
+          if (userEl && SR.memo.turns) {
+            userEl.setAttribute('data-mi', String(SR.memo.turns().length - 2));
+          }
         }
         paint(msg);
         // ★ 2026-10-01 砍掉了原来那段**空气泡兜底**（学生说"画不出来"时本地补一张空数轴、
@@ -2284,7 +2575,9 @@ SR.chat = (function () {
         //     挂 0 会让这一条看着像"账本里第 0 条"，而它根本不在账本里，
         //     勾上之后打进包的是**另一条**的内容，包看着还是完整的。
         if (b && ti != null) b.setAttribute('data-turn', String(ti));
-        if (SR.WORKS[work] && SR.WORKS[work].copy) attachCopy(b, 看得见, ti);
+        // ★ 2026-10-06：原来这儿是 `if (SR.WORKS[work].copy)`，那道闸撤了 ——
+        //   六个工位一律给「复制这段」（理由见 repaintLog 里同一处的长注释）。
+        attachCopy(b, 看得见, ti);
         // 绿行上那两颗按钮要重算一次（「打包」上的条数、以及挑选模式里新摆下的那条）。
         if (SR.packui) SR.packui.sync();
         // ---- 冻图：这一轮的每一份 ```ggb 围栏，各截一张钉在这条气泡底下 ----

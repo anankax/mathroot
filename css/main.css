@@ -1912,11 +1912,30 @@ footer .r {
 .figbtn:hover { border-color: var(--brand); color: var(--brand); }
 .figbtn.on:hover { color: #fff; }
 
-/* ---------- 备课／讲评气泡下的「复制这段」和「打包」（见 js/chat.js 的 attachCopy） ----------
-   这两个工位的产物就是**一段文字**——老师要贴进教案、学案、备课组的共享文档。
-   摆的位置和形状跟上面那排「图 N」是一对（都挂在气泡里、都比 .chip 小一档），
-   因为它们干的是同一类事：**对"这一条回复"做点什么**，而不是发一句话出去。 */
+/* ---------- 气泡底下那根小条（见 js/chat.js 的 动作条 / attachCopy / attachUserActs） ----------
+   ★ 2026-10-06 起**两个方向都有了**：数根每一条回复底下挂「复制这段」，
+     老师自己每一条底下挂「复制 / 修改 / 重新发送」（照 DeepSeek 那套做的事）。
+     形状是同一根条、同一档字号、同一个浮现时机 —— 合在一处写就是为了**长得一样**：
+     两边各写一遍的话，按钮会慢慢不一样，而"不一样"只在并排看的时候才发现。
+   （原来这条注释上写着"备课／讲评两个工位"，那道闸已经撤了：六个工位一律挂。） */
 .copybar { display: flex; gap: 6px; margin-top: 9px; }
+/* ★★ 这根小条平时**是隐形的**，鼠标移到那条消息上才现身（孔老师定的）。
+   理由也是对的：从今往后**每一条**消息底下都挂着它（他自己发的一条、数根答的一条，
+   一屏里十几二十颗），而它们十次里有九次用不上——对话本身会被这排按钮压得看不清。
+
+   ★ 藏法是 `opacity: 0`，**不是 `display:none` / `max-height:0`**。
+     用 display 那种藏法，鼠标往那条消息上一移，这条消息**会往下跳一下**——
+     而跳的那一下正好落在你准备点的那颗按钮上（鼠标停在原地，按钮从脚下溜走）。
+     代价是它**一直占着那约 30px**：宁可每条多留一行的空，也不要按钮在手底下动。
+   ⚠ 加了 `:hover` 就一定要配 `:focus-within`：用 Tab 走到这几颗按钮上时，
+     鼠标可能压根不在那条消息上，只认 `:hover` 的话**键盘用户永远看不见自己聚焦的东西**。
+   ⚠ 选择器用**后代**不用 `>`：`.copybar` 现在挂的爹不一（助手那根挂在 `.bubble` 里，
+     老师那根也是），写死一层的话，哪天气泡里多包一层它就**静悄悄地一直藏着**。 */
+.copybar { opacity: 0; transition: opacity .14s ease; }
+.msg:hover .copybar, .msg:focus-within .copybar { opacity: 1; }
+/* 摸屏的设备没有 hover，那就一直亮着 —— 否则在平板上这根条**永远不出现**，
+   而它并不是装饰：「修改 / 重新发送」只有这一个入口。 */
+@media (hover: none) { .copybar { opacity: 1; } }
 .copybtn, .packbtn {
   border: 1px solid var(--line); background: var(--sunken); font: inherit;
   font-size: 11.5px; padding: 3px 10px; cursor: pointer;

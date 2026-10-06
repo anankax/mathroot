@@ -332,6 +332,101 @@ SR.memo = (function () {
   }
 
   // ============================================================
+  //  三·五、截断 —— 「重新发送」和「修改文字」共用的那一刀
+  // ============================================================
+  //
+  // 从第 n 条起（含第 n 条）全丢掉，返回"真丢了没有"。
+  // 这就是 DeepSeek 那两个按钮的语义：**从这条重来，后面的清掉**。
+  //
+  // ★★ 它不只是 `turns.slice(0, n)` 一句话，因为这份存档里有**两样东西是从
+  //   这些轮次里攒出来的**，不是独立的事实：
+  //     ① 课题（`pocket.topic`）—— 它是**第一句人话**截出来的；
+  //     ② 口袋（`pocket.marks`）—— 图几张、题几道、卷子几份、链摆到第几节，
+  //        全是 `produced()` 一轮一轮**加上去**的。
+  //   删了三轮不重算，那个数就是假的；而这两样**老师都会当成事实读**
+  //   （[[scanner-numbers-are-not-what-they-claim]]）。所以一律照**剩下的轮次
+  //   从头重算**，不做减法——减法要相信"当时记进去的正好就是这些"，
+  //   可当时那一路还掺着别的（`chain` 取的是 max、只有成功那一支才记）。
+  //
+  // ★ 重算用的是跟当场那条路**同一批函数**（`SR.render.parseFences` /
+  //   `countProbs` / `SR.absorbChain`）。两处各数一遍的话，截断之后的读数会跟
+  //   当场攒出来的不一样，而"对不上"在屏幕上完全看不出来。
+  //   ⚠ 有一处**本来就对不齐，写在这儿认了**：当场那条路里 `paper` 优先认
+  //     `msg.matFed`（模板真套上了才算一份），那个状态没落盘，这儿只能按围栏数。
+  //     差只差在"模板没套上"那几轮上。
+  //   ⚠ 还有一处**这儿反而更准**：当场是 `produced(work, …)` 拿**收流那一刻的
+  //     工位**记的，而轮次本身记的是**出发那一刻的工位**（`wk`，见 chat.js
+  //     「这一轮算哪个工位，在这儿定下来之后不许再变」）。重算一律跟**轮次**走，
+  //     两者只在"那一轮中间老师又点了工位"时分岔。
+  function 重算口袋(ts) {
+    var marks = {}, slots = [], plan = 0, now = 0;
+    for (var i = 0; i < ts.length; i++) {
+      var t = ts[i];
+      if (t.r !== 'a') continue;
+      var w = t.w, cfg = SAY[w], wp = null;
+      try {
+        wp = (SR.render && SR.render.parseFences)
+          ? SR.render.parseFences(String(t.t || ''), {
+              stripAssign: !!((SR.WORKS && SR.WORKS[w] || {}).stripAssign), 收尾: true
+            })
+          : null;
+      } catch (e) { wp = null; }
+      if (cfg) {
+        // ★ 三个分支跟 produced() 的记法**逐条对齐**：算出 0 的一项**一个都不记**。
+        //   记 0 的后果不是"多一个 0"，是 marks 里凭空多出一个键，
+        //   于是口袋那一行的样式判成"有东西"、字上却写着"口袋空着"（见 produced）。
+        if (w === 'draw' && wp) {
+          var nf = (wp.ggb || []).length;
+          if (nf) marks.fig = (marks.fig || 0) + nf;
+        } else if (w === 'vary') {
+          var np = countProbs(t.t);
+          if (np) marks.prob = (marks.prob || 0) + np;
+        } else if (w === 'material' && wp) {
+          var nm = (wp.mat || []).length;
+          if (nm) marks.paper = (marks.paper || 0) + nm;
+        }
+      }
+      // 链：跟 chat.js 的 repaintSteps 走**同一条** —— 整段回复过一遍 absorbChain。
+      if (SR.absorbChain) {
+        var st = SR.absorbChain({ slots: slots, plan: plan, now: now }, String(t.t || ''));
+        slots = st.slots; plan = st.plan; now = st.now;
+      }
+    }
+    // 「链」是**这一节摆到第几节**，不是累加（跟 produced 里那条同一个规矩）。
+    if (SAY.prep && slots.length) marks.chain = Math.max(marks.chain || 0, slots.length);
+    return marks;
+  }
+
+  function 截到(n) {
+    var o = get();
+    if (typeof n !== 'number' || isNaN(n)) return false;
+    if (n >= o.turns.length) return false;      // 没有要丢的
+    if (n < 0) n = 0;
+    // 原来的"第一句人话"在第几条。★ 判据必须是 `原第一句 >= n`（= 它被删掉了），
+    //   **不能写成"切掉的那一截里有没有 user"**：`n = 0` 时那一截是空的，
+    //   那个写法会漏掉"整场清空"这一档，课题就留着一句已经不在对话里的话。
+    var 原第一句 = -1;
+    for (var i = 0; i < o.turns.length; i++) {
+      if (o.turns[i].r === 'u') { 原第一句 = i; break; }
+    }
+    o.turns = o.turns.slice(0, n);
+    if (原第一句 >= 0 && 原第一句 >= n) {
+      // ★ 只在**被删掉的那几轮里含第一句人话**时才重推课题。
+      //   不含就一个字都别动——老师是可以手改课题的（`setPocket`），
+      //   每截一次都拿"第一句人话"去盖，等于把他改的那个字抹了。
+      var first = '';
+      for (var j = 0; j < o.turns.length; j++) {
+        if (o.turns[j].r === 'u') { first = firstLine(o.turns[j].t); break; }
+      }
+      o.pocket.topic = first;
+    }
+    o.pocket.marks = 重算口袋(o.turns);
+    save();
+    paintBar();
+    return true;
+  }
+
+  // ============================================================
   //  三、清 —— 只有 ⟳ 走这条
   // ============================================================
   function clear() {
@@ -471,6 +566,10 @@ SR.memo = (function () {
     log: log, turns: turns, history: history, hasUser: hasUser, pushTurn: pushTurn,
     pocket: pocket, setPocket: setPocket, produced: produced, bagText: bagText,
     probs: probs, countProbs: countProbs,
+    // ★ 2026-10-06：「重新发送」和「修改文字」共用的那一刀（见上面 三·五）。
+    //   返回"真丢了没有"——`n` 落在账本外面（>= 长度）时返回 false，
+    //   调用方据此知道"这一条压根不在账本里"（失败那一轮就是这样）。
+    截到: 截到, __重算口袋: 重算口袋,
     clear: clear,
     // 立刻落盘（探针和"关页面前"用；平时走 400ms 节流）
     flush: function () { if (timer) { clearTimeout(timer); timer = 0; } return writeNow(); },
