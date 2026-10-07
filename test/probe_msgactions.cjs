@@ -122,19 +122,26 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   //   ⇒ 改走**产品自己的 API**：`turns()` 交出来的就是那个活数组，pushTurn 往它上面记，
   //     缓存和盘上从此刻起是同一份，谁再写都写的是同一份。
   //   ⚠ 但仍然**先读回来核**再刷新：这一段的意义就是"我证明它真在盘上了"。
-  await q(`(function(){
-      SR.memo.clear();
-      var T = ${JSON.stringify(账本.turns)};
-      T.forEach(function(t){ SR.memo.pushTurn(t.r === 'a' ? 'assistant' : 'user', t.t, t.w) });
-      SR.memo.produced('draw', { fig: 3 });
-      SR.memo.setPocket({ topic: '第一句', date: '10月6日' });
-      // ★★ 工位也要摆成 draw。第一版没摆，于是**场景是错位的**：
-      //   账本里是作图的六条，工位却停在 localStorage 里上次那个「组卷」上。
-      //   后果是一屏怪东西：开场白按组卷出（「传一份你学校的模板…」），
-      //   而下面摆着作图的那几条 —— 5丁 里被读成"多出来一条助手气泡"，
-      //   差一点当成产品的毛病去查。（同族：量之前先核"在场的是什么"。）
-      SR.main.applyWork('draw');
-      return 1 })()`);
+  // ⚠ 装完**当场把结果报出来**（2026-10-06 补）：原来这一段是 fire-and-forget，
+  //   里面哪一句一抛，外面只看见"0 条 / fig 0"——而"没装进去"和"装进去了又被盖掉"
+  //   是两件事，要查的地方不一样。后来真栽过一次：读数干净得像没这回事。
+  const 摆 = await q(`(function(){
+      try {
+        SR.memo.clear();
+        var T = ${JSON.stringify(账本.turns)};
+        T.forEach(function(t){ SR.memo.pushTurn(t.r === 'a' ? 'assistant' : 'user', t.t, t.w) });
+        SR.memo.produced('draw', { fig: 3 });
+        SR.memo.setPocket({ topic: '第一句', date: '10月6日' });
+        // ★★ 工位也要摆成 draw。第一版没摆，于是**场景是错位的**：
+        //   账本里是作图的六条，工位却停在 localStorage 里上次那个「组卷」上。
+        //   后果是一屏怪东西：开场白按组卷出（「传一份你学校的模板…」），
+        //   而下面摆着作图的那几条 —— 5丁 里被读成"多出来一条助手气泡"，
+        //   差一点当成产品的毛病去查。（同族：量之前先核"在场的是什么"。）
+        SR.main.applyWork('draw');
+        return 'OK·当场读到 ' + SR.memo.turns().length + ' 条'
+      } catch (e) { return 'THROW: ' + ((e && e.message) || e) }
+    })()`);
+  报.push(['0丁 摆账本那几句跑成什么样', String(摆)]);
   await sleep(900);   // 等那条 400ms 的写盘落地
   报.push(['0丙 摆好工位了吗', JSON.stringify(await q("(function(){return JSON.stringify({工位: SR.memo.turns().length ? (document.querySelector('#works .workbtn.on')||{}).textContent : null, 存在localStorage里的: localStorage.getItem('mathroot_work')})})()"))]);
   const 落盘 = JSON.parse(await q(`(function(){
@@ -169,23 +176,63 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   //   第一版没有这一层，于是"点了没反应"只能靠"输入框没变"去猜——
   //   而那个读数把两件完全不同的事读成了同一副样子：处理函数没跑 / 处理函数跑了但没干活。
   //   （实测抓到过：elementFromPoint 说是 copybtn，页面收到的 click 却落在 .bubble 上。）
+  //
+  // ★★ 2026-10-06：按钮里装上了 svg，e.target 从此可能是那根 path。
+  //   而 SVG 元素的 .className **不是字符串**，是 SVGAnimatedString 对象 ——
+  //   照旧那行 e.target.className 记下来，过 CDP 序列化回来是一坨看不出来的东西：
+  //   "这一下落在谁身上"这条读数会**静默变成废纸**（照样有值、照样不报错）。
+  //   ⇒ 改成说人话：这一下**落在哪颗按钮里**（点名），或者"不在按钮里"。
   await q(`(function(){
       window.__点了 = [];
-      document.addEventListener('click', function(e){ window.__点了.push(e.target && (e.target.className || '?')) }, true);
+      document.addEventListener('click', function(e){
+        var t = e.target, cn = '';
+        // ⚠ 不能写成 (t.className && t.className.baseVal) || t.className 那个老写法 ——
+        //   svg 没挂 class 时 baseVal 是**空串**，空串是假的，逻辑或会把那个**对象**接回来，
+        //   于是读数变成 "[object SVGAnimatedString]"（一样不报错、一样没用）。
+        try { var c = t && t.className;
+              cn = (c == null) ? '' : (typeof c === 'string' ? c : (c.baseVal || '')) } catch (x) {}
+        var b = (t && t.closest) ? t.closest('.copybtn') : null;
+        window.__点了.push((t ? t.tagName : '?') + '.' + cn
+          + ' → ' + (b ? ('按钮：' + (b.getAttribute('aria-label') || '(没名)')) : '不在按钮里'));
+      }, true);
       return 1 })()`);
 
   // ── 1) 版本证明：从**页面里正在跑的函数**取字面量 ────────────────────
+  //
+  // ★★ 2026-10-06 补的一段：这几颗按钮从"带框的字"换成了**图标**，而这一版跟上一版
+  //   在 `SR.memo` 上长得**一模一样**（截到 / __重算口袋 两条都还在）。光靠原来那三条
+  //   证不出"页面上装的是有图标的那一版"。
+  //   ⇒ 再补两路，两路都要过，过不了整场作废：
+  //     ① 页面**自己在跑的那份 chat.js 正文**里有没有那段图标表（`?证=` 绕开缓存；
+  //        ⚠ 不拿我磁盘上的文件当证物 —— 那证的是"我电脑上是新的"，不是"页面上是新的"）；
+  //     ② 页面上**真长出来的那颗按钮**里有没有 svg、字面是不是空的。
+  //   两路是**故意重复**的：① 证明"代码是新的"，② 证明"新代码真跑出东西了"。
+  //   只过 ① 可能是脚本加载了但没渲染；只过 ② 可能是别的东西碰巧长了个 svg。
   const 证物 = JSON.parse(await q(`(function(){
       var s = String(SR.chat.submit);
+      var b = document.querySelector('.copybar .copybtn');
       return JSON.stringify({
         跑了这份: s.indexOf('待截') >= 0,
         有截到: typeof SR.memo.截到 === 'function',
         有重算: typeof SR.memo.__重算口袋 === 'function',
-        简历长度: s.length
+        简历长度: s.length,
+        按钮里有svg: !!(b && b.querySelector('svg')),
+        按钮字面是空的: b ? ((b.textContent || '').trim() === '') : null
       }) })()`));
-  报.push(['1 版本证明（页面里正在跑的那份）', JSON.stringify(证物)]);
-  if (!证物.跑了这份 || !证物.有截到 || !证物.有重算) {
-    报.push(['✗ 作废', '页面上跑的不是这一版 → 整场读数作废']);
+  const 脚本 = await q(`fetch(document.querySelector('script[src*="chat.js"]').src + '?证=' + Date.now())
+      .then(function(r){ return r.text() }).then(function(s){
+        return JSON.stringify({ 长度: s.length,
+          有图标表: s.indexOf('var 图标 = {') >= 0,
+          有闪图标: s.indexOf('function 闪图标') >= 0,
+          有aria赋值: s.indexOf("setAttribute('aria-label', it.字)") >= 0 }) })
+      .catch(function(e){ return 'THROW: ' + e })`);
+  let 脚本读 = {}; try { 脚本读 = JSON.parse(脚本) } catch (e) { 脚本读 = { 取不到: String(脚本).slice(0, 120) } }
+  报.push(['1 版本证明（页面里正在跑的那份）', JSON.stringify(证物) + ' | 脚本=' + JSON.stringify(脚本读)]);
+  const 版过 = 证物.跑了这份 === true && 证物.有截到 === true && 证物.有重算 === true
+    && 证物.按钮里有svg === true && 证物.按钮字面是空的 === true
+    && 脚本读.有图标表 === true && 脚本读.有闪图标 === true && 脚本读.有aria赋值 === true;
+  if (!版过) {
+    报.push(['✗ 作废', '页面上跑的不是这一版（图标 / aria-label 那一段证不出来）→ 整场读数作废']);
     收(); await 还原(); await 起('还原'); ws.close(); await put('/json/close/' + t.id); process.exit(3);
   }
 
@@ -209,17 +256,39 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   //   整句比对就是这个毛病：对的也报红、错的也可能因为别处凑巧相同而漏报
   //   （记忆「检测脚本的数字不是它宣称的那件事」里的"同一句话挂多条虚高、整句比对漏报"）。
   //   ⇒ 改成**逐条数颗数**：门牌逐条、老师每条 3 颗、数根每条 1 颗，各断言各的。
+  //
+  // ★★ 2026-10-06 再改一版：这几颗按钮换成了**图标**，`textContent` 从此是**空串**。
+  //   名字搬到了 `aria-label` 上（`title` 是更长的解释，不是名字）。
+  //   ⚠ 老版没有 svg、也不设 `aria-label` ⇒ 取不到就**退回 `textContent`**：
+  //     这把尺子在两版产品上都量得出东西。不这么写的话，新尺子遇上旧产品只会打红，
+  //     而"红的样子"跟"产品真坏了"长得一模一样（记忆里那条长期假红）。
+  //   ⚠ 还有一件更要紧的：`textContent` 变空之后，原来那条
+  //     「**不该有**『打包』」(indexOf('打包') < 0) 会**退化成恒真** ——
+  //     空串里当然找不到"打包"。否定式断言碰上"被量的东西没了"就是这么烂掉的。
+  //     ⇒ 所以下面另立一条**颗数**：数根那条底下恒 1 颗（多一颗就是"打包"回来了）。
   const 条 = JSON.parse(await q(`(function(){
-      function 字串(m){
+      function 名(b){
+        var n = b.getAttribute('aria-label');
+        return String(n == null ? (b.textContent || '') : n).trim();
+      }
+      function 点名(m){ var out = []; m.querySelectorAll('.copybar .copybtn').forEach(function(b){ out.push(名(b)) }); return out }
+      // 形状：每一颗都得是**图标**——里面有 svg、字面是空的、方框还是 28 宽。
+      //   ★ 宽这一条不是为了好看：按下去之后那颗会换成 ✓/✗（js/chat.js 的 闪图标），
+      //     宽度只要变一像素，旁边两颗就会跟着挪，而鼠标正停在旁边那颗上面。
+      function 形状(m){
         var out = [];
-        m.querySelectorAll('.copybar .copybtn').forEach(function(b){ out.push((b.textContent||'').trim()) });
+        m.querySelectorAll('.copybar .copybtn').forEach(function(b){
+          var r = b.getBoundingClientRect();
+          out.push({ 有svg: !!b.querySelector('svg'), 字面: (b.textContent || '').trim(),
+                     宽: +r.width.toFixed(1), 高: +r.height.toFixed(1) });
+        });
         return out;
       }
       var 门牌 = [], 师 = [], 徒 = [];
       document.querySelectorAll('.msg.user').forEach(function(m){
-        门牌.push(m.getAttribute('data-mi')); 师.push(字串(m).join('|'));
+        门牌.push(m.getAttribute('data-mi')); 师.push({ 名: 点名(m), 形: 形状(m) });
       });
-      document.querySelectorAll('.msg.assistant').forEach(function(m){ 徒.push(字串(m).join('|')) });
+      document.querySelectorAll('.msg.assistant').forEach(function(m){ 徒.push({ 名: 点名(m), 形: 形状(m) }) });
       var b0 = document.querySelector('.msg.user .copybar');
       var 矩形 = b0 ? b0.getBoundingClientRect() : null;
       return JSON.stringify({
@@ -231,14 +300,24 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       }) })()`));
   报.push(['3 门牌与颗数', JSON.stringify(条)]);
   // ★ 逐条断言，**每条都要能失败**：门牌必须是 0,2,4（不是就说明钉错地方）；
-  //   老师每条恒 3 颗；数根每条恒 1 颗。
+  //   老师每条恒 3 颗；数根每条恒 1 颗；每一颗都得是图标。
+  const 名串 = (组) => 组.map(x => x.名.join('|'));
+  const 都是图标 = (组) => 组.length > 0 && 组.every(x =>
+      x.形.length === x.名.length && x.形.every(s => s.有svg === true && s.字面 === '' && s.宽 === 28));
   const 门牌对 = 条.老师门牌.join(',') === '0,2,4';
-  const 老师对 = 条.老师门数 === 3 && 条.老师条.every(function(s){ return s === '复制|修改|重新发送' });
-  const 数根对 = 条.数根条数 === 3 && 条.数根条.every(function(s){ return s === '复制这段' });
+  const 老师对 = 条.老师门数 === 3 && 名串(条.老师条).every(s => s === '复制|修改|重新发送');
+  const 数根对 = 条.数根条数 === 3 && 名串(条.数根条).every(s => s === '复制这段');
+  // ★ 反控（原来那条"不该有打包"的替身）：**颗数**。数根那条底下恒 1 颗 ——
+  //   哪天「打包」被人搬回气泡底下，这一格会从 1 变成 2，红得起来。
+  const 颗数对 = 条.数根条.every(x => x.名.length === 1);
+  const 图标对 = 都是图标(条.老师条) && 都是图标(条.数根条);
   const 隐形 = 条.默认透明度 === '0';
   const 撑开 = 条.小条高 > 10;
   报.push(['3.1 断言', ['门牌=0,2,4 ' + (门牌对 ? '✓' : '✗'),
-    '老师恒三颗 ' + (老师对 ? '✓' : '✗'), '数根恒一颗 ' + (数根对 ? '✓' : '✗'),
+    '老师恒三颗(复制|修改|重新发送) ' + (老师对 ? '✓' : '✗'),
+    '数根恒一颗(复制这段) ' + (数根对 ? '✓' : '✗'),
+    '数根恒**一颗**(不许长出第二颗) ' + (颗数对 ? '✓' : '✗'),
+    '每一颗都是图标(有svg·字面无·宽28) ' + (图标对 ? '✓' : '✗'),
     '默认 opacity=0 ' + (隐形 ? '✓' : '✗'),
     // ★ 这一条是防"藏得连位置都没有"：opacity 藏法**必须还占着地方**，
     //   否则鼠标移上去的瞬间整条对话会跳一下（正是要避免的那件事）。
@@ -305,17 +384,37 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   //   ② 光看结果分不清"没点中"和"点中了但没干活"。⇒ 页面那边装着 `window.__点了`，
   //      点完把它**读回来**，让"这一下落在谁身上"变成一条读数。
   const 量一颗 = async (msgSel, 字) => JSON.parse(await q(`(function(){
-      var m = document.querySelector(${JSON.stringify(msgSel)});
+      // ★ @末条助手 这个假选择器是给 5丁 后面那一格用的：最后一条数根的回复
+      //   身上没有 data-mi（那是老师气泡才有的门牌），CSS 选择器没法"取最后一个"。
+      function 找消息(sel){
+        if (sel === '@末条助手'){ var a = document.querySelectorAll('.msg.assistant'); return a[a.length-1] }
+        return document.querySelector(sel);
+      }
+      var m = 找消息(${JSON.stringify(msgSel)});
       if (!m) return JSON.stringify({err:'找不到 ' + ${JSON.stringify(msgSel)}});
       m.scrollIntoView({ block: 'center', behavior: 'instant' });
+      // ★ 2026-10-06：按**名字**找，不再按 textContent —— 这几颗现在的字面是空串
+      //   （见上面 3 那一节的说明）。老版取不到 aria-label 就退回 textContent。
+      function 名(b){ var n = b.getAttribute('aria-label'); return String(n == null ? (b.textContent||'') : n).trim() }
+      function 类名(n){ if (!n) return ''; var c = n.className;
+        return c == null ? '' : (typeof c === 'string' ? c : (c.baseVal || '')) }
       var bs = m.querySelectorAll('.copybar .copybtn'), hit = null;
-      for (var i=0;i<bs.length;i++) if ((bs[i].textContent||'').trim() === ${JSON.stringify(字)}) hit = bs[i];
-      if (!hit) return JSON.stringify({err:'这条底下没有「' + ${JSON.stringify(字)} + '」'});
+      for (var i=0;i<bs.length;i++) if (名(bs[i]) === ${JSON.stringify(字)}) hit = bs[i];
+      if (!hit) return JSON.stringify({err:'这条底下没有「' + ${JSON.stringify(字)} + '」',
+        底下有什么: Array.prototype.map.call(bs, 名)});
       var r = hit.getBoundingClientRect();
       var x = Math.round(r.left+r.width/2), y = Math.round(r.top+r.height/2);
       var top = document.elementFromPoint(x, y);
-      return JSON.stringify({x:x, y:y, 命中的是它吗: top === hit,
-        命中的是: top ? ((top.className||'') + '/' + (top.textContent||'').slice(0,6)) : null})
+      // ★★ 命中的**不一定是按钮本身**：按钮里现在装着一个 svg，鼠标落在那几笔线条上时
+      //   elementFromPoint 会吐回那根 path。点上去照样算点在这颗按钮上（事件冒泡上来），
+      //   所以判据是"命中的是**这颗按钮或者它的后代**"。
+      //   ⚠ 原来写的是 top === hit，装上图标之后那一格会**当场假红** ——
+      //     而"红的样子"跟"按钮被别的东西盖住了"一模一样，顺着它去查会白查半天。
+      //   （实测：装上图标之后 elementFromPoint 吐回来的一直是 svg 那根 path，一次都不是按钮。）
+      var 在里头 = (top === hit) || !!(top && hit.contains(top));
+      return JSON.stringify({x:x, y:y, 命中的是它吗: 在里头,
+        命中的是: top ? (top.tagName + '｜' + 类名(top)
+          + '｜' + (top.closest && top.closest('.copybtn') ? ('在一颗按钮里：' + 名(top.closest('.copybtn'))) : '不在按钮里')) : null})
     })()`));
 
   const 点按钮 = async (msgSel, 字) => {
@@ -363,6 +462,65 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   报.push(['4乙 ★反控 Esc 反悔', 'Esc后=' + JSON.stringify(esc后)
     + ' | 「不改了」出现了吗=' + (反控过 ? '✓（说明刀真挂上过）' : '✗ **刀压根没挂上，4甲那一格是假绿**')]);
 
+  // ── 4丙 点了「复制这段」之后，那颗图标要**换一颗闪一下、再换回来** ──────
+  //
+  // ★ 为什么单开一格量它：`闪图标` 是**新加的**（2026-10-06 从"写一行字进按钮"
+  //   改成"换一颗图标"），而这一段有**两条**路 —— 换了、以及 `setTimeout` 之后换回来。
+  //   到这次为止没有任何探针走过第二条。只量第一条的话，"换回来了"这件事
+  //   是**从代码里读出来的**，不是量出来的（同族：绿的样子也跟尺子坏了长得一样）。
+  //
+  // ★★ 这两格必须**合起来**判（跟 4乙 那条反控一个道理）：
+  //     - 只判「换回来了」→ 闪压根没发生时它**也绿**（恒真，等于没量）；
+  //     - 所以先判「换过」（类名或名字确实变过），再判「换回来了」。
+  //     少了前一半，这一格哪天产品坏了会一直绿给你看。
+  //
+  // ⚠ 不钉**换成哪一颗**（「复制好了」还是「没拷成」）：这条探针跑在隔离 profile 里，
+  //   剪贴板权限给不给是环境说了算。两条路都走 闪图标，所以两条都算过；
+  //   当场是哪一个**记进读数**，看见"没拷成"也不用慌（那是环境的事，不是产品坏了）。
+  // ⚠⚠ 这格**不能按名字找那颗按钮**。第一版就是按 `aria-label === '复制这段'` 找的，
+  //   于是点下去之后那一读**当场报 err**：闪的那一下把名字改成了「复制好了」，
+  //   尺子照着旧名字去逮，逮不着 —— 而"逮不着"跟"那颗按钮没了"长得**一模一样**，
+  //   差一点就要顺着它去查 DOM 了。（同族账：被测对象一改，按旧特征量的尺子就失效。）
+  //   ⇒ 改成按**位置**找：助手那条底下就一颗按钮，取第一颗。
+  //     名字照旧**读出来**（那正是要量的东西之一），但不用它当定位条件。
+  const 读闪 = `(function(){
+      var a = document.querySelectorAll('.msg.assistant'), m = a[a.length-1];
+      if (!m) return JSON.stringify({err:'一条助手消息都没有'});
+      var b = m.querySelector('.copybar .copybtn');
+      if (!b) return JSON.stringify({err:'末条助手底下那颗按钮没找着'});
+      return JSON.stringify({ 类名: b.className, 名: b.getAttribute('aria-label'),
+        有svg: !!b.querySelector('svg'), 图变了: b.innerHTML !== window.__原图 })
+    })()`;
+  // ⚠ 「图变了」那张底必须**点之前**存下去。写成点之后再存的话，存下来的是
+  //   **已经换过的那张图**，于是"图变了"这一格不管产品好坏都会报 false ——
+  //   一把量错对象的尺子，不报错、只是没用。
+  await q(`(function(){ var a = document.querySelectorAll('.msg.assistant'), m = a[a.length-1];
+      var b = m ? m.querySelector('.copybar .copybtn') : null;
+      window.__原图 = b ? b.innerHTML : null; return 1 })()`);
+  const 底 = JSON.parse(await q(读闪));
+  const 点复制 = await 点按钮('@末条助手', '复制这段');
+  const 闪中 = JSON.parse(await q(读闪));
+  // ★ 趁闪还亮着照一张。「有 svg、宽 28」量的只是**形状对**，
+  //   而孔老师否掉上一版的原话是「这个很丑啊」—— 丑不丑**只能看**，
+  //   断言量不出来。闪的那 1.6 秒很短，不特意照就没有第二张。
+  await shot('_msg_复制好了.png');
+  await sleep(1900);   // 闪是 1600ms，留够余量再读第二遍
+  const 闪回 = JSON.parse(await q(读闪));
+  报.push(['4丙 点「复制这段」（新加的那颗图标）', '点之前=' + JSON.stringify(底)
+    + ' | 点它=' + JSON.stringify(点复制.页面收到)
+    + ' | 闪在当下=' + JSON.stringify(闪中) + ' | 1.9 秒后=' + JSON.stringify(闪回)]);
+  // ★ 前提：底下那颗确实是「复制这段」。不成立的话后面两格量的是别的东西，
+  //   整块作废（不让它出一行看着像绿的读数）。
+  const 底对 = 底.名 === '复制这段' && 底.类名 === 'copybtn' && 底.有svg === true;
+  const 换过 = !闪中.err && (闪中.图变了 === true || 闪中.类名 !== 'copybtn'
+    || 闪中.名 !== '复制这段');
+  const 换回来 = !闪回.err && 闪回.类名 === 'copybtn' && 闪回.名 === '复制这段'
+    && 闪回.有svg === true && 闪回.图变了 === false;
+  报.push(['4丙 断言', '底子对（点之前就是「复制这段」· 一颗图标） ' + (底对 ? '✓' : '✗ **前提不成立，下面两格作废**')
+    + ' · 换过一颗（图或名字真变过） ' + (换过 ? '✓' : '✗ **闪压根没发生，后面那格是假绿**')
+    + ' · 又换回来（类名 copybtn · 名字对 · 图也回到原来那张） ' + (换回来 ? '✓' : '✗')
+    + (换过 && 闪中.名 !== '复制这段' ? ' · 闪的是「' + 闪中.名 + '」' : '')]);
+
   // ── 5) 「重新发送」：装桩 → 点 → 该真截断 ───────────────────────────
   const 桩 = await q(`(function(){
       window.__真ask = SR.api.ask; window.__真ready = SR.api.ready;
@@ -395,7 +553,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         接口收到: window.__ask收到 ? window.__ask收到.text : null,
         最后一句: (function(){var u=document.querySelectorAll('.msg.user');var m=u[u.length-1];return m?m.textContent.replace(/\\s+/g,' ').slice(0,60):null})()
       }) })()`));
-  报.push(['5乙 点「重新发送」之后', JSON.stringify(后)]);
+  // ⚠ 把"这一下点没点中"也印出来。第一版没印，于是这一格失败时我只知道
+  //   "账本没动"，分不清是**没点中**还是**点中了产品没干活**——
+  //   而这两件事要查的地方差了十万八千里（4甲 那边早就把这一条印出来了，这儿漏了）。
+  报.push(['5乙 点「重新发送」之后', '这一下=' + JSON.stringify(点重发.页面收到 || 点重发)
+    + ' | 命中=' + JSON.stringify({x:点重发.x, y:点重发.y, 在按钮上:点重发['命中的是它吗']})
+    + ' | ' + JSON.stringify(后)]);
   await shot('_msg_重发后.png');
 
   const 五 = {
@@ -456,8 +619,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         桩的回复在屏上吗: document.body.textContent.indexOf('桩：收到') >= 0,
         末条底下那排: (function(){
           var c = document.querySelectorAll('.msg.assistant'); if (!c.length) return null;
+          // ★ 2026-10-06：名字在 aria-label 上，不在 textContent 上（那是空串了）。
           var out = [];
-          c[c.length-1].querySelectorAll('.copybar .copybtn').forEach(function(b){ out.push((b.textContent||'').trim()) });
+          c[c.length-1].querySelectorAll('.copybar .copybtn').forEach(function(b){
+            var n = b.getAttribute('aria-label'); out.push(String(n == null ? (b.textContent||'') : n).trim()) });
           return out })(),
         末条是个什么东西: (function(){
           var c = document.querySelectorAll('#msgs > *'), m = c[c.length-1], 子 = [];
@@ -513,20 +678,36 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await sleep(2200);
   const 后3 = JSON.parse(await q(`(function(){
       var a = document.querySelectorAll('.msg.assistant'), m = a[a.length-1];
+      // ⚠ 量"气泡里写了什么"必须挑**这个 msg 自己的那个气泡**（:scope > .bubble），
+      //   不能用 m.querySelector('.bubble') —— 那是"它底下**第一个**气泡"。
+      //   第一版就这么写的，读数里出现的是**下面那排芯片的字**，看着像"气泡里居然装着
+      //   三行追问"，其实是量错了对象（不报错、只是没用）。
+      var b = m ? m.querySelector(':scope > .bubble') : null;
       return JSON.stringify({
         账本末条: (function(){ var t = SR.memo.turns(); return t.length ? String(t[t.length-1].t).slice(0,30) : null })(),
-        末条气泡自己写的字: (function(){ var q = m && m.querySelector('.bubble'); return q ? (q.textContent||'').replace(/\\s+/g,' ').trim().slice(0,34) : null })(),
-        末条底下那排: (function(){ if (!m) return null; var o = []; m.querySelectorAll('.copybar .copybtn').forEach(function(b){ o.push((b.textContent||'').trim()) }); return o })()
+        气泡个数: m ? m.querySelectorAll('.bubble').length : null,
+        末条气泡自己写的字: b ? (b.textContent||'').replace(/\\s+/g,' ').trim().slice(0,40) : null,
+        气泡里有芯片吗: b ? !!b.querySelector('.chips, .chip') : null,
+        末条底下那排: (function(){ if (!m) return null; var o = []; m.querySelectorAll('.copybar .copybtn').forEach(function(b2){ var n = b2.getAttribute('aria-label'); o.push(String(n == null ? (b2.textContent||'') : n).trim()) }); return o })()
       }) })()`));
   报.push(['5戊 ★量一条：答回来了、却一个字都没流过来', JSON.stringify(后3)]);
-  报.push(['   ↑ 怎么读', '账本里有那句话、气泡里却没有 → 是**产品**的形状（js/api.js:757 抢在 758 前面）。'
-    + '我还没在真模型上见过这一档，所以只量不断言：要不要在 chat.js 收尾处补一道兜底'
-    + '（msg.raw 空、res.text 不空 → 拿 res.text 当正文画），你说了算。']);
+  // ⚠ 这一格的结论文是我配的，**必须只说这一格真量到的事**。
+  //   第一版写的是"→ 是**产品**的形状（js/api.js:757 抢在 758 前面）"——**没根据**：
+  //   5戊 的桩把 `SR.api.ask` **整个换掉了**，api.js 一行都没跑，这一格证明不了 api.js 的任何事
+  //   （同族账：错的那一环常常是我配给它的结论行，不是读数）。
+  //   api.js 757/758 那件事是**读源码读出来的**，另一条线，要单独证。
+  报.push(['   ↑ 怎么读', '这一格只证明一件事：**接口 resolve 了、却一次 onChunk 都没叫**的时候，'
+    + 'chat.js 会把正文写成空的 —— 账本里有那句话、气泡里没有、底下那排也没长出来。'
+    + '（桩是这个形状，不是 api.js 的真实形状。）']);
+  报.push(['   ↑ 另一条线（读源码得的，**这格没证**）', 'api.js:757 的 if 先跑且不叫 onChunk，'
+    + '它一跑 758 的 !all 就不成立，那句兜底 onChunk 轮不到 —— 触发条件据说是"整段被思考标签剥光"。'
+    + '要坐实得另开一格专测 api.js 那条路（桩在更外层、让 api.js 自己跑）。'
+    + '要不要在 chat.js 收尾处补一道兜底（msg.raw 空、res.text 不空 → 拿 res.text 当正文画），你说了算。']);
 
   await q("(function(){ SR.api.ask = window.__真ask; SR.api.ready = window.__真ready; return 1 })()");
 
   // ── 6) 图 ─────────────────────────────────────────────────────────
-  报.push(['6 图', 'test/_msg_悬停.png · _msg_点修改.png · _msg_重发后.png']);
+  报.push(['6 图', 'test/_msg_悬停.png · _msg_点修改.png · _msg_复制好了.png · _msg_重发后.png']);
   收();
 
   await 还原();

@@ -86,23 +86,94 @@ SR.api = (function () {
     return false;
   }
 
-  // 从**最老的**开始丢，永远保住最近的那几轮
+  // 把"从 idx 开始留"这个切点往左挪到**轮的边界**上。轮的边界只有两种：
+  // 下标 0，或者一条 user（一条 user 加它后面那条 assistant 是一轮；
+  // 开头那条 assistant 是开场白，自成一段，只配跟着 0 一起留）。
+  // 挪不动（前头一句 user 都没有）就地停——这种情况整份历史本来就没有轮可言。
+  function 裁到轮界(arr, idx) {
+    var i = (idx < 0) ? 0 : (idx > arr.length ? arr.length : idx);
+    while (i > 0 && i < arr.length && (!arr[i] || arr[i].role !== 'user')) i--;
+    return i;
+  }
+  // 最新那一轮的起点 = 最后一条 user 的下标。一句 user 都没有（只有开场白）时
+  // 退回最后一条——"最新一轮永远留"这条规矩落到空场上就是"留最后一条"。
+  function 末轮起点(arr) {
+    for (var i = arr.length - 1; i >= 0; i--) if (arr[i] && arr[i].role === 'user') return i;
+    return arr.length ? arr.length - 1 : 0;
+  }
+
+  // 从**最老的**开始丢，永远保住最近的那几轮。
+  //
+  // ★★ 2026-10-06（整改方案⑤，来路见 [[mathroot-design]]）：**整轮整轮地丢，不拆轮。**
+  //   原来是一条一条倒着收：预算刚好卡住的时候，留下来的那一段**开头可能是一条
+  //   assistant**（"好的，我已经画好了"）。模型看见的第一句就是自己说过的空话，
+  //   它顺着往下演——乙组那个病根（历史里进了一句空话，后面每一轮都照着演）的一半
+  //   就是从这儿来的。切点现在永远挪到轮的边界上，模型看见的第一句要么是老师的话，
+  //   要么什么都没有。
+  // ★ 「最新那一轮永远留」：它再大也不丢。丢光了不是"省了 token"，是让模型
+  //   完全不知道刚才在说什么——倒着收本来就会自然停在最后一条 user 上，
+  //   这条规矩是把它写成明话，别哪天被"边界对齐"顺手对齐掉了。
+  // ★ 代价：为了补齐一整轮，可能比 budget 多一点。超一点比缺一块强，方向是一致的。
   function trimHistory(history, budget) {
     if (!history || !history.length) return [];
     if (!budget) return history;
     var total = 0, i;
     for (i = 0; i < history.length; i++) total += estTokens(history[i]);
     if (total <= budget) return history;
-    var keep = [], acc = 0;
+
+    var acc = 0, cut = history.length;
     for (i = history.length - 1; i >= 0; i--) {         // 倒着收，收到装不下为止
       var c = estTokens(history[i]);
       if (acc + c > budget) break;
-      keep.unshift(history[i]);
-      acc += c;
+      acc += c; cut = i;
     }
-    // 至少留一条，免得只剩 system 光秃秃的（半截也比没有好）
-    if (!keep.length) keep = [history[history.length - 1]];
-    return keep;
+    // 最后一条都装不下（刚贴了一整张卷子那种）：也先收着，再往轮的边界上靠。
+    if (cut >= history.length) cut = history.length - 1;
+    cut = 裁到轮界(history, cut);
+    // 靠到 0 说明**没找着边界**（留下的那段整个都在最新那一轮里，比如只剩了后半条）。
+    // 那就整轮补齐：宁可多给一条 user，也不给模型一段缺头的上下文。
+    if (cut === 0) {
+      var 末 = 末轮起点(history);
+      if (末 > 0) return history.slice(末);
+    }
+    return history.slice(cut);
+  }
+
+  // ⑤ 的另一半：被省掉的那几轮，压成**一行**附注塞回去（用法见 ask 里那段）。
+  //
+  // ★ 只摘老师说过的话。模型自己那些回答**一个字都不摘**——把它的旧空话抄回去，
+  //   等于让它照着自己演，那正是 ⑤ 要治的病（治病的钱不能花在病上）。
+  // ★ 机械摘要，不调模型：不花钱、不会 429、更不会编。全是照着原文截的，
+  //   所以它不会说错——顶多是说得粗。
+  // ★ 一句都没省掉时返回空串：没有那一档就不提那件事。
+  function 略注(全, 留) {
+    if (!全 || !留 || 全.length <= 留.length) return '';
+    var 丢 = 全.slice(0, 全.length - 留.length);
+    var 轮数 = 0, 话 = [], 还多 = 0, i, j;
+    for (i = 0; i < 丢.length; i++) {
+      var m = 丢[i];
+      if (!m || m.role !== 'user') continue;
+      轮数++;
+      var s = '', c = m.content;
+      if (typeof c === 'string') s = c;
+      else if (Object.prototype.toString.call(c) === '[object Array]') {
+        for (j = 0; j < c.length; j++) if (c[j] && c[j].type === 'text') s += (c[j].text || '');
+      }
+      s = String(s).replace(/\s+/g, ' ').trim();
+      if (!s) continue;          // 只发了一张图／一个文件、一个字都没打的那一轮：不编
+      if (话.length >= 4) { 还多++; continue; }
+      话.push(s.length > 24 ? s.slice(0, 24) + '…' : s);
+    }
+    if (!轮数) return '';        // 只省掉了开场白之类：那不是"轮"
+    var 句 = '（上下文装不下，产品自动省掉了开头的 ' + 轮数 + ' 轮。';
+    if (话.length) {
+      句 += '老师那几轮问的是：' + 话.map(function (t) { return '「' + t + '」'; }).join('、')
+        + (还多 ? '，另外还有 ' + 还多 + ' 句' : '') + '。';
+    } else {
+      句 += '那几轮老师没打字。';
+    }
+    句 += '那几轮你回的话也一并不在。）';
+    return 句;
   }
 
   // ============================================================
@@ -120,14 +191,25 @@ SR.api = (function () {
     for (var i = 0; i < parts.length; i++) {
       var p = parts[i];
       if (!p) continue;
-      if (p.kind === 'image' && p.dataUrl) imgs.push({ type: 'image_url', image_url: { url: p.dataUrl } });
+      if (p.kind === 'image' && p.dataUrl) imgs.push({ img: { type: 'image_url', image_url: { url: p.dataUrl } }, note: p.note || '' });
       else if (p.kind === 'text' && p.text) docs.push('【' + (p.name || '文件') + '】\n' + p.text);
     }
     var t = text || '';
     if (docs.length) t = (t ? t + '\n\n' : '') + docs.join('\n\n');
     if (!imgs.length) return t || '';
     if (!t) t = '（这是这节课要上的题，你先看）';
-    return [{ type: 'text', text: t }].concat(imgs);
+    // ★ 2026-10-06：图片可以带一句**图注**（`note`）了。为什么非有不可：
+    //   ④ 看板子那张图跟老师贴的题图**是同一种东西**（都是 dataURL，都排在正文后面），
+    //   在消息里长得一模一样 —— 不标出来，模型分不清"哪张是题目、哪张是你自己刚画的"。
+    //   多模态消息本来就允许文字和图片交错，所以图注就跟在它那张图的**后面**。
+    //   ⚠ 不写图注的那些（老师贴的图、出材料的配图）走的还是老形状：一段文字 + 若干张图，
+    //     一个字节都没变。
+    var out = [{ type: 'text', text: t }];
+    for (var k = 0; k < imgs.length; k++) {
+      out.push(imgs[k].img);
+      if (imgs[k].note) out.push({ type: 'text', text: imgs[k].note });
+    }
+    return out;
   }
 
   // ============================================================
@@ -272,10 +354,31 @@ SR.api = (function () {
   //     要求它在 buildSystem **外面**发生。可 buildSystem 是同步的、还被探针直接调着
   //     （test/probe_*.cjs），改成异步要牵一片。所以：外面翻好了就传进来，没传就自己翻。
   //     **拼装那两段话的代码只有下面一份**，两个来处走的是同一份。
-  function buildSystem(work, query, backendId, parts, hist, hit) {
+  //   ★ 第 7 个参数 `今话`（2026-10-06，为专题卡加的）：**老师这一轮原话**。
+  //     为什么不能拿现成的 `query` 当"这一轮说了什么"：`query` 是 kb.js 的 queryFor
+  //     拼出来的，它会**把前几轮老师的话也接上**（对 BM25 检索语料是好事，见那儿注释）。
+  //     可翻专题卡的门必须**只看这一轮** —— 拿拼过历史的串去翻，上一轮聊过"圆"，
+  //     这一轮问"明天讲什么"，那张圆卡就自己冒出来了。
+  //     探针直接调 buildSystem 时不给这第 7 个参数，那就退回用 query（行为跟今天一样）。
+  //   ★ 第 8、9、10 个参数都不传也行（老调用点一个字不改，行为逐字不变）：
+  //     沿用卡 —— 自修那一趟沿用老师那轮的专题卡（见 drawkb 那段）；
+  //     略     —— ⑤ 裁掉的老轮压成的一句话，直接拼进 system（见上面那段）；
+  //     蓝图开 —— 第 10 个（2026-10-06，⑥）：传 **false** 表示**这一轮不许挂蓝图闸门**。
+  //              只有一条路会传它：js/chat.js 的 `去问`（产品自己发的修理指令，
+  //              不是老师在说话）。理由写在函数末尾那条 if 上头。不传 = 照工位开关走。
+  function buildSystem(work, query, backendId, parts, hist, hit, 今话, 沿用卡, 略, 蓝图开) {
     var w = SR.WORKS[work] || SR.WORKS[SR.DEFAULT_WORK];
     var b = backend(backendId);
-    var sys = promptOf(w, b);
+    // ---- 底座（2026-10-06，整改① 一份底座＋五份附录）----
+    // ★ 拼在**最前面**。为什么不拼末尾：末尾那几个位置是**格式契约**的
+    //   （收尾块 / 想说 / 蓝图闸门），它们说的是"这一轮必须吐出来的东西"，抢不得。
+    //   底座讲的是"你是谁、你怎么说话"，是框，得先读到（首因）。
+    //   这几行原来散在各格附录里、位置靠近末尾（作图那份在第 745 行 / 共 1100 行），
+    //   挪到最前是"从近因挪到首因"——小模型真正读丢的是**中段**，两头都读得到。
+    //   ⚠ 这是按已有实测推的一步（量过的是"格式要求在末尾效力最大"，跟说话口吻不是一类），
+    //     孔老师看过回话要是不对，往回挪一步就是。
+    // ★ 没挂底座也不炸：SR.PROMPT_BASE 不在就退回今天的行为（老调用点/半装配的页面）。
+    var sys = (SR.PROMPT_BASE ? SR.PROMPT_BASE + '\n\n---\n\n' : '') + promptOf(w, b);
 
     // ---- 工位自己现拼的一段 ----
     // ★ 出材料专用：把**老师这份模板**认出来的格式号表交给模型。
@@ -477,6 +580,156 @@ SR.api = (function () {
         '★ 只有上面**没有写**的东西才问他——写了的，不用再问一遍。）';
     }
 
+    // ★★ 板子账（2026-10-06，来路见 js/converge.js 顶上那段）：把**上一轮板子上真出了
+    //   什么事**贴给模型。这是全产品头一次让模型"看得见自己刚才干了什么"。
+    //   治的是孔老师贴的那段真对话：它先答「我无法直接操作 GeoGebra」，紧接着又说
+    //   「**好的，我已经画好了长方体 ABCD-EFGH**」——而那一刻板子上是空的。
+    //   它不是在撒谎，是**真不知道**：一发一收，写完就交卷，板上的结果它一个字收不到。
+    //
+    //   ⚠ 位置：跟上面几段附注排在一起、**在收尾块前面**。理由同那两段——
+    //     作图那头最后读到的是 `PROMPT_SAY_TAIL`（见下面那段），把这一块排到它后面，
+    //     "末尾优势"没了不说，还会把 想说 围栏挤掉（有实测，见 [[prompt-must-do-at-tail]]）。
+    //     它是一条**事实**，事实排在格式契约前面；"这一轮还画不画得成"（收敛）排最后。
+    //   ⚠ 只在**真有账**的时候出现：没画过板子的那些轮次，这一段一个字符都不加。
+    //   ⚠ 账是**取走式的**（取一次就清，见 converge.js 的 `取账`），不会在后续每一轮
+    //     重念一遍陈年旧账 —— 提示词里字面存在一句过时的事实，比不写坏得多。
+    if (SR.converge && SR.converge.取账) {
+      var 账 = null;
+      try { 账 = SR.converge.取账(); } catch (e) { 账 = null; }
+      if (账) {
+        // 板上有谁：**现读**，不存进账里。"此刻有什么"跟"上一轮哪几条没落地"
+        // 是两件事，前者永远不该是旧的（见 [[scanner-numbers-are-not-what-they-claim]]）。
+        // ⚠ 读不出来（null）跟"读得到、就是空的"（[]）**不是一回事**，别合并：
+        //   前者是问不出来，这时候说"板是空的"就是编。没有那一档就不提那件事。
+        var 板 = null;
+        try { 板 = (SR.board && SR.board.objects) ? SR.board.objects() : null; } catch (e) { 板 = null; }
+        var 账行 = [];
+        if (板 && 板.length) {
+          var 前几个 = 板.slice(0, 40);
+          账行.push('- 板上现在有 ' + 板.length + ' 件：' + 前几个.join('、')
+            + (板.length > 40 ? '、等' : ''));
+        } else if (板) {
+          账行.push('- 板上现在是**空的**（一件东西都没有）');
+        }
+        // 上面那几句就是状态条上的**原话**，一句不改地搬过来（口径一分家，
+        // 老师看见的和模型看见的就会打架）。长名单截一下，别把提示词撑爆。
+        var 句数 = 0;
+        for (var ai = 0; ai < 账.段.length && 句数 < 6; ai++) {
+          var 一 = String(账.段[ai] || '').replace(/\s+/g, ' ').trim();
+          if (!一) continue;
+          账行.push('- ' + (一.length > 240 ? 一.slice(0, 240) + '…' : 一));
+          句数++;
+        }
+        sys += '\n\n---\n\n# 附：这块画板此刻的实情\n\n'
+          + '（这不是新的一段对话，是**上一轮那批画板命令到底成了什么**，产品这边实测出来的。\n'
+          + '板是累积的：上一轮画的东西还留在上面，不是每次从头来。）\n\n'
+          + 账行.join('\n') + '\n\n'
+          + '★ 照着上面说。**板上没有的东西，不要说你已经画好了** —— 上一句要是说了，'
+          + '这一句就把它说清楚：画到哪一步、卡在哪一条上。';
+      }
+    }
+
+    // ---- 被省掉的那几轮：压成一行贴回来（2026-10-06，整改方案⑤）----
+    // ★ 来路见 trimHistory / 略注 那两段：历史按"整轮"裁掉之后，模型看见的第一句
+    //   是老师的话——可它**不知道前面还有过话**。不知道就会当成没问过，
+    //   或者把老师刚说的话当成新的开头重来一遍。
+    //   这一行只回答一件事：**前面有过几轮、问的是什么**（老师的话，原样截的）。
+    // ★ 为什么**不写"不要假装你答过了"这类话**：那正是 [[prompt-must-do-at-tail]]
+    //   记下的坑——把要禁的原话摆进提示词，它反而更黏。事实自己会说话。
+    // ★ 位置：跟板子账同一族（**轮轮都要知道的事实**，不是"这一轮翻出了什么"），
+    //   所以排在板子账后面、专题卡前面——专题卡是"这一轮该照哪一版画"的材料，
+    //   越靠末尾越好，不该被一段讲历史的顶开。收尾块 TAIL 仍是最末（理由见那段）。
+    // ★ 空场一个字都不加：一轮都没省掉时 略注 返回空串。
+    if (略) sys += '\n\n---\n\n# 附：这轮之前省掉的那几轮\n\n' + 略;
+
+    // ---- 命令目录：这一轮翻中的那几条 GeoGebra 签名（2026-10-06，整改③）----
+    // ★★ 来路见 js/ggbcmds.js 顶上那段。一句话：模型背得住命令**名**，背不住**签名**——
+    //   而签名错了画板是**一声不响**的（evalCommand 返回 false，错误弹窗关着，
+    //   见 board.js 的 setErrorDialogsActive）。老师看见的是"模型没干活"。
+    //   `Net(cube)` 一个参数成不了、`BarChart(L1)` 一个列表不行、标准差是 `SD` 不是 `Stdev`,
+    //   这三条都拿真画板试过，可它们现在只写在 js/board.js 的注释里，模型一个字看不到。
+    //
+    // ★ 位置：跟专题卡同一族（"这一轮该怎么落笔"的**材料**），所以紧挨着卡、排在卡**前面**。
+    //   为什么签名在卡前面：卡是**范例**（照哪一版画），签名是**字帖**（这一行怎么写）——
+    //   越靠近末尾越"该照这个来"，范例比签名更需要占那个位置。
+    //   两者都仍在 `PROMPT_SAY_TAIL` **前面**（格式契约必须最后，实测见 [[prompt-must-do-at-tail]]）。
+    //
+    // ★ 拿 `今话` 翻，不是 `query`：query 拼了前几轮的话，拿它当"门"会让上一轮的话题
+    //   把这一轮的签名翻出来（理由跟下面那卡那段一模一样）。
+    // ★ 一条都没中 = **一个字符都不加**（门和排序是两件事，理由同上）。
+    // ★ 贴出来的就是签名本身，**不加"以下是我查到的"** 这类说明句——
+    //   写上它，模型就会拿它当**参考**而不是**规矩**，那正好是这一层要治的病。
+    //   没有那一档就不提那件事。
+    if (w.cmds && SR.ggbcmds && SR.ggbcmds.翻) {
+      var 令们 = [];
+      try { 令们 = SR.ggbcmds.翻(今话 || query) || []; } catch (e) { 令们 = []; }
+      if (SR.ggbcmds.记一次) SR.ggbcmds.记一次(令们);   // 探针钩子：翻空也要记
+      if (令们.length) {
+        var 段令 = [];
+        for (var gi = 0; gi < 令们.length; gi++) 段令.push(令们[gi].体);
+        sys += '\n\n---\n\n' + 段令.join('\n\n');
+      }
+    }
+
+    // ---- 专题卡：这一轮翻中的那 1~2 张贴回来（2026-10-06）----
+    // ★★ 来路见 js/drawkb.js 顶上那段，一句话：这份提示词原本 33123 字 22 节，
+    //   可作图一轮只用得上**其中一节**。该看的那一节埋在两万字中间 = 跟没写一样。
+    //   9 节搬进 js/drawkb.js，这儿按这一轮的话把翻中的贴回来。
+    //   治的是**位置**（该看的挪到最后），不是"提示词太胖"（那只是顺带的）。
+    //
+    // ★ 为什么排在板子账**后面**、收尾块**前面**：跟上面那段同一个道理 ——
+    //   它是"这一轮该照哪一版画"的**材料**，越靠末尾越好；但不能压过 `PROMPT_SAY_TAIL`
+    //   那个格式契约（挤掉 想说 围栏有实测，见 [[prompt-must-do-at-tail]]）。
+    //   事实（板子账）在材料前面：先知道板上有什么，再看这一版怎么画。
+    //
+    // ★ 拿 `今话` 翻，**不是 `query`**：query 拼了前几轮的话，拿它当"门"会让上一轮
+    //   的话题把这一轮的卡翻出来（理由写在 buildSystem 第 7 个参数那段）。
+    //
+    // ★ 贴的是卡里的**原文**，加头加尾一个字都不加 —— 它读起来该跟"本来就在提示词里的
+    //   那一节"一模一样。要是写上「(以下是检索到的参考)」，模型就会拿它当**参考**而不是
+    //   当**规矩**，那正好是拆卡要治的病。没有那一档就不提那件事。
+    //
+    // ★ 一张都翻不中 = 一个字符都不加。翻不中就随便贴一张，那是把 ⑥ 那个病
+    //   （瞎问硬凑一张图）从提示词搬到了检索里。门和排序是两件事：
+    //   "该不该翻"是**关键词门**（离散，不看分），"翻哪一张"才按词长排 —— 理由和实测
+    //   数字都在 js/drawkb.js 顶上那段，那是这一版最要紧的一处设计。
+    // ★★ 2026-10-06 加 `沿用卡`（第 8 个参数）：**自修那一趟要跟老师那一轮用同一批卡**。
+    //   起因是真页面上量出来的：作图撞上「画板没认」会自动重写一遍图，那一趟喂给门的是
+    //   它自己那段修理指令（`js/chat.js` 的 `去问`），里头带着画板现场的命令行
+    //   （`Circle(圆心, 半径)` 这种），于是**勾出了老师那句根本没勾的卡**：
+    //       第1趟 老师原话 → 卡=["圆"]
+    //       第2趟 自修指令 → 卡=["圆","动点题里一定要用到的几句话"]
+    //   结果模型被要求"把整份 ```ggb 重写一遍"，可它重写时看到的提示词，
+    //   跟它当初画的时候不是同一份 —— 修图反而在换规矩，这是拆卡治不了的新病。
+    //   自修是在修同一张图，理应按同一份规矩重写，所以**沿用**而不是重翻。
+    //
+    // ★ 先读 `上一轮()` 再 `记一次()`，顺序不能反：`记一次` 会把上一轮冲成这一轮，
+    //   反过来写就永远读到自己刚写下的那份，"沿用"变成空转（还不报错）。
+    if (w.drawkb && SR.drawkb && SR.drawkb.翻) {
+      var 卡们 = null;
+      if (沿用卡 && SR.drawkb.上一轮) {
+        var 上名 = SR.drawkb.上一轮() || [];
+        if (上名.length) {
+          卡们 = [];
+          for (var ui = 0; ui < 上名.length; ui++) {
+            for (var uj = 0; uj < SR.drawkb.卡.length; uj++) {
+              if (SR.drawkb.卡[uj].名 === 上名[ui]) { 卡们.push(SR.drawkb.卡[uj]); break; }
+            }
+          }
+        }
+      }
+      // 没用上沿用（不是自修轮 / 上一轮本来就是空的）就照原样翻。
+      if (卡们 === null) {
+        try { 卡们 = SR.drawkb.翻(今话 || query) || []; } catch (e) { 卡们 = []; }
+      }
+      if (SR.drawkb.记一次) SR.drawkb.记一次(卡们);   // 探针钩子：翻空也要记，好核"真的一张都没翻"
+      if (卡们.length) {
+        var 段卡 = [];
+        for (var ci = 0; ci < 卡们.length; ci++) 段卡.push(卡们[ci].体);
+        sys += '\n\n---\n\n' + 段卡.join('\n\n---\n\n');
+      }
+    }
+
     // ★ 收尾块放在**所有内容之后**，就为了占住"最后一段"这个位置。
     //   小模型（glm-4v-flash）只认最后读到的东西：实测同一份提示词，
     //   格式要求在中段时 ```想说 命中 0/6～1/6，挪到末尾的招在演示提示词上是从 5/8 提到 10/10 的。
@@ -517,6 +770,34 @@ SR.api = (function () {
       var 收敛 = SR.converge.note();
       if (收敛) sys += '\n\n---\n\n' + 收敛;
     }
+
+    // ★★ 蓝图闸门（2026-10-06，整改方案⑥）——**排在最末**，紧跟 return。
+    //   来路与门在 js/prompt-blueprint.js 顶上那段；一句话：命题／组卷这两格出的东西
+    //   是要拿去印的，所以这一轮**先别出成品**，把"打算出什么"摆成一段蓝图，
+    //   末尾摆一颗「就按这个办」，老师点了下一轮才出全套。
+    //
+    //   ⚠ 位置：它跟 `w.tail`（备课的收尾块）／`w.say`（作图的 想说 收尾块）**争的是
+    //     同一个位置——"最后一段"**。上面对那两份写的是"谁开着谁排最后"，轮流着来；
+    //     而这一条是**无条件接在最后**的，因为现在这两格谁都没开 tail/say：
+    //     命题／组卷真正读到最后的就是这一段（这正是要的：它要模型干的事比排版还难）。
+    //     哪天某格同时开了两样，先回来看这段——那时两边的末尾优势得重新分。
+    //   ⚠ `蓝图: false` 是**产品自己发的修理指令**那条路传的（js/chat.js 的 `去问`：
+    //     画板有命令没认时让模型重写一份 ```ggb）。它用的是同一个工位，命题这格又会
+    //     画图（`multiFig`），所以那一趟真会走到这儿来 —— 它手里那句话不是老师说的，
+    //     要是在它底下拼一段"这一轮先别出成品"，正好跟"把整份 ```ggb 重写一遍"顶牛。
+    //     跟那条路早就传着的 `沿用卡: true` 是同一个位置、同一个道理。
+    //   ⚠ 门拿 **`今话`**（老师这一轮说的话）判，不是 `query`：query 拼了前几轮的话，
+    //     上一轮那句「就按这个办」会赖在这儿，让后面每一轮都当成"他点了头"。
+    //     跟 drawkb 那段不拿 query 当门是同一条理由（见上面那段）。
+    //   ⚠ 判据是 `蓝图开 !== false`，**不是** `蓝图开`：不传这个参数的老调用点
+    //     （探针、别处现调 buildSystem 的）必须照旧走工位开关，写成真值判断的话
+    //     不传＝整条闸门静默失效，而且看不出来（同族：[[scanner-numbers-are-not-what-they-claim]]
+    //     里那些"参数不报错、只静默换了个量法"的坑）。
+    if (w.blueprint && 蓝图开 !== false && SR.blueprint && SR.blueprint.段) {
+      var 蓝图 = '';
+      try { 蓝图 = SR.blueprint.段(今话 || '') || ''; } catch (e) { 蓝图 = ''; }
+      if (蓝图) sys += '\n\n---\n\n' + 蓝图;
+    }
     return sys;
   }
 
@@ -540,6 +821,25 @@ SR.api = (function () {
     if (!navigator.onLine) return { error: '断网了' };
 
     var parts = opts.parts || (opts.imageDataUrl ? [{ kind: 'image', dataUrl: opts.imageDataUrl }] : []);
+
+    // ★★ ④ 看板子（2026-10-06）：把画板截一张图，当成一张图塞进这一轮。
+    //   ⚠⚠ 这一步**必须排在下面 `roundImg` 那段之前**：多了一张图，这一轮就得走视觉那条链，
+    //     顺序反了就是"带着图去问文字模型"——那正是 663 行那段记着的事故（当场 400）。
+    //   ★ 判定与截图都在 `js/board.js`（`该看板` / `seeNow`），这儿只管"该不该轮到它"：
+    //     · `w.boardSee` —— 工位开关，跟 `drawkb` 一个纪律，**只有作图开**（别的工位没板子看）；
+    //     · `opts.看板` —— 调用方强制（自修那趟走这条，它是来改图的，板上也真有东西）；
+    //     · 其余情况由门决定（话里有没有"板 / 图上 / 刚才画的"这种**指代**）。
+    //   ⚠ 截图最长 11.5 秒（SEE_MAX 兜底）。这一段是**串在提问前面的**，所以不该看的那些轮
+    //     一个毫秒都不等：`该看板` 先判，判否当场返回 null。
+    var w看 = SR.WORKS[opts.work] || SR.WORKS[SR.DEFAULT_WORK];
+    if (w看 && w看.boardSee && SR.board && SR.board.seeNow) {
+      var 板图 = null;
+      try { 板图 = await SR.board.seeNow(opts.text, !!opts.看板); } catch (e) { 板图 = null; }
+      if (板图) {
+        parts = parts.concat([{ kind: 'image', dataUrl: 板图, note: '（这张是画板上**这会儿**的样子）' }]);
+      }
+    }
+
     var roundImg = false;
     for (var pi = 0; pi < parts.length; pi++) if (parts[pi] && parts[pi].kind === 'image') { roundImg = true; break; }
 
@@ -553,7 +853,26 @@ SR.api = (function () {
     //   那张图，模型得看得见它；把历史里的图压成文字等于蒙上它的眼睛，它会反问"题目是什么"。
     // ★ 预算按**没裁过的那份**判：裁之前有图就得按带图给预算，不然预算先砍小、图再被
     //   裁掉，就成了自己把自己判成"没图"。
-    var anyImg = roundImg || histHasImage(opts.history);
+    // ★★ 乙案（2026-10-06，孔老师拍的）：**板上有东西，也算"手里有图"**。
+    //   原来只有"老师贴了图"才算，可画板是**累积的** —— 模型刚画完一张，板上十八件
+    //   东西明明白白，hasImg 却还是 false，于是作图那一格**永远回不到**画图那条链
+    //   （textHead 一直把它按在文字模型上，见下面那段）。这就是那把锁：
+    //   板空着 → 「没图」 → 派文字模型 → 画不出来 → 板更空。
+    //
+    //   ⚠ **只对 chain:'board' 的工位算**，这一条不能松：
+    //     · board 链（作图／出题）本来就走视觉模型，板上有东西就是真有东西要看，
+    //       历史预算也该按带图那一档给（b.budgetImage 是照 128K 那颗量的）。
+    //     · role 链（备课／讲评）那边的"有图"说的是**历史内容里塞着数组格式**，
+    //       那是会打 1210 的硬约束（见下面那段）。板上有东西跟这件事毫无关系，
+    //       混进去会让备课格无缘无故切到带图那条单模型链（链上只有一颗，挤了直接报错）。
+    var 板上有 = false;
+    try {
+      var 板上名 = (SR.board && SR.board.objects) ? SR.board.objects() : null;
+      板上有 = !!(板上名 && 板上名.length);
+    } catch (e) { 板上有 = false; }
+    var 板上有算图 = 板上有 && ((SR.WORKS[opts.work] || SR.WORKS[SR.DEFAULT_WORK] || {}).chain === 'board');
+
+    var anyImg = roundImg || histHasImage(opts.history) || 板上有算图;
 
     // ★ 带图那一轮单独给历史预算（b.budgetImage）。b.budget 是按免费通道
     //   最小那颗模型的 16K 上下文量的；带图走的是 128K 的 glm-4.6v-flash，
@@ -563,7 +882,10 @@ SR.api = (function () {
     var hist = trimHistory(opts.history || [], budget);
     // 真发出去的那一份里还有没有图——**裁完再判一次**。真被裁掉了就退回文字链，
     // 否则等于让文字模型去啃一个根本没发给它的东西。
-    var hasImg = roundImg || histHasImage(hist);
+    var hasImg = roundImg || histHasImage(hist) || 板上有算图;
+    // ★ 乙案那一份（`板上有算图`）直接并进来，**不需要**"裁完再判一次"：
+    //   板上画着的东西不会被 trimHistory 裁掉，它是画板的状态、不是消息里的内容。
+    //   （"裁完再判一次"只治"图被裁没了还以为模型看得见"那一档，见上面那段。）
 
     // ★ 知识库(教材索引 + 追问条目库，共 117KB)从首屏挪到这儿按需拿。
     //   要 await：buildSystem 里那两段附注得等语料真到了才检索得到。
@@ -590,7 +912,20 @@ SR.api = (function () {
       catch (e) { hit = null; }
     }
 
-    var sysText = buildSystem(opts.work, recall, b.id, parts, hist, hit);
+    // ★ 第 7 个实参是 `opts.text`（老师这一轮原话），给专题卡当门用。
+    //   注意它**不是** `recall` —— recall 是 queryFor 拼过历史的串，当门会串轮（见 buildSystem 那段）。
+    // ★ 第 8 个实参 `opts.沿用卡`：自修那一趟要沿用上一轮的卡，别按它自己那段修理指令重翻
+    //   （理由和实测在 buildSystem 那段注释里）。只有 `js/chat.js` 的 `去问` 会传它。
+    // ★ 第 9 个实参（2026-10-06，方案⑤）：**被省掉的那几轮**的机械摘要。
+    //   `hist` 是裁过的，`opts.history` 是没裁过的，两者的长度差就是被丢掉的那一段
+    //   ——不用另开一条通道传，省得哪天两处对不上还看不出来。
+    //   ★ 拿的是 `opts.history` 而不是 `recall`：召回用的那份是 queryFor 拼过历史的串，
+    //     拿它来摘会摘出模型没见过的话（同 buildSystem 第 7 个实参那段）。
+    // ★ 第 10 个实参（2026-10-06，方案⑥）：`opts.蓝图 === false` 时**这一轮不挂蓝图闸门**。
+    //   只有 `js/chat.js` 的 `去问`（产品自己发的修理指令，不是老师在说话）会这么传，
+    //   跟它早就传着的 `沿用卡: true` 是同一处、同一个道理（详见 buildSystem 末尾那条 if）。
+    var sysText = buildSystem(opts.work, recall, b.id, parts, hist, hit, opts.text, opts.沿用卡,
+      略注(opts.history || [], hist), opts.蓝图);
     if (round) {
       // 「每步可见产物」在这一步上是**真发出去的那一整段 system**——想看它到底拿到了什么，
       // 展开就是原文，不用再去翻 SR.api.lastSystem。
@@ -607,6 +942,22 @@ SR.api = (function () {
     //   这是同一个家族的第七次。现在探针直接读这一份，看的是真发出去的长度。
     //   只留字符串，跟 SR.chat.lastRaw 一个性质，不进 DOM、不外发。
     SR.api.lastSystem = sysText;
+    // ★ 探针账本（2026-10-06）：这一轮真带出去的是哪几样（含 ④ 那张板子截图）。
+    //   为什么要它：`flow` 那边只记 system，量不到 messages；而"板子图到底带没带、
+    //   图注写对了没"只有这儿看得见。跟 `lastSystem` 同性质——只留数据、不进 DOM、不外发。
+    //   ⚠ **不存那张图的字节**：dataURL 动辄几百 KB，常驻一份没必要（lastSystem 是字符串，
+    //     这个是对象，性质不同）。记长度就够验"有没有图"了。
+    SR.api.lastParts = parts.map(function (p) {
+      return (p && p.kind === 'image')
+        ? { kind: 'image', note: p.note || '', 字节: String(p.dataUrl || '').length }
+        : { kind: p && p.kind, name: (p && p.name) || '', 字: String((p && p.text) || '').length };
+    });
+    // ★ 探针账（2026-10-06，方案⑤）：**真发出去的那份历史**每条是谁说的。
+    //   为什么要它：⑤ 治的是"留下那段的第一句是不是模型自己说过的空话"，
+    //   这件事只在 hist 里看得见——`lastSystem` 是 system、`lastParts` 是这一轮，
+    //   两样都量不到它。只留角色名，不留内容。
+    //   跟上面两笔同性质：只在内存、不进 DOM、不外发。
+    SR.api.lastHistRoles = hist.map(function (m) { return (m && m.role) || '?'; });
     var msgs = [{ role: 'system', content: sysText }]
       .concat(hist)
       .concat([{ role: 'user', content: userContent(opts.text, parts) }]);
@@ -661,11 +1012,24 @@ SR.api = (function () {
       if (w.chain === 'board') chain = b.models;
       else if (hasImg) chain = b.modelsImage || b.models;
       else chain = b.modelsText || b.models;
-      // ★ 例外（2026-10-04）：工位带 textHead 时，**不带图那一轮**也走 modelsText。
-      //   目前只有画图开（理由与代价见 SR.WORKS.draw 那段：瞎问那一档 glm-4v-flash
-      //   24/36、250414 36/36；代价是 想说围栏 9/24→2/24，认了）。
-      //   注意 hasImg 是"这一轮带图 **或** 历史里还留着图"（见上面那段）——
-      //   所以对话里只要出现过图，这里的 head 仍然回到视觉模型，这是有意的。
+      // ★ 例外（2026-10-04）：工位带 textHead 时，**板还空着的第一轮**也走 modelsText。
+      //   目前只有画图开。理由与完整读数见 SR.WORKS.draw 那段（2026-10-06 重估过，
+      //   四个读数一致指向"留着"——瞎画 6/12 vs 9/12、该画 24/24 vs 22/24、
+      //   想说 1/36 vs 2/36、思维链漏出 0/36 vs 9/36）。
+      //   注意 hasImg 是"这一轮带图 **或** 历史里还留着图 **或** 板上有东西"（见上面那段）——
+      //   所以对话里只要出现过图、或者板子上已经画着东西，这里的 head 仍然回到视觉模型，这是有意的。
+      //   ★★ 2026-10-06 乙案（孔老师拍的）：最后那一项就是新加的。它把原来那把锁打开了 ——
+      //     第一次要图时板还空着，照旧派文字模型（"瞎问"那一档它确实更好，36/36）；
+      //     可**只要画成了第一笔，后面就回到画图链**，不会再出现"画了一半、突然开始说自己
+      //     不会操作 GeoGebra"这种断崖。旧注释里写的代价（想说围栏 9/24→2/24）**2026-10-06
+      //     实测没复现**（两臂都是 1~2/36），别再把那个数当依据。
+      //   ★★ 留着它的真正理由里，2026-10-06 又添了一条：**这一行挡着自己编题给老师看**。
+      //     把它关掉，第一轮落到 glm-4.1v-thinking-flash 上，它会把推理稿写进可见正文
+      //     （「用户现在需要我模拟作为数根助手，处理老师说的"画个数轴，带个动点P"这个请求…」
+      //      ——老师打的是「1111」，"画个数轴带个动点P"是**提示词范例里**的句子）。
+      //     ⚠ 这不是这一行独有的：hasImg 为真的那些轮**一直**走视觉链，同一条漏也一直在那条路上
+      //     （api.js:255 那把 `<think>` 刮刀没刮到"不带 <think> 外壳"的这种形状）。
+      //     那是一件**独立的缺陷**，不归 ② 管，别拿这一行当它的解药。
       if (w.chain === 'board' && w.textHead && !hasImg) chain = b.modelsText || b.models;
 
       // ★ 单模型链（就是带图那条）必须给足重试：链上只有一个，一次 429 就失败太亏。
@@ -753,9 +1117,23 @@ SR.api = (function () {
       }
       if (strip) strip.flush();
 
-      // 兜底：万一整段都被当思考剥光了，退回"去掉标签的原文"，总比空手强
-      if (!all && rawAll) all = rawAll.replace(/<\/?think>/gi, '').trim();
-      if (strip && !all && rawAll) { all = rawAll.replace(/<\/?think>/gi, '').trim(); onChunk(all); }
+      // 兜底：万一整段都被当思考剥光了，退回"去掉标签的原文"，总比空手强。
+      // ★★ 2026-10-06 夜：这两行原来是**两条 if**，后一条写的是
+      //   `if (strip && !all && rawAll) { all = …; onChunk(all); }`——
+      //   可它上面那条刚刚把 `all` 赋过值，轮到它时 `!all` **永远不成立**，
+      //   那句 `onChunk(all)` **一次都没跑过**（死代码）。
+      //   后果比"少推一次"重：气泡里的字是 chat.js 那条 `onChunk` 攒出来的
+      //   （`msg.raw += piece; paint(msg)`，js/chat.js:2588），而返回值 `res.text` 走的是
+      //   账本和记忆（chat.js:2608/2628）。兜底这一趟只补了**返回值**、没补**气泡** →
+      //   屏幕上一颗**空气泡**，可账本里那句话是全的——重画一遍又出来了，
+      //   当场却像是"模型什么都没说"。[[scanner-numbers-are-not-what-they-claim]]
+      //   里那支"桩不照产品合同演 → 空气泡"就是同一个病。
+      //   现在合成一处。`onChunk` 只在流里**一个字符都没吐**的时候叫
+      //   （`all` 是 `out()` 里逐段攒的，它有值就说明已经推过了），所以不会推两遍。
+      if (!all && rawAll) {
+        all = rawAll.replace(/<\/?think>/gi, '').trim();
+        if (all) onChunk(all);
+      }
 
       if (!all) return { error: '模型没说出话来' };
       if (round) SR.flow.done(round, 'reply', { out: all, note: model + (got ? '，接着往下说了' : '') });
@@ -778,6 +1156,10 @@ SR.api = (function () {
     probeKey: probeKey,
     backend: backend, getBackendId: getBackendId, setBackend: setBackend,
     userContent: userContent, trimHistory: trimHistory, estTokens: estTokens,
+    // ★ 2026-10-06（方案⑤）：`trimHistory` 用"整轮切"这条规矩，chat.js 那道
+    //   按条数的硬闸（MAX_TURNS）也得守同一条——不然它切出来的那半个轮次
+    //   会绕过 api 那边刚治好的病（首句是模型自己说过的空话）。
+    裁到轮界: 裁到轮界, 略注: 略注,
     usage: usage, usageText: usageText, pickTextbook: pickTextbook, buildSystem: buildSystem
   };
 })();

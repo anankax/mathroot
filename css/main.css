@@ -252,8 +252,12 @@ body[data-work="vary"] .tick::after { border-color: rgba(95, 107, 18, .5); }
      （这一份装了几件），这两颗是**动手**。读的顺序跟上面那条注释是一路的。
    ★ 白底 + 细边，不用主色：这一行整个是 `--brand-soft`（浅绿），
      再放两块实心主色的按钮，这一行就成了"一排警告"。
-     跟气泡底下那颗 `.copybtn` 同一套形状，只是底色得从"凹槽"翻成"面板"——
-     凹槽色（`--sunken`）在这条绿带子上是**比底色更淡**的，按钮会陷进去。
+     ★ 2026-10-06 起它跟气泡底下那几颗 `.copybtn` **不再是同一套形状了**：
+     那边换成了无框图标（见文件下面 `.copybtn` 那段），这两颗照旧是"白底 + 细边
+     + 一行字"的面板按钮。两边并存，各归各位：
+     一颗 28px 的图标坐在绿带子上，跟旁边「课题／班级／日期」三格排不成一路。
+     ★ 白底是为了**从绿带子（`--brand-soft`）上浮起来**：这两颗要是用凹槽色
+     （`--sunken`），在这条绿带子上比底色还淡，按钮会陷进去。
    ⚠ `.onep .opbtn` 是 (0,2,0)，`.packbtn` 那几条是 (0,1,0)：所以就算
      `.packbtn` 那条写在文件更后面，这儿也压得住。反过来的话（只写 `.opbtn`）
      就会被 `.packbtn` 的 `background: var(--sunken)` 悄悄盖掉——
@@ -1915,9 +1919,12 @@ footer .r {
 /* ---------- 气泡底下那根小条（见 js/chat.js 的 动作条 / attachCopy / attachUserActs） ----------
    ★ 2026-10-06 起**两个方向都有了**：数根每一条回复底下挂「复制这段」，
      老师自己每一条底下挂「复制 / 修改 / 重新发送」（照 DeepSeek 那套做的事）。
-     形状是同一根条、同一档字号、同一个浮现时机 —— 合在一处写就是为了**长得一样**：
+     形状是同一根条、同一档**尺寸**、同一个浮现时机 —— 合在一处写就是为了**长得一样**：
      两边各写一遍的话，按钮会慢慢不一样，而"不一样"只在并排看的时候才发现。
-   （原来这条注释上写着"备课／讲评两个工位"，那道闸已经撤了：六个工位一律挂。） */
+   （原来这条注释上写着"备课／讲评两个工位"，那道闸已经撤了：六个工位一律挂。）
+   ★ 2026-10-06 当天又改了一版：这几颗从**带框的字**换成了**图标**
+     （孔老师：「这个很丑啊，为啥不是deepseek那种图标类型的」）。
+     两边共用的是 `.copybtn` 那一格形状和那套图标，说的事还是同一件。 */
 .copybar { display: flex; gap: 6px; margin-top: 9px; }
 /* ★★ 这根小条平时**是隐形的**，鼠标移到那条消息上才现身（孔老师定的）。
    理由也是对的：从今往后**每一条**消息底下都挂着它（他自己发的一条、数根答的一条，
@@ -1936,15 +1943,39 @@ footer .r {
 /* 摸屏的设备没有 hover，那就一直亮着 —— 否则在平板上这根条**永远不出现**，
    而它并不是装饰：「修改 / 重新发送」只有这一个入口。 */
 @media (hover: none) { .copybar { opacity: 1; } }
-.copybtn, .packbtn {
+/* ★★ 2026-10-06：`.copybtn` 从"带框的文字按钮"改成了**图标按钮**。孔老师的原话：
+     「这个很丑啊，为啥不是deepseek那种图标类型的，是文字"复制"什么的」——
+   原来一条消息底下横着「复制 修改 重新发送」八个字，一屏十几二十条消息，
+   等于一屏全是带框的字，比正文还抢眼。
+   ★ 形状照主流智能体那一路：**无边框、无底色、灰**，鼠标停上去才加深并泛起凹槽色。
+   ★ 尺寸**统一 28×28、定宽**——这一条不是为了好看，是条老账：
+     按下去之后那颗会**换成 ✓ / ✗**（见 js/chat.js 的 `闪图标`），
+     宽度只要变一像素，旁边两颗就会跟着挪，而鼠标正停在旁边那颗上面。
+     （上面 `.copybar` 那段"宁可多留一行的空，也不要按钮在手底下动"说的是同一件事。）
+     所以**字号、行高、padding 一概不参与**，把方框钉死，图标自己缩在里面。
+   ★ `.packbtn`（绿行那颗「打包」）**不跟着改**：它坐在 `--brand-soft` 的绿带子上，
+     跟消息底下这排悬浮动作不是一类东西。
+     ⚠ 所以原来那条 `.copybtn, .packbtn {…}` 拆成了两条——别再造回去。 */
+.copybtn {
+  width: 28px; height: 28px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid transparent; border-radius: 6px;
+  background: transparent; color: var(--ink-3); cursor: pointer;
+}
+.copybtn svg { width: 15px; height: 15px; display: block; }
+.copybtn:hover { color: var(--brand); background: var(--sunken); }
+/* 键盘走到这几颗上时得看得见自己在哪儿（`.copybar` 那条 `:focus-within` 只管整条亮不亮） */
+.copybtn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+/* 拷成的那一瞬间**换一颗图标**（✓ / ✗）。★ 用 .done 而不是 :active——
+   剪贴板这一下是异步回来的，:active 在手指抬起来的时候就没了，看不见反馈。 */
+.copybtn.done { color: var(--brand); }
+.packbtn {
   border: 1px solid var(--line); background: var(--sunken); font: inherit;
   font-size: 11.5px; padding: 3px 10px; cursor: pointer;
   color: var(--ink-2); letter-spacing: .3px;
 }
-.copybtn:hover, .packbtn:hover { border-color: var(--brand); color: var(--brand); }
-/* 拷成的那一瞬间换个说法（"复制好了"）。★ 用 .done 而不是 :active——
-   剪贴板这一下是异步回来的，:active 在手指抬起来的时候就没了，看不见反馈。 */
-.copybtn.done, .packbtn.done { border-color: var(--brand); color: var(--brand); font-weight: 700; }
+.packbtn:hover { border-color: var(--brand); color: var(--brand); }
+.packbtn.done { border-color: var(--brand); color: var(--brand); font-weight: 700; }
 
 /* ---------- 每条回复底下那块**冻图**（见 js/chat.js 的 attachFigure） ----------
    一条回复画了几张图，就一句一句钉几块在这儿，**长在它自己那条气泡里**——

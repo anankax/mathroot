@@ -40,11 +40,137 @@ const LS = {
   removeItem: k => { delete store[k]; }
 };
 const W = { SR: {} };
-for (const f of ['config.js', 'prompt-draw.js', 'prompt-say.js', 'textbook.js', 'retrieve.js', 'api.js', 'render.js', 'chips.js']) {
+// ★ 2026-10-06 加了 'drawkb.js'（排在 prompt-draw.js 后面，跟 index.html 里同序）。
+//   ⚠ 不加这一份，`SR.drawkb` 就是 undefined，api.js 里那段专题卡会**静默整段跳过** ——
+//     量出来的就变成"19.5k base、一张卡都没贴"，读数看着齐全、断言照样绿，
+//     但它量的**不是产品线上跑的那条路**。同族栽过：[[scanner-numbers-are-not-what-they-claim]]。
+//
+// ★★ MR_OLD_PROMPT=1：拿**拆之前的 33k 老稿**跑同一套用例（老稿在 test/_out/ 里）。
+//   拆卡这一刀必须两头都有读数 —— 光看拆完是几比几，说不出"掉没掉"，
+//   那是拿一把尺子量一次就下结论。老稿模式下不装 drawkb.js，
+//   api.js 那段靠 `w.drawkb && SR.drawkb` 自己会跳过（config.js 不用改）。
+const 用老稿 = process.env.MR_OLD_PROMPT === '1';
+
+// ★★ 2026-10-06（整改①）补上的两份，缺了哪一份这把尺子就不在量产品：
+//   ① `prompt-base.js` —— ① 之后**每一格发出去的提示词都以底座开头**（js/api.js 的
+//      buildSystem 第一行拼上去）。装表里没有它，`SR.PROMPT_BASE` 就是 undefined，
+//      api.js 那个三元退回空串 —— 量到的是"**拆完、但没拼底座**"的那一份，
+//      跟线上真发出去的不是同一份。这正是 [[scanner-numbers-are-not-what-they-claim]]
+//      那一族：读数条条都对，错的是它量的那个东西。装上去，读数才是产品的读数。
+//      位置照 index.html：config.js 之后、各格附录之前。
+//   ② `MR_PRE_BASE=1` 对照臂 —— 整改①**之前**的那一份（没底座、附录里还留着那几行）。
+//      稿子在 test/_out/before/js/（把 ① 的删改逐条倒推回去重建的，不是 git HEAD ——
+//      HEAD 里还压着上一轮 drawkb 的拆分，拿它当"改前"会把上一轮的账算到这一轮头上）。
+//      有这一臂，"① 之后红了"才分得清是 ① 弄红的、还是本来就红。
+const 旧臂 = process.env.MR_PRE_BASE === '1';
+const 旧稿 = f => path.join(__dirname, '_out', 'before', 'js', f);
+const 有旧稿 = f => 旧臂 && fs.existsSync(旧稿(f));
+// ⚠ 旧臂里 api.js 用**现行**那份：① 只改了它拼底座那一行，而那一行在旧臂下
+//   （SR.PROMPT_BASE 不在）自己退回空串，行为正好等于 ① 之前。所以不用倒推 api.js。
+const 文件表 = ['config.js']
+  .concat(旧臂 ? [] : ['prompt-base.js'])
+  .concat([用老稿 ? '_out/_old_prompt_draw.js' : 'prompt-draw.js'])
+  .concat(用老稿 ? [] : ['drawkb.js'])
+  .concat(['ggbcmds.js'])   // ★ 2026-10-06（整改③）：命令目录，同 index.html 里同序（紧挨 drawkb）
+  .concat(['prompt-say.js', 'textbook.js', 'retrieve.js', 'api.js', 'render.js', 'chips.js']);
+for (const f of 文件表) {
+  // 老稿在 test/_out/ 下，不在 js/ 下 —— 不分开拼路径的话，MR_OLD_PROMPT=1 会当场 ENOENT（这还算好的），
+  // 最怕的是它悄悄读到不对的文件、我拿一份错基线下结论。
+  const 路径 = f.indexOf('_out/') === 0 ? path.join(__dirname, f)
+    : 有旧稿(f) ? 旧稿(f) : path.join(__dirname, '..', 'js', f);
   new Function('window', 'localStorage', 'navigator',
-    'var SR = (window.SR = window.SR || {});\n' + fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'))(W, LS, { onLine: true });
+    'var SR = (window.SR = window.SR || {});\n' + fs.readFileSync(路径, 'utf8'))(W, LS, { onLine: true });
 }
 const SR = W.SR;
+// ★ 自检：这份尺子到底装的是哪一版。装错了得当场看得见，不能等读数出来再猜。
+{
+  const 装了旧稿 = 文件表.filter(f => 有旧稿(f));
+  console.log('提示词来源：' + (旧臂
+    ? '★ 对照臂 = ① 之前（无底座；附录 ' + 装了旧稿.length + ' 份取自 test/_out/before/js）'
+    : '现行 = 底座＋附录（SR.PROMPT_BASE ' + (SR.PROMPT_BASE || '').length + ' 字）'));
+  if (!旧臂 && !SR.PROMPT_BASE) { console.error('★ 现行臂没装上 prompt-base.js —— 量到的不是线上那份，读数作废。'); process.exit(2); }
+  // ⚠ 这一闸第一版把阈值写成"旧稿 ≥ 4 份"，当场把好臂拦了下来：这把尺子的装表里
+  //   只有 config.js / prompt-draw.js 两样在 test/_out/before/js 里有旧稿（另外几样在 js/ 下），
+  //   所以 2 是对的。判据得盯着**这一格自己那份附录**，不是数份数。
+  if (旧臂 && ((SR.PROMPT_BASE || '').length || !有旧稿('prompt-draw.js'))) {
+    console.error('★ 对照臂没装对（底座 ' + (SR.PROMPT_BASE || '').length + ' 字／'
+      + 'prompt-draw.js ' + (有旧稿('prompt-draw.js') ? '取自旧稿' : '★不是旧稿') + '）—— 读数作废。');
+    process.exit(2);
+  }
+}
+
+// ★★ 2026-10-06（整改②）—— **只翻开关，产品一个字不动**。
+//   案由：js/api.js:996 那条
+//       if (w.chain === 'board' && w.textHead && !hasImg) chain = b.modelsText || b.models;
+//   会把**板子空着的第一轮**从视觉链改派给文字模型（glm-4-flash-250414）。
+//   孔老师投了甲案（整条删掉），但他说**先把代价量出来再签字**。
+//   量法：那一行读的是 `SR.WORKS.draw.textHead` 这个**运行时属性**，不是常量也不是闭包。
+//   在探针里把它翻成 false，**精确等于**删掉那一行（`w.chain === 'board'` 会把 chain 落回
+//   `b.models`）——两臂跑的是同一份 js，产品代码零改动。
+//     MR_TEXTHEAD=1（默认）：现状臂，第一轮走 modelsText（文字模型）
+//     MR_TEXTHEAD=0         ：甲案臂，第一轮走视觉链 models
+//   ⚠ 翻完必须**读回来核**。不核的话，"甲案臂其实没翻过来"会伪装成"删了也没差别"——
+//     两臂装的是同一份、差值是 0，而我会把它读成"甲案无害"。同族：
+//     [[scanner-numbers-are-not-what-they-claim]]。
+const 关textHead = process.env.MR_TEXTHEAD === '0';
+{
+  const 有这条 = !!(SR.WORKS && SR.WORKS.draw && ('textHead' in SR.WORKS.draw));
+  const 原值 = 有这条 ? SR.WORKS.draw.textHead : '(没有这条)';
+  if (关textHead) {
+    if (!有这条) {
+      console.error('★ 要翻 textHead，可 SR.WORKS.draw 上没有这条（产品已经删了它？改名了？）—— '
+        + '两臂会是同一份，读数作废。');
+      process.exit(2);
+    }
+    SR.WORKS.draw.textHead = false;
+  }
+  const 现值 = SR.WORKS.draw.textHead;
+  console.log('② 第一轮分派：' + (关textHead
+    ? '★ 甲案臂（textHead 翻成 false → 板子空着的第一轮走视觉链）'
+    : '现状臂（textHead 原样 → 板子空着的第一轮走文字模型）')
+    + '　SR.WORKS.draw.textHead：' + 原值 + ' → ' + 现值);
+  if (关textHead && 现值 !== false) {
+    console.error('★ textHead 没翻过来（现值 ' + 现值 + '）—— 两臂会是同一份，读数作废。');
+    process.exit(2);
+  }
+}
+
+// ★★ 2026-10-06（整改③）—— 同一个手法：**只翻开关，产品一个字不动**。
+//   ③ 给作图格加了 `cmds: true`（api.js 拿老师这一轮的原话去 js/ggbcmds.js 翻签名，贴在末尾）。
+//   量它有用没用，就把这个开关翻掉跑另一臂 —— 翻了等于 api.js 里那个 `if (w.cmds && …)`
+//   整段不执行，跟"③ 没做"完全等价。
+//     MR_CMD=1（默认）：现状臂，签名照贴
+//     MR_CMD=0         ：对照臂，一条签名都不贴
+//   ⚠ **翻完读回来核**（同 textHead 那条）：翻不动就伪装成"贴了也没差别"。
+//   ⚠ 还要核一件事：**这一趟用的是哪几条签名**。签名表如果整场只翻中一两条，
+//     或者翻中的全是同一张，那"没差别"是**用例没碰到**，不是"贴了没用"——
+//     这两种读数长得一模一样。所以每轮把 `SR.ggbcmds.上一轮()` 记下来，最后打一张表。
+const 关cmds = process.env.MR_CMD === '0';
+{
+  const 有这条 = !!(SR.WORKS && SR.WORKS.draw && ('cmds' in SR.WORKS.draw));
+  const 原值 = 有这条 ? SR.WORKS.draw.cmds : '(没有这条)';
+  if (关cmds) {
+    if (!有这条) {
+      console.error('★ 要翻 cmds，可 SR.WORKS.draw 上没有这条 —— 两臂会是同一份，读数作废。');
+      process.exit(2);
+    }
+    SR.WORKS.draw.cmds = false;
+  }
+  const 现值 = SR.WORKS.draw.cmds;
+  console.log('③ 命令目录：' + (关cmds ? '★ 对照臂（cmds 翻成 false → 一条签名都不贴）'
+    : '现状臂（cmds 原样 → 翻中的签名贴在末尾）')
+    + '　SR.WORKS.draw.cmds：' + 原值 + ' → ' + 现值
+    + '　SR.ggbcmds：' + (SR.ggbcmds ? SR.ggbcmds.卡.length + ' 条' : '★没装'));
+  if (关cmds && 现值 !== false) {
+    console.error('★ cmds 没翻过来（现值 ' + 现值 + '）—— 两臂会是同一份，读数作废。');
+    process.exit(2);
+  }
+  if (!SR.ggbcmds) {
+    console.error('★ js/ggbcmds.js 没装进来 —— api.js 那个 `w.cmds && SR.ggbcmds` 会静默跳过，'
+      + '量到的是"③ 没做"那一版，不是我改的这份。读数作废。');
+    process.exit(2);
+  }
+}
 
 const DS_KEY = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'settings.json'), 'utf8'))
   .env.ANTHROPIC_AUTH_TOKEN;
@@ -58,7 +184,15 @@ SR.api.setKey(DS_KEY);
 
 const b = SR.api.backend();
 console.log('后端 ' + b.id + '  模型链 ' + b.models.join(' → '));
-console.log('作图提示词 ' + SR.PROMPT_DRAW.length + ' 字符   每格打 ' + N + ' 次\n');
+// ★ 报**真发出去那一份**的长度（底座＋附录），不是单报附录 —— ① 之后两者差 800 字上下，
+//   报错了数会让人以为产品小了。（同族：[[scanner-numbers-are-not-what-they-claim]]）
+const 样 = SR.api.buildSystem('draw', '画个三角形', null, [], [], {});
+console.log('作图提示词（真发出去那份）' + 样.length + ' 字符'
+  + '（底座 ' + (SR.PROMPT_BASE || '').length + ' ＋ 附录 ' + SR.PROMPT_DRAW.length + '）  '
+  + '  每格打 ' + N + ' 次   '
+  + (旧臂 ? '★ 对照臂：① 之前（无底座）'
+    : 用老稿 ? '★★ 基线：拆卡**之前**的老稿（无专题卡）'
+    : '现行：底座 + 折后的 base + 按轮翻的专题卡') + '\n');
 
 // ★★ 用例的第一版**全部作废**，别捡回来：
 //   我原来写的是「画个数轴，带个动点 P」「把这几个数在数轴上标出来：-3、0、2、5」
@@ -75,6 +209,12 @@ const CASES = [
     wantGgb: true, must: /x\^2|x²|f\(x\)/ },
   { name: '真·数轴动点(换句话)', say: '一条数轴，上面有个点 P 可以来回滑动',
     wantGgb: true, must: /Slider|滑块|播放/ },
+  // ★★ 2026-10-06 新加一格：**这七个字得真翻中一张专题卡**（「圆」那张）。
+  //   上面三格按门表算一张都不该翻中（长方形 / 函数图象 / 数轴滑动 都不是门词），
+  //   所以整场跑下来"卡"这条路**一次都没被走过**——量了等于没量。
+  //   有了这一格，才同时压住两头：真该翻的（圆）真翻到了，不该翻的（下面那三格）一张都不许翻。
+  //   ⚠ 这句「画个圆，半径能拖的」是**真老师会说的句子**，不是我照门表造的。
+  { name: '真·圆', say: '画个圆，半径能拖的', wantGgb: true, wantCard: '圆', must: /圆|Circle/ },
 
   // ★ 第三档：**看得出要画图，但读法不止一种** → 照最常见的那种画出来，
   //   而且正文里必须说清「我按哪一种画的」。**判据是两件事一起看：出图 + 说了那半句。**
@@ -99,7 +239,26 @@ const CASES = [
 ];
 
 let 绿 = 0, 红 = 0, 自检过 = 0;
+let 全场卡 = 0;   // 有几格真贴上了专题卡。全场是 0 = 拆了没用（跟"没红"长得一样，所以单拎出来报）
+// ★★ 2026-10-06（整改③）：命令签名那一档的账。
+//   为什么也要单拎：③ 的对照臂（MR_CMD=0）与现状臂**在"用例根本没碰到签名"时读数会一模一样**，
+//   而那个 0 差值长得跟"贴了没用"一模一样。有下面这几个数，"这一趟到底贴过没有"是摆在桌上的。
+let 全场令 = 0;                        // 有几格（该出图的）真贴上了签名
+let 令轮 = 0, 令总轮 = 0;              // 真贴出去的轮数 / 总轮数（现状臂才有意义）
+const 令账 = new Map();                // 每条签名被贴过几次（跑完打一张表）
 const 全部漏 = [];   // 全场攒着，最后一次性判——每格都打一行太吵
+
+// ★★ 2026-10-06（整改②）全场三档读数。为什么单独立一本账：
+//   ② 的两条代价方向相反（甲案把 想说 捞回来、把 瞎画 还回去），**必须摆在一起看**，
+//   光看某一格的 ✅/❌ 会得出半张脸的结论。三档分开记，最后打一张总表。
+//   `模型` 收的是 `res.model` —— 记下来是为了**证明这两档真落到了不同的模型上**：
+//   两臂跑出来模型名一样，那就是开关没生效（上面那条自检之外的第二次机会）。
+const 账 = {
+  瞎画: { 出图: 0, 次: 0, 模型: [] },   // wantGgb === false：一张都不该出
+  该画: { 出图: 0, 次: 0, 模型: [] },   // 其余：必须出图
+  想说: { 有: 0, 次: 0 },               // 那三个可点的改法有没有摆出来
+  想漏: { 有: 0, 次: 0, 例: [] }        // ★ 思维链漏进可见正文的条数（② 量代价时撞见的独立缺陷）
+};
 
 // ★ 从画板命令里把那条多边形**还原出来**，算它的真实面积——这才是"画板上真是什么"。
 //   为什么不从正文里读：正文是模型自己写的，它说 6 画板可以是 4×2。
@@ -191,8 +350,16 @@ async function one(c) {
   //   parseFences **根本认不出**——那几行命令会被当正文删掉，**画板上一片空白**。
   //   我的正则看着"它画了"，产品上它是**最糟的那种失败**。原文里有围栏 ≠ 画板收到命令。
   //   所以这里一律走真解析器，量 SR.render.parseFences(t).ggb。
-  let 块 = [], 可见 = '';
-  try { const pf = SR.render.parseFences(t); 块 = (pf.ggb || []); 可见 = (pf.visible || ''); } catch (e) { 块 = []; }
+  // ★★ 2026-10-06（整改②）多摘一档：**想说围栏**。
+  //   为什么 ② 非要量它：2026-10-04 那条代价注释里写着「同一轮 想说围栏 glm-4v-flash 9/24、
+  //   250414 **2/24**」——**这正好是 textHead 的代价**（它换来的是 瞎问不打岔 36/36 vs 24/36）。
+  //   甲案把第一轮换回视觉链，理论上把 想说 捞回来、把 瞎画 还回去。两条得摆一起看，
+  //   只报一条会得出"甲案净赚"或者"甲案净亏"这种半张脸的结论。
+  let 块 = [], 可见 = '', 想说 = 0;
+  try {
+    const pf = SR.render.parseFences(t);
+    块 = (pf.ggb || []); 可见 = (pf.visible || ''); 想说 = (pf.say || []).length;
+  } catch (e) { 块 = []; }
   const ggb = 块.length > 0;
   const 命令 = 块.join('\n');
   // ★ 第二个判据：**刻度数字叠字**。提示词原来教模型在数轴点上写 `文本("-2", …)`，
@@ -216,7 +383,32 @@ async function one(c) {
   //   上面那个 mode/work 的教训就是"探针以为自己装好了、其实没装"。
   //   带上这一格，探针就算再写错参数名，也会当场报出来，而不是给我一份合情合理的错读数。
   const sys = SR.api.lastSystem || '';
-  const 带了作图 = sys.indexOf('画板认这几条') >= 0 && sys.indexOf('#三维') >= 0;
+  // ★★ 2026-10-06 换掉指纹。原来第二个词是「画板认这几条」——**它从来就没进过运行串**：
+  //   那个字符串只出现在 prompt-draw.js 的**源码注释**里（"原来这一行写的是「画板认这几条：」"），
+  //   注释不进数组、不进 PROMPT_DRAW。于是 `带了作图` 恒等于假，这条自检**长期假红**——
+  //   红的样子还是"探针没接上作图工位"，正是它当初被造出来要抓的那件事。
+  //   教训：给自检挑指纹，要拿**运行串**去挑，不是拿源码 grep（源码里注释和正文长得一样）。
+  //   现在这两个词都在 base 运行串里（拆卡之后仍然在，因为它们住的是留在 base 的那几节）。
+  const 带了作图 = sys.indexOf('画板怎么用') >= 0 && sys.indexOf('#三维') >= 0;
+  // ★★ 2026-10-06（整改①）再加一格：**底座在不在真发出去的那一段里**。
+  //   上一格只证明"接上作图工位了"，证不了"接的是 ① 之后那份"。① 的整个改动就落在
+  //   "每格多一段底座"上——判据要是只写作图附录的指纹，底座整个丢了它也照样绿。
+  //   对照臂必须**不带**（那正是那一臂的定义）；两臂都带或都不带，就是哪一臂装错了。
+  const 带了底座 = (SR.PROMPT_BASE || '').length > 0 && sys.indexOf(SR.PROMPT_BASE) >= 0;
+  const 底座对 = 旧臂 ? !带了底座 : 带了底座;
+  // ★★ 新加：**这一轮真贴上去的是哪几张卡**。
+  //   拿卡的**整段正文**去 system 里找——不是读 `SR.drawkb.上一轮()`，那是模型侧的记录，
+  //   量的是"函数被调过"；这里量的是"那段字真进了发出去的那一份"。
+  //   为什么非要有这一格：`SR.drawkb` 没装进来时那段是**静默跳过**的（不报错），
+  //   没有这一格，"一张卡都没贴"和"贴对了"在读数上都长成"没红"。
+  const 卡在 = SR.drawkb ? SR.drawkb.卡.filter(c => sys.indexOf(c.体) >= 0).map(c => c.名) : null;
+  // ★★ 2026-10-06（整改③）：**这一轮真贴上去的是哪几条签名**。跟上一格同一个道理、
+  //   同一个做法（拿签名正文去 system 里找，不读 `上一轮()` 那种模型侧记录）。
+  //   为什么非要有这一格：③ 的对照臂（MR_CMD=0）与现状臂，如果**用例根本没碰到签名**，
+  //   两臂读数会一模一样 —— 而我差一点把它读成"贴了没用"。有这一格，
+  //   "这一趟到底贴过什么"是摆在桌上的数，不是我的印象。[[scanner-numbers-are-not-what-they-claim]]
+  const 令在 = SR.ggbcmds ? SR.ggbcmds.卡.filter(c => sys.indexOf(c.体) >= 0).map(c => c.名) : null;
+
   // ★ 诊断用：它**写了**画板命令、可围栏掉了（开头三个反引号没写），于是画板收不到。
   //   这是"最糟的那种失败"里最容易被误判成成功的一种——原文里明明有 ggb 和一堆命令。
   const 围栏掉了 = !ggb && /(^|\n)[ \t]*ggb[ \t]*(\n|$)/.test(t);
@@ -232,8 +424,23 @@ async function one(c) {
     '最可能接着说的三句话', '老师：「', '你不干的事',
     '一律按平面', '没明说', '拿不准怎么画', '这一格是给老师'];
   const 漏了 = 漏词.filter(w => (可见 || '').indexOf(w) >= 0);
-  return { text: t, 可见, ggb, 命令, 叠字, 认输, 读了, 邀他改, 漏了,
-    model: res.model, sysLen: sys.length, 带了作图, 围栏掉了 };
+  // ★★ 2026-10-06（量 ② 的代价时撞见的**独立缺陷**，跟 ① ② 都无关）：
+  //   **思维链漏进了老师看得见的那段**。甲案臂第一轮落到 glm-4.1v-thinking-flash 上，
+  //   它把推理过程原样写进正文：实测撞见
+  //     「用户现在需要画个面积为6的图形，首先得想想什么样的几何面积会是6……」
+  //     「<answer>画完了。数轴上有个动点 P……」   ← 连 `<answer>` 标签一起漏出来
+  //   老师看见的就是这个。这不是"画得对不对"的问题，是**脸**的问题。
+  //   ⚠ 判据挑的是**思维链的文风指纹**，不是某个模型的专名：思维模型讲到自己时说的是
+  //     "用户/老师需要…"（第三人称叙述），正常回复是对着老师说的第二人称。
+  //     本产品自己那条 `漏词` 表抓的是**我的提示词**漏出去，跟这一条不是一件事，
+  //     所以单立一格，别混在一起数。
+  //   ⚠ 尖括号那条分支其实是**保险**，不是主判据：render.js:208 在 parseFences 内部就把
+  //     `<answer|response|reply|output>` 剥干净了，`可见` 里本来就不会有它们
+  //     （所以它防的是"哪天那一行被挪走"）。真正在量的是**散文**那条：
+  //     思维模型讲到自己时用第三人称叙述（"用户现在需要…"），正常回复是对着老师说的。
+  const 想漏 = /<\/?(answer|thinking|reasoning)>|用户现在(需要|想|说|的意思)|首先得想|根据之前的(指导|对话|要求)|我需要先/.test(可见 || '');
+  return { text: t, 可见, ggb, 命令, 叠字, 认输, 读了, 邀他改, 漏了, 想说, 想漏,
+    model: res.model, sysLen: sys.length, 带了作图, 带了底座, 底座对, 围栏掉了, 卡在, 令在 };
 }
 
 (async () => {
@@ -247,16 +454,78 @@ async function one(c) {
     }
     const 活的 = 记录.filter(Boolean);
     if (!活的.length) { 判(c.name + '（' + N + ' 次全报错，量不到）', false); continue; }
+    // ★★ 2026-10-06（整改②）：这一格记进总账。分档按**用例的意图**，不按模型实际干了什么
+    //   （按结果分档的话，"该画的没画"会被记进瞎画档、把两个数搅在一起）。
+    {
+      const 档 = c.wantGgb === false ? '瞎画' : '该画';
+      账[档].次 += 活的.length;
+      账[档].出图 += 活的.filter(r => r.ggb).length;
+      活的.forEach(r => 账[档].模型.push(r.model || '(没报)'));
+      账.想说.次 += 活的.length;
+      账.想说.有 += 活的.filter(r => (r.想说 || 0) > 0).length;
+      账.想漏.次 += 活的.length;
+      账.想漏.有 += 活的.filter(r => r.想漏).length;
+      活的.filter(r => r.想漏).forEach(r => 账.想漏.例.push(c.name + '→' + (r.model || '?')));
+    }
     // ★ 只在头一格自检一次：真发出去的那段 system 是不是作图工位那一份。
     if (!自检过) {
       自检过 = 1;
       const r = 活的[0];
       判('★★ 自检：这一格真发出去的是**作图**提示词（不是别的工位、不是空）',
         r.带了作图 === true, 'system ' + r.sysLen + ' 字符');
+      判('★★ 自检：这一臂装的是它该装的那一版（' + (旧臂 ? '对照臂＝无底座' : '现行臂＝带底座') + '）',
+        r.底座对 === true,
+        '底座 ' + (SR.PROMPT_BASE || '').length + ' 字，在 system 里' + (r.带了底座 ? '在' : '不在'));
     }
     const 有围栏 = 活的.filter(r => r.ggb).length;
     const 掉围栏 = 活的.filter(r => r.围栏掉了).length;
+    // ★★ 专题卡（2026-10-06）：这一格真贴上去的是哪几张。
+    //   两头的闸都要有——只压"该翻的真翻到了"，会漏掉"不该翻的也翻了"；
+    //   只压"不该翻的没翻"，会漏掉"一张都没翻、拆了个寂寞"。
+    const 卡集 = new Set();
+    活的.forEach(r => (r.卡在 || []).forEach(n => 卡集.add(n)));
+    const 卡串 = 卡集.size ? Array.from(卡集).join('、') : '（一张卡都没贴）';
+    if (卡集.size) console.log('     └ 贴上的专题卡：' + 卡串);
+    // ⚠ 老稿模式下没有 drawkb.js，这两条必然红 —— 那不是产品的红，是"这一版根本没有卡"。
+    //   基线那一趟把它们跳过，不然新旧两栏摆一起会比错（红的来路不一样）。
+    if (c.wantCard && !用老稿) {
+      判('   ★★ 「' + c.say + '」真贴上了「' + c.wantCard + '」那张卡（拆出来这条路过没过）',
+        活的.every(r => (r.卡在 || []).indexOf(c.wantCard) >= 0), 卡串);
+    }
+    if (c.wantGgb === false && !用老稿) {
+      判('   ★★ 「' + c.say + '」一张卡都不许翻（门一松，瞎画就从提示词搬进了检索）',
+        活的.every(r => !(r.卡在 || []).length), 卡串);
+    }
+    全场卡 += 卡集.size ? 1 : 0;
+    // ★★ 2026-10-06（整改③）：签名那一档，同样两头压。
+    //   这一格**不判某一用例该翻中哪一条**（我给不出"这句该配哪条签名"这种金标准，
+    //   硬编一套就是拿我脑子里的表当答案）。它量的是两件**可核**的事：
+    //     ① 该出图的那几句里，真贴出去的签名是不是**贴着话说的**（命中了才算）；
+    //     ② 瞎画那几句（wantGgb === false），签名表**一条都不许翻**——
+    //        门松成"没中也贴"，那就等于把"瞎问硬凑一张图"从提示词搬进了检索（drawkb 那边同一条）。
+    //   至于"贴了到底有没有让图更准"，那是**整臂对比**的事（MR_CMD=0/1），不是单格能说的。
+    const 令集 = new Set();
+    活的.forEach(r => (r.令在 || []).forEach(n => 令集.add(n)));
+    const 令串 = 令集.size ? Array.from(令集).join('、') : '（一条签名都没贴）';
+    if (令集.size) console.log('     └ 贴上的命令签名：' + 令串);
+    if (c.wantGgb === false) {
+      判('   ★ 「' + c.say + '」一条命令签名都不许翻（门松了就等于把瞎画的病搬进检索）',
+        活的.every(r => !(r.令在 || []).length), 令串);
+    }
+    if (c.wantGgb !== false && 令集.size) 全场令 += 1;
+    令集.forEach(k => 令账.set(k, (令账.get(k) || 0) + 1));
+    if (!关cmds) 令轮 += 活的.filter(r => (r.令在 || []).length).length;
+    令总轮 += 活的.length;
     活的.forEach((r, i) => { if (r.漏了 && r.漏了.length) 全部漏.push(c.name + ' 第' + (i + 1) + '次：' + r.漏了.join('/')); });
+    // ★ MR_DUMP_VIS=1：把**老师真看得见的那段**（parseFences 的 visible，已经剥过 <answer>、
+    //   删过围栏）原样打出来。想漏那几条到底是"真漏到脸上"还是"只在原文里、渲染时会被剥掉"，
+    //   靠这一档当场看清——判据的可靠性得自己先验一遍，不能拿它直接下结论。
+    if (process.env.MR_DUMP_VIS === '1') {
+      活的.forEach((r, i) => {
+        if (r.想漏) console.log('     ⚠ 可见[' + (i + 1) + '](' + r.model + ')：'
+          + JSON.stringify(r.可见.replace(/\n+/g, ' ').slice(0, 160)));
+      });
+    }
     const 简述 = 活的.map(r => JSON.stringify((r.text || '').replace(/\n/g, ' ').slice(0, 70))).join(' | ');
     if (c.wantReading) {
       // 第三档：**照最常见的那种画出来 + 说清按哪一种画的**（现行政策）
@@ -368,6 +637,57 @@ async function one(c) {
     全部漏.length === 0,
     全部漏.length ? 全部漏.slice(0, 6).join('；') + (全部漏.length > 6 ? ' …共' + 全部漏.length + ' 条' : '')
       : '0 条');
+  // ★★ 全场总账之二（2026-10-06）：**拆出来的那条路，全场至少走过一格**。
+  //   为什么要单拎：`SR.drawkb` 没装进来 / 门表全打不中 / 注入那段代码没跑到 ——
+  //   三种坏法都是**静默**的，读数是"一张卡都没贴"，而每一格照样绿。
+  //   没有这一条，整场跑完我能得出"6/6 全绿"，却完全没量过拆卡这件事。
+  if (用老稿) {
+    console.log('\n（老稿模式：这一版**根本没有专题卡**，"全场至少贴了一张"那条不适用，不判）');
+  } else {
+    判('★★ 全场至少有一格真贴上了专题卡（一张都没贴＝这条路根本没走通）',
+      全场卡 > 0, '真贴上卡的格数 ' + 全场卡);
+    if (!关cmds) {
+      // ★★ 2026-10-06（整改③）：同族的一条。③ 是**新加的**，静默失败的坏法跟 drawkb 那边一样
+      //   （文件没装 / 门表全打不中 / 注入那段没跑到），而且多一种：**开关没开**。
+      //   一条都不贴 = 这一趟没量过 ③，那两臂的差值不能拿来说事。
+      判('★★ 全场至少有一格真贴上了命令签名（一条都没贴＝③ 这条路根本没走通）',
+        令轮 > 0, '贴出去的轮数 ' + 令轮 + '/' + 令总轮);
+    }
+  }
+  // ★★ 2026-10-06（整改②）总表：三档摆一起。
+  //   ② 的两条代价方向相反 —— 这一张表就是给孔老师做那个决定用的，
+  //   所以**只报数，不替他下结论**（哪一档更值钱是他的事，不是我的）。
+  {
+    const 名 = s => { const a = Array.from(new Set(s.filter(Boolean))); return a.length ? a.join(' / ') : '(没报)'; };
+    console.log('\n══ ② 这一趟的三档读数（' + (关textHead ? '甲案臂：textHead 关' : '现状臂：textHead 开') + '）══');
+    console.log('   瞎画（该 0）　 ' + 账.瞎画.出图 + '/' + 账.瞎画.次 + ' 出了图　　打的是 ' + 名(账.瞎画.模型));
+    console.log('   该画（该全出）' + 账.该画.出图 + '/' + 账.该画.次 + ' 出了图　　打的是 ' + 名(账.该画.模型));
+    console.log('   想说围栏　　　 ' + 账.想说.有 + '/' + 账.想说.次 + ' 摆出了那三个可点的改法');
+    console.log('   ★ 思维链漏出　' + 账.想漏.有 + '/' + 账.想漏.次 + ' 条正文里是模型的自言自语'
+      + (账.想漏.例.length ? '　（' + 账.想漏.例.slice(0, 4).join('；')
+        + (账.想漏.例.length > 4 ? ' …共' + 账.想漏.例.length + ' 条' : '') + '）' : ''));
+    // ★ 两臂之间真正要核的是这一句：**这两档是不是真打到了不同的模型上**。
+    //   打在同一颗上 = 开关没生效，上面那些差值全是噪声。上面那条自检漏掉的，这儿兜住。
+    if (关textHead) {
+      console.log('   ⚠ 甲案臂要看的是：瞎画那档的模型名**不再是** glm-4-flash-250414（否则开关没生效）。');
+    }
+  }
+  // ★★ 2026-10-06（整改③）总表：**这一趟到底贴过什么**。
+  //   ③ 的对照臂（MR_CMD=0）与现状臂读数一模一样的时候，只有这张表能说清
+  //   那是"贴了没用"还是"用例根本没碰到签名"——两者的差值都是 0，
+  //   而 0 在这张表上会自己现形（令轮 = 0/36）。[[scanner-numbers-are-not-what-they-claim]]
+  {
+    console.log('\n══ ③ 这一趟的命令签名（' + (关cmds ? '对照臂：cmds 关＝一条都不贴' : '现状臂：cmds 开') + '）══');
+    console.log('   真贴出去的轮数　' + 令轮 + '/' + 令总轮
+      + '　（该出图的格子里有 ' + 全场令 + ' 格碰到过签名）');
+    if (令账.size) {
+      const 排 = Array.from(令账.entries()).sort((a, b) => b[1] - a[1]);
+      console.log('   贴过哪几条　　' + 排.map(([k, v]) => k + '×' + v).join('　'));
+    } else {
+      console.log('   ⚠ 一条签名都没贴过 —— 这一趟**量不出 ③ 的效果**，'
+        + '两臂的差值 0 是"没碰到"，不是"没用"。');
+    }
+  }
   console.log('\n' + 绿 + ' 绿 / ' + 红 + ' 红');
   process.exit(红 ? 1 : 0);
 })().catch(e => { console.error('★ 炸了：' + (e && e.stack || e)); process.exit(2); });

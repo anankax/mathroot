@@ -42,3 +42,12 @@ js/textbook.js
 #   ★ 改了 js/retrieve.js 或上面两份源头，重跑 test/build_prompt.py 会重新生成它；
 #     忘了重跑不会静默走样——云上那一步的分数会跟本机对不上，probe_kb_cloud.cjs 立刻报。
 cloudfunctions/gate/kb.js
+
+# ★ 例外（2026-10-07）：下面这几个 `test/_` 开头的文件**不是跑出来的结果，是探针要
+#   `require` 的模块**。上面那条 `test/_*` 会把它们一起挡住，于是 `probe_*.cjs`
+#   一 clone 下来就 `require` 失败——绿变红，且红的样子像是"产品坏了"。
+#   ★ 只开这四个具体的名字，不开通配：`test/_*` 挡抓来的页面和接口原文那条**照旧**。
+!test/_base_len.cjs
+!test/_等开机.cjs
+!test/_自检_8乙.cjs
+!test/_跑一遍.cjs

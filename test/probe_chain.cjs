@@ -34,7 +34,11 @@ const LS = {
   removeItem: k => { delete store[k]; }
 };
 const W = { SR: {} };
-for (const f of ['config.js', 'prompt-prep.js', 'textbook.js', 'retrieve.js', 'zhuawen.js', 'api.js', 'render.js', 'chips.js']) {
+// ★ 2026-10-06（整改①）：加了 'prompt-base.js'。① 之后每格发出去的提示词都以底座开头
+//   （js/api.js 的 buildSystem 第一行拼上去），不装它，这个 Node 装出来的就是
+//   "拆完、但没拼底座"的那一份，跟线上真发的不是同一份 —— 读数会条条都对、
+//   量的却是另一个东西。[[scanner-numbers-are-not-what-they-claim]]
+for (const f of ['config.js', 'prompt-base.js', 'prompt-prep.js', 'textbook.js', 'retrieve.js', 'zhuawen.js', 'api.js', 'render.js', 'chips.js']) {
   // ⚠ 前面补一句 `var SR = window.SR`：浏览器里这些文件共用页面那个全局 SR，
   //   可 chips.js 是直接写 `SR.CHIPS = …`、自己没声明——在 node 的假 window 里
   //   它就是个未定义变量，一跑就 ReferenceError。（跟 probe_fence.cjs 同一个坑。）

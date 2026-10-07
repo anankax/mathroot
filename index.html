@@ -178,21 +178,43 @@ window.SRlib = (function () {
 
 <!-- 本项目（按依赖顺序） -->
 <script defer src="js/config.js"></script>
-<!-- 五份提示词，一个工位一份（见 js/config.js 的 SR.WORKS）。
-     ★ 备课和讲评共用 prep 那一份——讲评是备课的一个阶段，不是另一个职责。
-     ★ 这五份**全是手写的**，都在 js/ 下面，改提示词就改这五个文件。
+<!-- 提示词：**一份底座 ＋ 五份工位附录**（2026-10-06 整改①，见 js/prompt-base.js 顶上那段）。
+     ★ 底座（prompt-base.js）每次必发，拼在每一格提示词的**最前面**：
+       你是谁、你怎么说话、式子一律 `$...$`。凡是**六个工位都成立**的话都放它那儿，
+       别在附录里再说一遍——同一条规矩写两遍，改的时候就会只改一处。
+     ★ 五份附录，一个工位一份（见 js/config.js 的 SR.WORKS）。
+       备课和讲评共用 prep 那一份——讲评是备课的一个阶段，不是另一个职责。
+     ★ 底座和这五份**全是手写的**，都在 js/ 下面，改提示词就改这几个文件。
        （2026-10-02 之前备课那三份是 test/build_prompt.py 从 05c 生成出来的，
          那份 05c 是扣子「数小问」学生版的翻面稿，主体反了——整份重写，已脱离生成链。
          那个脚本还留着，它另外还生成 js/textbook.js 和 js/zhuawen.js 两份检索语料。
          ★ 但 textbook.js 那份**不进仓库**（课本原文，被 .gitignore 挡着），
            仓库里那份只有 zhuawen.js——见 .gitignore 和 js/kb.js 顶上那段。） -->
+<script defer src="js/prompt-base.js"></script>
 <script defer src="js/prompt-prep.js"></script>
 <script defer src="js/prompt-draw.js"></script>
+<!-- 作图那一格的**专题卡库**（2026-10-06）：从 prompt-draw.js 里搬出来的 9 节，
+     api.js 的 buildSystem 每轮只把翻中的那 1~2 张贴在提示词最末尾。
+     ★ 必须**跟 prompt-draw.js 挨着**、排在 api.js 前面：api.js 是在拼系统提示词
+       那一刻读 `SR.drawkb` 的，读不到就静默一张都不贴（跟没拆一样，且不留痕迹）。 -->
+<script defer src="js/drawkb.js"></script>
+<!-- 作图那一格的**命令目录**（2026-10-06，整改方案③）：模型背得住命令名、背不住签名，
+     而签名错了画板是**一声不响**的（evalCommand 返回 false，错误弹窗关着）——
+     老师看见的是"模型没干活"。api.js 每轮把翻中的那几条签名贴在提示词末尾。
+     ★ 必须排在 api.js 前面，理由跟 drawkb.js 那条一样：读不到就静默一条都不贴。
+     ★ 跟 drawkb 是两件事，别合并——那份是**范例**（照哪一版画），这份是**签名**（这一行怎么写）。 -->
+<script defer src="js/ggbcmds.js"></script>
 <!-- 作图那一格的收尾块：要模型在回复末尾写一个 ```想说 围栏，放三句**看着刚画的图**说的话。
      ★ 单独一份、不并进 prompt-draw.js，是因为它的**位置**跟那份不挨着——api.js 是在
        提示词和后头那两段附注都拼完之后才追加它的，占的是"最后一段"。放进 prompt-draw.js
        里就成了正文中段，小模型读不到那儿，等于没写（api.js 那段有实测数字）。 -->
 <script defer src="js/prompt-say.js"></script>
+<!-- 命题／组卷两格的**蓝图闸门**（2026-10-06，整改方案⑥）：这两格出的东西是要拿去印的，
+     所以每一轮先让模型把"打算出什么"摆成一段蓝图、末尾摆一颗「就按这个办」，
+     老师点了下一轮才出全套。★ 为什么单独一份：它跟 prompt-say.js 同理——
+       它占的是**"最后一段"**那个位置（api.js 的 buildSystem 最末那条 if），
+       不是这两份工位正文里的某一段。见 js/prompt-blueprint.js 顶上那段。 -->
+<script defer src="js/prompt-blueprint.js"></script>
 <script defer src="js/prompt-vary.js"></script>
 <!-- 出材料工位（这一版的主线）。★ 它只管"说话"那部分——套模板、出 docx
      由 js/tpl.js + js/produce.js 做，提示词里明说了不许它吐 XML。 -->
@@ -869,8 +891,8 @@ window.SRlib = (function () {
 
     <h3>怎么用</h3>
     <ul>
-      <li>备课／讲评里，每一条回复底下都有一颗<strong>「复制这段」</strong>——链子是<strong>一节一节</strong>摆的，摆到哪儿想先拷走都行，贴进教案、学案、备课组的共享文档。</li>
-      <li>底下那三个按钮是<strong>你要跟它说的话</strong>，跟着工位换：备课／讲评里是<strong>"接着往下走"</strong>、<strong>"这句我说不出口，换个说法"</strong>、<strong>"整条链子给我，我拷走"</strong>；组卷里是题量、难度、范围那几句；作图里是"换成三维""切回平面"。想说什么直接打字也行。</li>
+      <li>备课／讲评里，每一条回复底下都挂着一颗<strong>复制图标</strong>（鼠标移上去才现出来，停上去写着"复制这段"）——链子是<strong>一节一节</strong>摆的，摆到哪儿想先拷走都行，贴进教案、学案、备课组的共享文档。你自己发出去的那一条底下也有一排：<strong>复制／修改／重新发送</strong>。</li>
+      <li>底下那三个按钮是<strong>你要跟它说的话</strong>，跟着工位换：备课／讲评里是<strong>"接着往下走"</strong>、<strong>"这句我说不出口，换个说法"</strong>、<strong>"整条链子给我，我拷走"</strong>；组卷里是题量、难度、范围那几句；作图里是<strong>照你板上那张图现挑的三句</strong>——图上有滑块而没接上播放键，它就问你要不要让它自己动起来，而不是干巴巴说"加个滑动条"。想说什么直接打字也行。</li>
       <li>要换一件事做，点<strong>输入框底下那一行</strong>（备课／作图／命题／组卷／学情／讲评）——它是六个工位，说一句话之后也可以随时点。</li>
       <li>备完一课，点顶栏那颗<strong>圆形箭头</strong>（鼠标停上去写着"清空，重新开始"）清空，接着备下一课。</li>
       <li>顶栏<strong>卡片图标</strong>里是那 118 条追问条目，按册别分组、能搜，备课时随手查。
