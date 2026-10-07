@@ -188,10 +188,28 @@ function 判(名, ok, 值) {
   判('首屏六张卡在', 六格 === 6, 六格);
   const 列宽 = await ev("(function(){var c=document.querySelector('main > .col');return c?Math.round(c.getBoundingClientRect().width):null;})()");
   判('对话栏单列且限宽（≤1120）', typeof 列宽 === 'number' && 列宽 <= 1120, 列宽);
-  // 居中：左右空白差 ≤4px
-  const 居 = await ev("(function(){var c=document.querySelector('main > .col');if(!c)return null;"
-    + "var r=c.getBoundingClientRect();return Math.round(Math.abs(r.left-(innerWidth-r.right)));})()");
-  判('对话栏居中（左右空白差 ≤4px）', typeof 居 === 'number' && 居 <= 4, 居);
+  // 居中：在 **main 的内容区里** 左右空白差 ≤4px。
+  // ★★ 2026-10-07 修基准。这一条原先量的是"离**视口的**左右边各空多少"，读回 **68**，
+  //   看着像"这一栏歪了"。**是尺子量错了，不是版式坏了**：
+  //   `body[data-toolrail="1"] main { padding-left: 82px }`（作图工位左边那条工具栏，
+  //   css 里早就有）——`main` 按设计给它让出 82px，`.col` 是在**剩下那块地**里居中的，
+  //   离内容区左右各 172px，正是它该在的地方。
+  //   量错的代价：这 68 会一直红着，而它红的样子跟"版式坏了"一模一样。
+  // ★ A/B 过：把 HEAD~1 整份导出来另起一个服务量，**旧版也读 68** ——
+  //   所以这不是某一次改动弄坏的，是这把尺子从有工具栏起就没算过那一栏。
+  // ★ 红验过（真把"居中"这件事弄坏：往页面上插一条 `main > .col{margin-left:0!important}`）：
+  //       好版 新基准 **0**  / 弄歪 新基准 **344**   ← 分得出好坏
+  //       好版 旧基准 **68** / 弄歪 旧基准 **276**   ← **两个数都在阈值外面**，
+  //   也就是说旧基准从头到尾**分不出"居中"和"歪了"**，它只在报一个跟版式无关的数。
+  //   这一条比"读数是 68 所以红了"值钱得多：红的不是版式，是基准选错了。
+  // ★ 判据挑的是 `main` 的**内边距盒**（padding box），不是 body 也不是视口：
+  //   这样"左边栏让位"和"右边抽屉让位"（`body[data-drawer="open"] main`）都自动算进去，
+  //   而尺子只问一件事：**在这一栏该居中的那块地里，它居中了吗**。
+  const 居 = await ev("(function(){var c=document.querySelector('main > .col'),m=document.querySelector('main');"
+    + "if(!c||!m)return null;var r=c.getBoundingClientRect(),mr=m.getBoundingClientRect(),"
+    + "cs=getComputedStyle(m),L=mr.left+parseFloat(cs.paddingLeft),R=mr.right-parseFloat(cs.paddingRight);"
+    + "return Math.round(Math.abs((r.left-L)-(R-r.right)));})()");
+  判('对话栏在内容区里居中（左右空白差 ≤4px）', typeof 居 === 'number' && 居 <= 4, 居);
   判('project.js 在位且有 can()', await ev("!!(window.SR&&SR.project&&typeof SR.project.can==='function')"));
   判('投影那一层用的是 #proj id（不是 .proj 类）', await ev(
     "(function(){var e=document.getElementById('proj');"
