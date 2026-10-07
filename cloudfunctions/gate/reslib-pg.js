@@ -205,9 +205,69 @@ function cacheInfo() {
 }
 function noteErr(e) { LAST_ERR = String((e && e.message) || e).slice(0, 200); }
 
+// ===========================================================================
+//  桶：从一条命中走到那份**原件**
+// ===========================================================================
+// ★★ 这一节只解决一件事：**给你一条命中的 doc，怎么找到桶里那个对象**。
+//   不查任何映射表、不新增任何列——因为这条等式是**量出来的**：
+//
+//     key = safeKey(doc)
+//
+//   根据两处：
+//     · 进桶时对象名就是 safeKey(rel)（test/upload_materials.cjs 的 safeKey；
+//       桶只认 [A-Za-z0-9-_. +/] 和汉字 U+4E00–U+9FFF，别的字符一律转成 _<小写码位>_）
+//     · res_chunks.doc **就是** rel（test/_extract.cjs 里写的 `doc: rel`）
+//   ★ 2026-10-07 当场验过：拿清单 1413 条的前 200 条重算，**条条相等**；
+//     再拿其中一份 docx 真签真下，回来 201144 字节、跟清单记的**一模一样**。
+//
+// ⚠ 等式断掉的样子：拿原件 404，而 404 跟"这份材料本来就没上传"**从外面看一模一样**。
+//   所以下面这段和 upload_materials.cjs 里那段 safeKey 各自留了一句互指的话——
+//   改哪一边都要回头看另一边。
+const SAFE_CH = /[A-Za-z0-9\-_. +]/;
+function keyOf(doc) {
+  let out = '';
+  const s = String(doc || '');
+  for (const ch of s) {                    // for...of 按码位走，代理对不会被拆坏
+    if (ch === '/' || SAFE_CH.test(ch)) { out += ch; continue; }
+    const n = ch.codePointAt(0);
+    if (n >= 0x4e00 && n <= 0x9fff) { out += ch; continue; }
+    out += '_' + n.toString(16).padStart(4, '0') + '_';
+  }
+  return out;
+}
+
+// safeKey 的逆，**只给面板显示人读的名字用**（`七上/七上第2章小结与思考.docx`）。
+// ⚠ 它**不是**严格可逆的：`_00b7_` 里的 `_` `0` `b` `7` 全在 SAFE_CH 里，
+//   所以一份名字里**本来就写着 `_00b7_`** 的文件，转义前后长得一样，这里会被解错。
+//   概率极低，而且错了**只是名字难看一点**（下载用的是 key，不是这个名字）——
+//   所以不为它加一套更复杂的转义，但也不假装它没有。
+function prettyName(key) {
+  return String(key || '').replace(/_([0-9a-f]{4,6})_/g, function (m, h) {
+    const n = parseInt(h, 16);
+    if (isNaN(n) || n <= 0x7f || n > 0x10ffff) return m;   // 不是"被转义过的"码位：原样留
+    if (n >= 0xd800 && n <= 0xdfff) return m;              // 代理区，硬还原会造出半个字符
+    return String.fromCodePoint(n);
+  });
+}
+
+// 桶里有什么。
+// ★ 为什么不走那个 list 口（`POST /v1/storages/object/list/{bucket}`）：
+//   实测它**服务端每页硬顶 1000、而且不认 offset**（test/_list_all.cjs），
+//   我们这个桶 1413 个对象——用那个口**永远列不全**，而"列不全"跟"库里就这么多"
+//   从外面看一模一样。查 storage.objects 没这个问题，而且走的是同一条 executePGSql。
+async function listObjects() {
+  const rows = await pg("SELECT name, coalesce((metadata->>'size')::bigint, 0)::bigint AS size"
+    + " FROM storage.objects WHERE bucket_id = 'materials' ORDER BY name");
+  return rows.map(function (r) {
+    const key = String(r.name || '');
+    return { key: key, name: prettyName(key), size: Number(r.size) || 0 };
+  });
+}
+
 module.exports = {
   ENV_ID: ENV_ID, HARD_MAX: HARD_MAX, PAGE: PAGE, TTL_MS: TTL_MS,
   mgr: mgr, pg: pg, rowsToObjects: rowsToObjects, normRow: normRow,
   version: version, verOf: verOf, allRows: allRows, corpus: corpus,
-  cacheInfo: cacheInfo, noteErr: noteErr
+  cacheInfo: cacheInfo, noteErr: noteErr,
+  keyOf: keyOf, prettyName: prettyName, listObjects: listObjects
 };

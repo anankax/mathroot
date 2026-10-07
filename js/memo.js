@@ -404,6 +404,25 @@ SR.memo = (function () {
     return marks;
   }
 
+  // ★ 2026-10-07：「查」那一段**接在同一条回复后面**（见 js/chat.js 的 试查库）。
+  //   为什么要往账本里写第二笔：`pushTurn` 是在**模型第一段话说完**那一刻记的，
+  //   那时候查库还没发生、第二段还没来。不补这一笔的话，老师一刷新，
+  //   气泡按账本重画出来就**只剩前半截**——"我手头没这个数据，我去翻翻"之后什么都没有，
+  //   而他记得自己明明看见过下文。**记的和看见的不一样，是最难查的那类坏。**
+  //   ⚠ 判据卡在"这条还在不在、还是不是模型说的那一条"上：这一笔是几百毫秒到几秒
+  //     之后才落下来的（等云函数），中间老师完全可能已经发了下一句。
+  //     所以调用方必须**先核对再补**（拿 `turns()[n]` 比一比），这一层也再挡一道。
+  function 续说(n, more) {
+    var o = get();
+    var t = o.turns[n];
+    if (!t || t.r !== 'a') return false;        // 账本翻页了 / 那一条不是模型的 → 一个字都不动
+    var s = stripImages(more);
+    if (!s.text) return false;
+    t.t = t.t ? t.t + '\n\n' + s.text : s.text;
+    save();
+    return true;
+  }
+
   function 截到(n) {
     var o = get();
     if (typeof n !== 'number' || isNaN(n)) return false;
@@ -576,7 +595,7 @@ SR.memo = (function () {
     // ★ 2026-10-06：「重新发送」和「修改文字」共用的那一刀（见上面 三·五）。
     //   返回"真丢了没有"——`n` 落在账本外面（>= 长度）时返回 false，
     //   调用方据此知道"这一条压根不在账本里"（失败那一轮就是这样）。
-    截到: 截到, __重算口袋: 重算口袋,
+    截到: 截到, 续说: 续说, __重算口袋: 重算口袋,
     clear: clear,
     // 立刻落盘（探针和"关页面前"用；平时走 400ms 节流）
     flush: function () { if (timer) { clearTimeout(timer); timer = 0; } return writeNow(); },

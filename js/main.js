@@ -1011,12 +1011,20 @@ SR.main = (function () {
     if (SR.project) SR.project.init();
 
     // 作图模板（见 js/drawui.js）。★ 就压在 applyWork **前面**：它只挂三颗按钮的
-    //   监听（📐 / ✕ / 照着画）+ 一条 Esc，不读 `body[data-work]`（那一位是 css 在管，
-    //   `body[data-work="draw"] #drawtplbtn`）——所以它跟工位是谁没有先后关系。
+    //   监听（📐 / ✕ / 照着画）+ 一条 Esc，不读 `body[data-work]`——所以它跟工位是谁
+    //   没有先后关系。
+    //   ⚠ 这里原来还写着"那一位是 css 在管（`body[data-work="draw"] #drawtplbtn`）"，
+    //     那条 css **已经删了**（2026-10-05 📐 去掉了 data-only，显隐改由上面
+    //     paintToolrail 照 `data-only` 现算）。留着这句会让人去找一条不存在的规则。
     //   ⚠ 那颗 📐 的 id 是 `drawtplbtn`，**不是 `tplbtn`**：`tplbtn` 是底下
     //     「模板库」那颗按钮的名字（就是下面 main.js 里 `$('tplbtn')` 抓的那颗），
     //     撞名会让模板库的点击挂到 📐 上、两个功能一起坏。原因写在 index.html 那儿。
     if (SR.DRAWUI) SR.DRAWUI.init();
+
+    // 资料库面板（见 js/libui.js）。★ 跟上面那几件一样：**只挂监听，不干活**——
+    //   开机这一趟一次云函数都不发（搜索、列桶全是老师点了才发生）。
+    //   ★ 它跟工位没有先后关系：按钮上没写 `data-only`，六个工位露的是同一块面板。
+    if (SR.LIBUI) SR.LIBUI.init();
 
     applyWork(readSavedWork(), true);
 

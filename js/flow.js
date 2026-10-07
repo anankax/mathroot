@@ -104,6 +104,11 @@ SR.flow = (function () {
   //     所以 MODEL 这一组暂时只是名字，没有形状；等接上了再补。
   var KB_STEPS = ['textbook', 'zhuawen'];
   var MODEL_STEPS = ['topic', 'routes', 'step', 'wrap'];
+  // 云存储库那两步（2026-10-07 加）。它们**不进流水线**——不是每轮都跑的一步，
+  //   是"老师点了资料库那颗按钮"或"模型写了 ```查"时才发的一发。
+  //   放在这儿只是为了有个**可核对的名单**：test/check_gate_contract.cjs 拿它跟
+  //   云函数那边的分派逐项对，防"加了一步只改了云上"或"只改了浏览器"。
+  var LIB_STEPS = ['liblist', 'libsign'];
 
   // ---- 分数线：跟 js/api.js 的 cutOf 同一个源头（js/kb.js）----
   function cutOf(which) {
@@ -620,7 +625,7 @@ SR.flow = (function () {
     // 纯函数（node 里能跑）
     plan: plan, pickTextbook: pickTextbook, pickZhuawen: pickZhuawen,
     shortName: shortName, pluckRes: pluckRes, cutOne: cutOne, resNote: resNote,
-    STEPS: STEPS, KB_STEPS: KB_STEPS, MODEL_STEPS: MODEL_STEPS,
+    STEPS: STEPS, KB_STEPS: KB_STEPS, MODEL_STEPS: MODEL_STEPS, LIB_STEPS: LIB_STEPS,
     // 账本
     start: start, reset: reset, list: list, at: at, cur: cur, progress: progress,
     set: set, done: done, skip: skip, fail: fail, staleAfter: staleAfter,

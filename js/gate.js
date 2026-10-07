@@ -8,13 +8,17 @@
 //   一律返回失败，**绝不抛给调用方**，让上面那一层安安静静退回本机那条路。
 //   理由很实在：云函数是"锦上添花"，它挂了不该让老师连句话都问不出去。
 //
-// ★ 它只发三类请求，一类一个函数：
+// ★ 它只发四类请求，一类一个函数：
 //     kb(step, query, k)        —— 知识库那两步（textbook / zhuawen），**不调模型、不花额度**
 //     reslib(query, k)          —— 资源库那一步，同样**不调模型、不花额度**（2026-10-02 加）
+//     libList() / libSign(key)  —— 云存储库那两步（列桶 / 签原件），同样不花额度（2026-10-07 加）
 //     askStep(step, {...})      —— 模型那几步（topic / routes / step / wrap），过一次额度
-//   分成三个函数而不是一个通用 call，是为了让调用点一眼看得出"这一步花不花钱"。
+//   分成几个函数而不是一个通用 call，是为了让调用点一眼看得出"这一步花不花钱"。
 //   ★ reslib 为什么不并进 kb()：回包形状不一样（它给的是正文），
 //     更要紧的是**时限不一样**——它冷启动要十来秒，见下面那段。
+//   ★ lib* 为什么不并进 reslib()：它们**不是一回事**，而且可用性也不同——
+//     列桶走的是 PG（跟 reslib 同一条临时凭证），签原件**还要一把 CLOUDBASE_APIKEY**。
+//     合成一个函数的后果很具体：钥匙没配的时候，界面上会显示成"整个云存储库不能用"。
 //
 // ★ 口令明文写在 js/config.js（跟 GLM_KEY 一个待遇、同一个取舍）。它挡的是
 //   "顺手扫到的脚本"，**不是安全**——别在别处再写一遍这句话以外的期待。
@@ -77,6 +81,22 @@ SR.gate = (function () {
   //   只有浏览器那边看得见）。**线上那个来源（anankax.github.io）是通的**——
   //   同一发请求实测 HTTP 200、via:"gate"、命中「苏科版·七上 2.2 数轴」。
   //   ⇒ 所以本机看到这四个字，先别查配置；要验这条链就跑线上那一页。
+  //
+  // ★★ 2026-10-07 复测：**上面那条症状今天不复现了** —— 别再拿它当"本机的失败必然长这样"。
+  //   实测（curl 与真浏览器各一遍，同一天）：
+  //     OPTIONS 预检 → 204，`access-control-allow-origin: http://localhost:8138` **只有一个值**
+  //     POST        → fetch **成立**（CORS 放行）、status 443、content-length 0
+  //     响应头       → `server: tcbgw`、`x-cloudbase-upstream-status-code: 443`、
+  //                    `x-cloudbase-upstream-timecost: 430`
+  //   ⇒ 今天本机撞到的是**云函数那头挂着**（430ms 远小于 InitTimeout 65s ⇒ 容器压根没起来），
+  //     不是浏览器拦的。
+  //   ★ 判 CORS 过没过，**唯一可靠的判据是「fetch 成立还是被拒」**：被拒才是拦了。
+  //     ⚠ **别去读 `headers.get('access-control-allow-origin')`** —— ACAO **不在 CORS 安全清单里**
+  //     （Cache-Control/Content-Language/Content-Length/Content-Type/Expires/Last-Modified/Pragma），
+  //     它在了 JS 也读不到，一律回 null，读成"响应里没这个头"当场把结论带反（2026-10-07 栽过一次）。
+  //   ⇒ `js/libui.js` 里 `路数()` 那条 CORS 分支**照旧留着**（形状真出现时它是对的，
+  //     `test/probe_libpanel.cjs` 的 5b.1 就是把那个形状喂进去验它的）；但**别假定本机一定会
+  //     撞出那个形状**——拿它当判据，就会让平台那头的病冒充产品的病。
   function kb(step, query, k) {
     return post({ step: step, query: query, k: k });
   }
@@ -112,5 +132,18 @@ SR.gate = (function () {
     }, o.timeout);
   }
 
-  return { on: on, url: url, kb: kb, reslib: reslib, askStep: askStep, post: post };
+  // 云存储库那两步。★ 不花额度（gate 那边记的是 KB_DAILY_CAP）。
+  //   libList()      → {ok, n, items:[{key,name,size}]}   桶里有什么
+  //   libSign(key)   → {ok, key, url, expires}            一份原件的限时下载地址
+  // ★ 时限跟 reslib 一个量级（都是"这一发可能碰上冷实例"）：
+  //   libList 要等一次 executePGSql + manager-node 懒加载；libSign 是一趟外网往返。
+  var LIB_MS = 20000;
+  function libList() {
+    return post({ step: 'liblist' }, LIB_MS);
+  }
+  function libSign(key, expiresIn) {
+    return post({ step: 'libsign', key: key, expiresIn: expiresIn }, LIB_MS);
+  }
+
+  return { on: on, url: url, kb: kb, reslib: reslib, libList: libList, libSign: libSign, askStep: askStep, post: post };
 })();

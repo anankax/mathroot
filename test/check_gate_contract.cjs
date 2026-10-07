@@ -93,6 +93,16 @@ function loadGateTables() {
     try { out.KBS = new Function(kbs + '\nreturn KBS;')(); }
     catch (e) { out.KBS = null; out.err2 = 'KBS 抠不出来：' + e.message; }
   }
+  // ★ 云函数**实际分派**了哪些 step 名。
+  //   为什么要单独抠这个、而不是只看那两张表：liblist / libsign 这两步**故意不在表里**
+  //   （它们不吃形状校验、也不吃 k），走的是 `if (step === '...')` 那条直路。
+  //   不看分派的话，"云上加了这一步、浏览器那边没人知道"就没人拦得住——
+  //   而那正是这份哨兵存在的唯一理由。
+  const disp = [];
+  const re = /if\s*\(\s*step\s*===\s*'([A-Za-z0-9_]+)'\s*\)/g;
+  let m;
+  while ((m = re.exec(src)) !== null) if (disp.indexOf(m[1]) < 0) disp.push(m[1]);
+  out.DISPATCH = disp;
   return out;
 }
 
@@ -110,8 +120,8 @@ const sorted = (a) => (a || []).slice().sort();
   console.log('① 两张表都在（抠不出来后面的比对全是假绿）');
   judge('云上 STEPS 抠出来了', !!G.STEPS, G.err || null);
   judge('云上 KBS 抠出来了', !!G.KBS, G.err2 || null);
-  judge('浏览器这份的 STEPS / KB_STEPS / MODEL_STEPS 都在',
-    !!(F && F.STEPS && F.KB_STEPS && F.MODEL_STEPS), F && Object.keys(F || {}));
+  judge('浏览器这份的 STEPS / KB_STEPS / MODEL_STEPS / LIB_STEPS 都在',
+    !!(F && F.STEPS && F.KB_STEPS && F.MODEL_STEPS && F.LIB_STEPS), F && Object.keys(F || {}));
   if (!G.STEPS || !G.KBS || !F) {
     console.log('\n★ 表都没齐，后面的比对做了也是白做，到此为止。');
     process.exit(1);
@@ -276,13 +286,63 @@ const sorted = (a) => (a || []).slice().sort();
     typeof resK === 'number' && cloudKMax !== null && resK <= cloudKMax,
     { 浏览器要: resK, 云上上限: cloudKMax });
 
-  // ---------- ⑦ 云上这张表管到哪儿了（这条不是判分，是把边界写下来） ----------
-  console.log('\n⑦ 云上那张表管到哪儿了（这条不是判分，是把边界写下来）');
+  // ---------- ⑦ 云存储库那两步：三个地方说没说同一件事 ----------
+  // ★★ 新加两步（liblist / libsign）之后，同一个名字要在**三个地方**都写对：
+  //     ① 云函数的分派        `if (step === 'liblist') …`
+  //     ② js/flow.js 的名单    LIB_STEPS
+  //     ③ js/gate.js 真发的那串 `step: 'liblist'`
+  //   少写哪一处都**不报错**，只是那一步在某个场合静默不发生——
+  //   而"静默不发生"跟"这一问真没命中"从外面看一模一样。这三处就是这条。
+  console.log('\n⑦ 云存储库那两步：云上分派 / 流水线名单 / 真发出去的那串，三处是不是同一件事');
+  const gateLib = (G.DISPATCH || []).filter((n) => n.indexOf('lib') === 0);
+  judge('尺子自检：云函数里抠出了分派的 step 名（抠不出＝下面等于没比）',
+    (G.DISPATCH || []).length > 0, G.DISPATCH);
+  judge('尺子自检：抠出来的名字里确实有 reslib（它走的也是同一条直路）',
+    (G.DISPATCH || []).indexOf('reslib') >= 0, G.DISPATCH);
+  judge('★ 云上分派的 lib* 与 js/flow.js 的 LIB_STEPS 逐项一样',
+    same(sorted(gateLib), sorted(F.LIB_STEPS)), { 云上: sorted(gateLib), 浏览器: sorted(F.LIB_STEPS) });
+
+  const gateJsSrc = fs.readFileSync(path.join(ROOT, 'js', 'gate.js'), 'utf8');
+  const sent = [];
+  const reSent = /step:\s*'([A-Za-z0-9_]+)'/g;
+  let ms2;
+  while ((ms2 = reSent.exec(gateJsSrc)) !== null) if (sent.indexOf(ms2[1]) < 0) sent.push(ms2[1]);
+  judge('尺子自检：从 js/gate.js 里抠出了它真发出去的那几个 step（抠不出＝下面等于没比）',
+    sent.length > 0, sent);
+  judge('★ js/flow.js 名单里的每一个，js/gate.js 都真的发得出去',
+    sorted(F.LIB_STEPS).every((n) => sent.indexOf(n) >= 0), { 名单: sorted(F.LIB_STEPS), 真发: sorted(sent) });
+
+  // 签名那一步的**桶名**：云上写的是 materials，前端不传桶名（刻意）——
+  //   传了的话，公开口令就成了"签任意桶"的钥匙。所以这里判的是"前端确实没传"。
+  judge('★ js/gate.js 不往上传桶名（传了＝公开口令能签任意桶）',
+    gateJsSrc.indexOf('bucket') < 0, '（在 js/gate.js 里搜到 bucket 字样）');
+  const bucketInGate = /const STORE_BUCKET = '([^']+)'/.exec(gateSrc);
+  judge('尺子自检：云上那个桶名抠得出来', !!bucketInGate, bucketInGate ? bucketInGate[1] : null);
+
+  // ---------- ⑧ 云上这几张表管到哪儿了（这条不是判分，是把边界写下来） ----------
+  console.log('\n⑧ 云上这几张表管到哪儿了（这条不是判分，是把边界写下来）');
   console.log('    云上认的步骤：' + sorted(Object.keys(G.STEPS)).join(' / '));
   console.log('    云上认的知识库步：' + sorted(Object.keys(G.KBS)).join(' / '));
-  console.log('    资源库那一步：' + (gateSrc.indexOf("step === 'reslib'") >= 0 ? '认' : '★ 不认') +
-    '（它不在 KBS 那张表里，走的是单独一条路）');
-  console.log('    ★ 围栏（```想说 / ```ggb）、提示词、账本**一个都不在云上**——');
+  // ★ 这个括号里的话**现算**，不写死。
+  //   写死的话它会在坏副本上照样嘴硬——红验那次就现了原形：明明 libsign 那条分派
+  //   已经被删掉，这行还印着"含不在表里的：reslib / liblist / libsign"。
+  //   不判分不等于可以说不合数据的话。
+  const notInTables = sorted((G.DISPATCH || []).filter((n) => !G.STEPS[n] && !G.KBS[n]));
+  console.log('    云上**实际分派**的 step 名：' + sorted(G.DISPATCH || []).join(' / ') +
+    (notInTables.length ? '（不在那两张表里的：' + notInTables.join(' / ') + '）' : ''));
+  console.log('    签原件那个桶：' + (bucketInGate ? bucketInGate[1] : '★ 抠不出来'));
+  // ★ 围栏那几个名字**从 js/render.js 现抠**，不手抄一遍。
+  //   手抄的下场刚刚就发生过一次：2026-10-07 加 `查` 的时候，这一行原来只写着
+  //   「```想说 / ```ggb」——`材料` 早就有了、`查` 当天才加，两个都没跟上，
+  //   而它**照样印得理直气壮**（这条不判分，没人会红）。同族：印出来的字也得是
+  //   从数据来的，不然就是又一处会漂的第二份真源。
+  const renderSrc = fs.readFileSync(path.join(ROOT, 'js', 'render.js'), 'utf8');
+  const fenceM = /```\[ \\t\]\*\(([^)]+)\)/.exec(renderSrc);
+  judge('尺子自检：从 js/render.js 抠出了围栏标签那一组（抠不出＝下面那行等于没印）',
+    !!fenceM, fenceM ? fenceM[1] : null);
+  const fences = fenceM ? fenceM[1].split('|').map((s) => '```' + s) : ['（抠不出来）'];
+  // ⚠ 顺序照源码里的，不重排——重排了就跟 render.js 对不上了，反而看不出漏了谁。
+  console.log('    ★ 围栏（' + fences.join(' / ') + '）、提示词、账本**一个都不在云上**——');
   console.log('      那是"这一步怎么说"，留在浏览器（js/gate.js 顶上那条分界线）。');
 
   console.log('');

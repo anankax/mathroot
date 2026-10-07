@@ -1584,6 +1584,117 @@ body[data-work="vary"] #send:hover { background: var(--alt-dark); }
   #tplp-go { padding: 11px 0; }
 }
 
+/* ── 资料库面板（2026-10-07）──────────────────────────────────────────
+   左边那条栏里 📚 那颗按钮开的就是这一块（见 js/libui.js）。
+   ★★ 跟 `#tplp` **一个路数**：`flex: 0 0 auto` + `border-top`，把对话区**顶高**，
+      **不是浮层**。所以：方角、细线，**别加圆角和阴影**——（同 `#tplp` 那段）
+     圆角+投影是"浮层"的长相，而全站唯一一处浮层是 `.toolrail` 自己。
+     加上去他就会以为"点一下别处它就没了"，而它不会。
+   ★ 它比 `#tplp` **矮**一档（下面 `#libp-hits` 那个 max-height）：模板那份是"填完就走"，
+     这一份是"拿一份名单慢慢挑"，但他多半是**边看对话边挑**——顶得太高就把
+     上面那条回复和自己那张图挤出屏幕了，那正是这个面板"常驻、不当浮层"要保住的东西。
+   ★ 配色**跟 `#tplp` 一样**（`--brand-soft` 头 + `--brand-deep` 字，全站面板的通用长相）——
+     不是漏改，是故意的：两块都是左边那条栏里的工具，是**兄弟**，长得一样才对。
+     ⚠ 写这一段的时候我先写了"用 --brand 蓝那套、跟 #tplp 的 --alt 绿分得开"，
+       两句都是错的：这个站的主色 `--brand` 是**深绿**（css 第一段那个 `#0b6b45`），
+       而 `#tplp` 用的**也是** `--brand-soft`。当时没去核，照着"大概是这样"写的。
+       ⇒ 记这一笔是因为它正是那个老毛病：**注释里写的数、颜色、名字，都要当场从源码里读回来核**，
+         不然下一个人会照着一句没验过的话去改。 */
+#libp {
+  flex: 0 0 auto; border-top: 1px solid var(--rule);
+  background: var(--panel); position: relative; z-index: 1;
+}
+#libp[hidden] { display: none; }
+
+.libp-bar {
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 9px 14px; border-bottom: 1px solid var(--line); background: var(--brand-soft);
+}
+.libp-t { font: 700 15px/1.4 var(--song); color: var(--brand-deep); letter-spacing: 1px; }
+.libp-hint { flex: 1 1 auto; font-size: 12.5px; color: var(--ink-3); }
+#libp-x {
+  border: 1.5px solid var(--brand-line); background: var(--panel); color: var(--brand-deep);
+  cursor: pointer; font-size: 13px; line-height: 1; padding: 5px 9px;
+}
+#libp-x:hover { background: var(--brand-line); }
+
+/* 搜索那一行。★ 输入框 `flex: 1 1 auto` 撑满，两颗按钮各自 `0 0 auto`——
+   屏窄下来的时候先挤输入框、别把按钮挤没（挤没了这一块就只剩一个框，点不动）。 */
+.libp-form {
+  display: flex; align-items: center; gap: 9px;
+  padding: 11px 14px 0;
+}
+#libp-q {
+  flex: 1 1 auto; min-width: 0;
+  font: inherit; font-size: 14px; padding: 8px 11px;
+  border: 1.5px solid var(--line); background: var(--sunken); color: inherit; outline: none;
+}
+#libp-q:focus { border-color: var(--brand); background: var(--panel); }
+#libp-go, #libp-all {
+  flex: 0 0 auto; font: inherit; font-size: 13.5px; font-weight: 700; letter-spacing: 1px;
+  cursor: pointer; padding: 8px 15px; border: 1.5px solid var(--brand-line);
+  background: var(--panel); color: var(--brand-deep);
+}
+#libp-go { background: var(--brand); color: #fff; border-color: var(--brand); }
+#libp-go:hover { background: var(--brand-deep); }
+#libp-all:hover { background: var(--brand-soft); }
+#libp-go:disabled, #libp-all:disabled { opacity: .5; cursor: default; }
+
+/* 读数条：这一趟翻成什么样了。★ 空着的时候**不占高度**（`div` 没内容就是 0）——
+   `#status` 那条留了 `min-height` 是因为它会闪（"正在画…"），
+   这一条只在点了之后才有话说，常备一个空行反而把面板顶松了。 */
+#libp-note {
+  padding: 8px 14px 0; font-size: 12.5px; line-height: 1.7; color: var(--ink-3);
+}
+#libp-note:empty { display: none; }
+
+/* 名单。★ `max-height` + `overflow`：一千多个名字那一档（「库里有什么」）不许把
+   对话区顶到天上去——它自己滚，外面不动。 */
+#libp-hits {
+  max-height: 224px; overflow-y: auto;
+  padding: 8px 14px 12px; display: flex; flex-direction: column; gap: 7px;
+}
+#libp-hits:empty { display: none; }
+
+.libp-hit { border: 1px solid var(--line); background: var(--sunken); padding: 7px 10px; }
+.libp-hithead { display: flex; align-items: baseline; gap: 9px; }
+/* 分数：等宽字、右对齐一列——一列数上下对齐了才比得出来谁高谁低。 */
+.libp-score {
+  flex: 0 0 auto; font: 700 12.5px/1.5 var(--mono); color: var(--brand-deep);
+  min-width: 40px; text-align: right;
+}
+.libp-name {
+  flex: 1 1 auto; min-width: 0; font-size: 14px; color: var(--ink); font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.libp-where { flex: 0 0 auto; font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+/* 「这条没带原件名，拿不了」。★ 故意跟 `libp-where` 分开一个类名：
+   那是"书架 · 第几页"（这一条是哪儿的），这是"为什么没按钮"（这一条缺什么）。
+   ⚠ 别为了省一个类名合成一个：探针要按类名取这一格，合起来就会读到前面那一格。 */
+.libp-nokey { flex: 0 0 auto; font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.libp-get {
+  flex: 0 0 auto; font: inherit; font-size: 12.5px; cursor: pointer;
+  padding: 3px 10px; border: 1.5px solid var(--brand-line);
+  background: var(--panel); color: var(--brand-deep);
+}
+.libp-get:hover { background: var(--brand-soft); }
+.libp-get:disabled { opacity: .5; cursor: default; }
+/* 摘要那一行：**不换行、截断**。它是"这条讲什么"的一眼判断，不是正文——
+   换行会让一行命中占掉三四行高，名单就读不动了。
+   ⚠ 想读全文得去拿原件（这一版故意不给"展开正文"：那是另一个面板的活儿）。 */
+.libp-snip {
+  margin-top: 4px; font-size: 12.5px; line-height: 1.65; color: var(--ink-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* 窄屏：输入框和两颗按钮一行排不下 —— 拆成"框一行、按钮一行"。 */
+@media (max-width: 620px) {
+  .libp-form { flex-wrap: wrap; }
+  #libp-q { flex: 1 1 100%; }
+  #libp-go, #libp-all { flex: 1 1 0; padding: 9px 0; }
+  #libp-hits { max-height: 180px; }
+}
+
 /* 待发送的文件。原来是"一张缩略图 + 一个绝对定位的 ×"，位置写死 left:100px——
    一张图还行，两张就叠在一起了。现在改成横排的条：每个文件一格，
    × 钉在自己那一格的右上角。见 js/chat.js 的 showThumb。 */

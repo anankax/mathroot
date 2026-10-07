@@ -36,6 +36,10 @@ async function retrieve(query, k) {
     const r = c.rows[h.i];
     return {
       id: r.id, doc: r.doc, shelf: r.shelf, page: r.page,
+      // ★ 2026-10-07 新加：桶里那个对象的 key。有了它，「拿原件」才有东西可点——
+      //   而它是**算出来的**（keyOf(doc)），不是查表来的（理由和验法见 reslib-pg.js 那一节）。
+      //   加在这一层：这个函数就是"回给浏览器的形状"的唯一源头，别在别处再补一遍。
+      key: PG.keyOf(r.doc),
       title: r.title,
       // ★ 这里是**两位小数**，不是"原样返回"。别照 gate 里 runKb 那条"分数不四舍五入"
       //   去改它：那条说的是**探针拿容差比分数**时的口径，改的是"分数本身说不说得准"。

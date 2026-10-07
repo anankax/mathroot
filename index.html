@@ -264,6 +264,13 @@ window.SRlib = (function () {
      ★ 排在 chat.js **前面**：`SR.DRAWT.画()` 最后一步是 `SR.chat.submit(话)`。 -->
 <script defer src="js/drawtpl.js"></script>
 <script defer src="js/drawui.js"></script>
+<!-- 资料库面板（见 js/libui.js）。左边那条栏里 📚 那颗按钮开的就是它。
+     ★ 排在 gate.js **后面**（要 SR.gate.reslib / libList / libSign）——
+       别的它只用 SR.flow.shortName 那一个取短名的函数（在 flow.js 里）。
+     ★ 它**不上板、不发对话、不碰口袋**：搜和列全在它自己那块里画，
+       跟 chat.js 那条链一个交点都没有，所以排在哪儿都不影响对话那一路。
+     ⚠ 它**不读** `body[data-work]`：六个工位露同一份库（按钮上没写 data-only）。 -->
+<script defer src="js/libui.js"></script>
 <!-- 右栏多页：一块 GeoGebra，好几页（见 js/tabs.js）。
      ★ 排在 board.js **后面**：它整条路都踩在 SR.board 的 snapshot/restore/
        activatePage/openNew 上，board 没就位它什么也做不了。
@@ -472,6 +479,24 @@ window.SRlib = (function () {
          以后真有一件"只对某个工位成立"的工具，写上就行。只是 📐 不是那种。 -->
   <button type="button" id="drawtplbtn" class="railtool"
           aria-expanded="0" title="作图模板：填几个空，图的骨架由数根算好">📐</button>
+  <!-- ── 资料库（2026-10-07）─────────────────────────────────────────
+       ★ 孔老师原话：「加一个老师自己用的「资料库」面板，面板和工具最好和那个
+         三角尺按钮一样放在左边，搞一个气泡工具栏」——上面那段注释写的
+         「以后这里面还可以放更多的这种工具」，这就是那"更多的"第一件。
+       ★ **不写 `data-only`** → 六个工位都露。理由跟 📐 那条一样（见上一段）：
+         翻库不是哪一件活儿的配件，是这位老师自己的书房。六个工位共用同一份对话、
+         同一份画板，这条栏是**页面的家具**。
+         ⇒ `js/main.js` 的 `paintToolrail()` **一个字都不用改**：它照 `data-only`
+           现算，没写就是"哪个工位都露"；`body[data-toolrail]` 那套让位（css 里
+           那个 82px 左内边距）也自动跟着成立——而让位量算的是**一条栏**的宽、
+           不是按钮数，所以加一颗也不用回去改那个数。
+       ⚠ 它跟 📐 是**两件不相干的事**（一件是"换一种作图的做法"、一件是"翻我自己的材料"），
+         所以中间不画分隔线、也不做成一组——就是上下挨着的两颗。
+       ★ 它**不经过模型**：点开→搜→列表→拿原件，全程直连云函数，一个字都不花额度。
+         这也是它跟 `js/resources.js`（本机那本"后备资源"索引）的分工：
+         那个只认 localhost、且只有文件名；这一个走云、有正文、还能拿原件。 -->
+  <button type="button" id="libbtn" class="railtool"
+          aria-expanded="0" title="资料库：翻你自己的教案、学案、素材、中考卷">📚</button>
 </div>
 
 <main>
@@ -636,6 +661,41 @@ window.SRlib = (function () {
         <pre id="tplp-prev"></pre>
         <button type="button" id="tplp-go">照着画</button>
       </div>
+    </div>
+
+    <!-- ── 资料库（2026-10-07）────────────────────────────────────────
+         左边那条栏里 📚 那颗按钮开的就是这一块。**跟 `#tplp` 一个路数**：
+         输入框上方的**常驻面板**（把对话区顶高），不是浮层、不是弹窗。
+         ⚠ 所以**方角、细线，别加圆角阴影**——圆角+投影是"浮层"的长相，
+           而全站唯一一处浮层是左边那条 `.toolrail` 自己（它那条注释点明了）。
+           给这一块加上去，老师会以为"点一下别处它就没了"，而它不会。
+
+         ★ 里面**一个字都不写死**：命中、分数、书架、页号全是云上 `reslib` 那一步
+           现回的；"库里有什么"那份名单也是 `liblist` 现列的。搁在这儿写死一份
+           就是给库开了第二个真源（同 `#works` / `#proj` 那两处的道理）——
+           库里添了一份材料，屏幕上这份死名单不会跟着动，而看着完全正常。
+
+         ★ 为什么两个独立的按钮、而不是"搜完自动也列一份"：
+           列桶要拖一千四百多条名字回来（一百多 KB），**绝大部分时候他并不想看**。
+           不做成默认动作，是因为"每次开面板都多拖一趟"是白花他的流量和时间。
+
+         ★ 「拿原件」那条链是**两跳**：先 `libsign` 换一个限时地址，再让浏览器自己去下
+           （不经过 JS 缓冲，大文件也不会把内存顶爆）。签出来的地址**只活一小会儿**，
+           所以不能提前签好挂在页面上——签了不用，等他想点的时候已经过期了。 -->
+    <div id="libp" hidden>
+      <div class="libp-bar">
+        <span class="libp-t">资料库</span>
+        <span class="libp-hint">云上那些材料——教案、学案、素材、中考卷。搜一句关键词，或者列出来看看</span>
+        <button type="button" id="libp-x" title="关掉（Esc）">✕</button>
+      </div>
+      <div class="libp-form">
+        <input id="libp-q" type="text" autocomplete="off"
+               placeholder="关键词，两三个词最好 —— 例如「一元二次方程 判别式」">
+        <button type="button" id="libp-go">翻一翻</button>
+        <button type="button" id="libp-all">库里有什么</button>
+      </div>
+      <div id="libp-note"></div>
+      <div id="libp-hits"></div>
     </div>
 
     <div class="composer">

@@ -54,7 +54,11 @@ const PORT = 9000;
 //   一次回包少了三个新字段、多了个旧的，就是因为调用打到了一个升级前就在的实例上）。
 //   有这个号，一眼就能判"这次答话的是新代码还是旧实例"，不用去猜回包形状。
 //   gate-3：加了 reslib 那一步（资源库检索）。
-const VERSION = 'gate-3';
+//   gate-4：加了云存储库那两步（liblist 列桶 / libsign 签原件）。
+//     ★ 升这个号的直接原因就是下面这条：热实例会拿旧代码答话。
+//       你要是看见回包里 version 还是 gate-3，那就是**打到了升级前就在的实例**，
+//       这一次的读数作废（不是"改动没生效"）。
+const VERSION = 'gate-4';
 
 // 上游：智谱 GLM，OpenAI 兼容协议。跟 js/config.js 里那个 URL 是同一个。
 const UPSTREAM = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
@@ -173,6 +177,142 @@ try {
   RESPG = require('./reslib-pg.js');
 } catch (e) {
   RES_ERR = String((e && e.message) || e);
+}
+
+// ============================================================
+//  云存储库：两步**不调模型**的步骤（liblist / libsign）
+// ============================================================
+// ★ 为什么这两步必须开在 gate 上、不能像 js/resources.js 那样在浏览器里读：
+//   桶 `materials` 是**私有**的，浏览器手上没有（也不该有）能读它的凭证。
+//   能读它的只有这一处——这就是它叫"门房"的意思。
+//
+// ★★ 这两步**不是一回事**，可用性必须分开报（见 /health 里那段），别合成一个 ready：
+//     liblist  列桶里有什么 —— 查的是 storage.objects 那张表，走的是跟 reslib
+//              **同一条** executePGSql / 同一份平台临时凭证。**不需要下面这把钥匙。**
+//     libsign  签一份原件的下载地址 —— 打的是存储的 HTTP 口，**需要 CLOUDBASE_APIKEY**。
+//   合成一个的后果很具体：他没配钥匙，界面上会显示成"整个云存储库不能用"，
+//   而实际上"库里有什么"这一半是好的。
+//
+// ★ 凭证从环境变量来，**绝不进代码、不进日志、不进回包**。
+//   它是一把 service_role 级的钥匙，比 GATE_TOKEN 强得多——GATE_TOKEN 是**公开**的
+//   （写在 js/config.js 里）。所以下面那道 badKey 不是泛泛的"防注入"，
+//   它是一条具体的边界：**门这头是公开口令，那头是管理员钥匙**。
+//   没有它，任何人拿到公开口令就能让 gate 去签别的桶、别的对象，或者拿 ../ 越界。
+//   ⚠ 它的值我这边碰不到也不该碰（要配也是他自己在控制台粘）——所以下面只判"在不在"。
+const STORE_KEY = String(process.env.CLOUDBASE_APIKEY || '').trim();
+const STORE_BUCKET = 'materials';
+const STORE_HOST = (RESPG ? RESPG.ENV_ID : 'kax1014-d1g5uttgka7757f39') + '.api.tcloudbasegateway.com';
+const SIGN_TTL = 1800;          // 签出来的地址活多久（秒）。够点一下下载，不够拿去转发。
+const LIB_MAX = 4000;           // 列桶的安全阀：超了就**报错**，不悄悄截断
+
+// 对象名只许是 safeKey 造得出来的那些字符（见 reslib-pg.js 的 keyOf）。
+const KEY_OK = /^[A-Za-z0-9\-_. +/一-鿿]+$/;
+function badKey(k) {
+  const s = String(k || '');
+  if (!s) return '没有 key';
+  if (s.length > 400) return 'key 太长了';
+  if (s[0] === '/' || s.indexOf('..') >= 0 || s.indexOf('//') >= 0) return 'key 里有不该有的路径';
+  if (!KEY_OK.test(s)) return 'key 里有桶不认的字符（该是 keyOf(doc) 算出来的那一个）';
+  return '';
+}
+
+// 逐段 encodeURIComponent——跟上传时同一个做法（test/upload_materials.cjs）。
+function encKey(k) { return String(k).split('/').map(encodeURIComponent).join('/'); }
+
+function storeReq(method, p, body) {
+  return new Promise((resolve) => {
+    const https = require('https');
+    const payload = body === undefined ? null : Buffer.from(JSON.stringify(body), 'utf8');
+    const r = https.request({
+      hostname: STORE_HOST, path: p, method: method,
+      headers: Object.assign({ Authorization: 'Bearer ' + STORE_KEY },
+        payload ? { 'Content-Type': 'application/json', 'Content-Length': payload.length } : {})
+    }, (res) => {
+      // ★ 收 Buffer。别 `d += c`——那样二进制会被按 utf8 隐式转一次，必掉字节
+      //   （本地探针头一次就栽在这儿，见 test/_sign_probe.cjs 那段注释）。
+      const bufs = [];
+      res.on('data', (c) => bufs.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, buf: Buffer.concat(bufs) }));
+    });
+    r.on('error', (e) => resolve({ status: 0, err: String((e && e.message) || e) }));
+    r.setTimeout(15000, () => r.destroy(new Error('存储接口 15 秒没回')));
+    if (payload) r.write(payload);
+    r.end();
+  });
+}
+
+// 列桶里有什么。给面板那个"库里有什么"的浏览态用。
+async function runList(res) {
+  const t0 = Date.now();
+  if (!RESPG) {
+    return sendJson(res, 503, { ok: false, via: 'gate', step: 'liblist', error: '读库那几份没装进来：' + RES_ERR });
+  }
+  if (peekKbUsed() >= KB_DAILY_CAP) {
+    return sendJson(res, 429, { ok: false, via: 'gate', step: 'liblist', error: '检索今天查得太多了（' + KB_DAILY_CAP + ' 次）。' });
+  }
+  let items;
+  try {
+    items = await RESPG.listObjects();
+  } catch (e) {
+    const why = String((e && e.message) || e).slice(0, 200);
+    if (RESPG) RESPG.noteErr(e);
+    return sendJson(res, 502, { ok: false, via: 'gate', step: 'liblist', error: '列桶没成：' + why, ms: Date.now() - t0 });
+  }
+  if (items.length > LIB_MAX) {
+    // ★ 跟 reslib 那条分页安全阀一个道理：到这儿宁可**报错**，也不悄悄截一段交出去——
+    //   "截了一段"跟"库里就这么多"从外面看一模一样。
+    return sendJson(res, 502, { ok: false, via: 'gate', step: 'liblist',
+      error: '桶里有 ' + items.length + ' 个对象，超过一次列完的安全阀（' + LIB_MAX + '）。' });
+  }
+  bumpKbUsed();
+  return sendJson(res, 200, {
+    ok: true, via: 'gate', version: VERSION, step: 'liblist',
+    bucket: STORE_BUCKET, n: items.length, items: items, ms: Date.now() - t0
+  });
+}
+
+// 签一份原件的下载地址。
+// ★ 只回 **fullSignedURL**，不回 signedURL：实测那个是**相对路径**（不以 http 开头），
+//   给浏览器直接点会打到本站上——而"下回来一页本站的 HTML"看着也像下载成功。
+// ★ 这一步出错**要响亮地报**（不像 reslib 那条软降级）：它是老师**点了按钮**才发生的，
+//   静默失败等于按钮没反应。
+async function runSign(res, body) {
+  const t0 = Date.now();
+  if (!STORE_KEY) {
+    return sendJson(res, 503, { ok: false, via: 'gate', step: 'libsign',
+      error: '云存储库的钥匙没配：gate 的环境变量里没有 CLOUDBASE_APIKEY' });
+  }
+  if (peekKbUsed() >= KB_DAILY_CAP) {
+    return sendJson(res, 429, { ok: false, via: 'gate', step: 'libsign', error: '今天签得太多了（' + KB_DAILY_CAP + ' 次）。' });
+  }
+  const key = String(body.key || '');
+  const why = badKey(key);
+  if (why) return sendJson(res, 400, { ok: false, via: 'gate', step: 'libsign', error: why });
+  const secs = Math.max(60, Math.min(3600, parseInt(body.expiresIn, 10) || SIGN_TTL));
+
+  const r = await storeReq('POST',
+    '/v1/storages/object/sign/' + STORE_BUCKET + '/' + encKey(key), { expiresIn: secs });
+  if (!r.status) {
+    return sendJson(res, 502, { ok: false, via: 'gate', step: 'libsign', error: '连不上存储：' + (r.err || '') , ms: Date.now() - t0 });
+  }
+  const txt = r.buf.toString('utf8');
+  let o = null;
+  try { o = JSON.parse(txt); } catch (e) { o = null; }
+  if (r.status !== 200 || !o || !o.fullSignedURL) {
+    // 上游的错原文（INVALID_PARAM 那种）截一段带出去——排错全靠它。
+    // ★ 只带 code/message，**不带整个回包**：万一哪天回包里混进了跟凭证有关的东西，
+    //   整包转出去就是把它递给了调用方。
+    const code = o ? String(o.code || '') : '';
+    const msg = o ? String(o.message || '') : txt.slice(0, 160);
+    return sendJson(res, 502, { ok: false, via: 'gate', step: 'libsign',
+      error: '存储那儿没签成（HTTP ' + r.status + '）' + (code ? ' ' + code : '') + '：' + msg.slice(0, 160),
+      ms: Date.now() - t0 });
+  }
+  bumpKbUsed();
+  return sendJson(res, 200, {
+    ok: true, via: 'gate', version: VERSION, step: 'libsign',
+    bucket: STORE_BUCKET, key: key, url: o.fullSignedURL, expires: secs, ms: Date.now() - t0
+  });
 }
 
 // 这一步取几条。跟浏览器里的调用点对齐（js/api.js 的 pickTextbook/pickZhuwen）。
@@ -391,6 +531,16 @@ const server = http.createServer(async (req, res) => {
         why: RES_ERR || null,
         cache: RESPG ? RESPG.cacheInfo() : null
       },
+      // 云存储库那两步。★ 两件事分开报，理由见上面 STORE_KEY 那段：
+      //   合成一个 ready 的话，"钥匙没配"会被读成"整个库都不能用"，
+      //   而"列桶"那一半（走 PG、不走钥匙）本来是好的。
+      lib: {
+        steps: ['liblist', 'libsign'],
+        bucket: STORE_BUCKET,
+        list_ready: !!RESPG,
+        sign_ready: !!STORE_KEY,          // ★ 只报"在不在"，**绝不报值、也不报长度**
+        why: RES_ERR || null
+      },
       // 这两个数要带口令才给（不然等于告诉扫站的人还剩多少额度好用）
       used: mine ? peekUsed() : null,
       cap: mine ? DAILY_CAP : null,
@@ -433,6 +583,10 @@ const server = http.createServer(async (req, res) => {
 
   // ---- 资源库那一步也一样：不花额度，共用同一道闸（runRes 里那两条 peekKbUsed）----
   if (step === 'reslib') return runRes(res, body);
+
+  // ---- 云存储库那两步：同上，也不花额度、共用同一道闸 ----
+  if (step === 'liblist') return runList(res);
+  if (step === 'libsign') return runSign(res, body);
 
   // ---- 门槛三：每日次数 ----
   if (peekUsed() >= DAILY_CAP) {
