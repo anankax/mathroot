@@ -845,12 +845,33 @@ SR.board = (function () {
     //   ——`setAxesVisible`/`setGridVisible` 是 showPlane() 已经在用的接口，不猜。
     if ((m = c.match(/^#(隐藏|显示)\s*(.+)$/))) {
       var 要显 = m[1] === '显示', 名 = m[2].trim();
-      if (/^(坐标轴和网格|网格和坐标轴)$/.test(名)) {
-        return [要显 ? '__AXES1__' : '__AXES0__', 要显 ? '__GRID1__' : '__GRID0__'];
+      var 一件 = function (n) {
+        if (/^(坐标轴和网格|网格和坐标轴)$/.test(n)) {
+          return [要显 ? '__AXES1__' : '__AXES0__', 要显 ? '__GRID1__' : '__GRID0__'];
+        }
+        if (/^坐标轴$/.test(n)) return [要显 ? '__AXES1__' : '__AXES0__'];
+        if (/^网格$/.test(n)) return [要显 ? '__GRID1__' : '__GRID0__'];
+        return [(要显 ? '__SHOW__' : '__HIDE__') + translate(n)];
+      };
+      // ★★ 2026-10-07：**一条 `#隐藏` 里带好几件东西**（`#隐藏 M N P`），得一条一件地拆开。
+      //   原来整串 `M N P` 直接拼给了 `setVisible`，而板上根本没有叫 `M N P` 的对象 →
+      //   **静默无效**（它返回 false，可这条路上没人看返回値）。
+      //   最阴的是这件事**只有一半失灵**：`点名字显出来` 那边是**按空白逐个登记**的
+      //   （看它注释里那句"名字可能不止一个"），于是同一条 `#隐藏` 的结果是
+      //   **标签没了、点还在**——三个中点光秃秃挂在图上，正是"图看着不干净"的那类毛病。
+      //   实测（2026-10-07，线上那轮"三角形+三条中线"）：模型写 `#隐藏 M N P`，
+      //   逐件问板子 M/N/P **可见=true**、标签=false，就是这么来的。
+      //   ⚠ 只拆"纯名字"那一种形态；带括号／逗号的（`#隐藏 弧(E,K,F)`）整串照旧，
+      //     拆一条式子只会拆坏。逗号分隔的（`#隐藏 M,N`）也一起收。
+      var 带括号 = 名.indexOf('(') >= 0 || 名.indexOf('（') >= 0;
+      var 名表 = (带括号 ? [名] : 名.split(/[,，]|\s+/));
+      名表 = 名表.map(function (x) { return String(x).trim() }).filter(Boolean);
+      if (名表.length > 1) {
+        var 出 = [];
+        for (var q = 0; q < 名表.length; q++) 出 = 出.concat(一件(名表[q]));
+        return 出;
       }
-      if (/^坐标轴$/.test(名)) return [要显 ? '__AXES1__' : '__AXES0__'];
-      if (/^网格$/.test(名)) return [要显 ? '__GRID1__' : '__GRID0__'];
-      return [(要显 ? '__SHOW__' : '__HIDE__') + translate(名)];
+      return 一件(名);
     }
     if ((m = c.match(/^#播放\s*(.+)$/))) return ['__PLAY__' + m[1].trim()];
     // ---- 分步演示（2026-10-04，见上面 state 里那段"为什么落在画板自己身上"）----
@@ -3576,16 +3597,48 @@ SR.board = (function () {
   //     不是"它是不是点"——尺规作图那一课一次会建出 A B C D 四五个点，
   //     全都挂上坐标，图就被一片数字糊住了。
   //   ⚠ 反复喊是安全的：两个属性各设一次、设的是常数，不会来回改。
+  //   ★★ 2026-10-07：**同一个位置上只留一个标签**。
+  //     孔老师那句「点的标签不准确或者重合」，落在这儿有一半。实测（线上"三角形+三条中线"
+  //     那一轮）：模型把重心写成了 `G=交点(m1,m2)`／`G2=交点(m2,m3)`／`G3=交点(m3,m1)`，
+  //     三条中线共点 → 三个点**坐标一模一样 (0,0)** → 这一格给三件都开了"名字+值"的标签，
+  //     于是 A 那个位置糊成一团黑。它旁边还叠着一句 `文本("重心 G", …)`。
+  //     两个判据，都是"同一个东西画了两遍"这种**没有第二种解释**的情形：
+  //       ① 整件藏着的点（`#隐藏 G G2 G3`）不给它开标签 —— 藏了就是不想看见它。
+  //       ② 坐标跟**已经开过标签的**某一件完全一样（小数点后 6 位）→ 跳过。
+  //     ⚠ 判据是**坐标相等**，不是"离得近"：只认真正重合的那一种，不去猜"看着挤不挤"。
+  //       两个位置不同的交点（圆交于 E、F 那种）照旧各得各的标签。
   function 交点显坐标() {
     if (!api) return;
     var 名 = [];
     try { 名 = api.getAllObjectNames() || []; } catch (e) { return; }
+    var 位 = function (n) {
+      try { return api.getXcoord(n).toFixed(6) + '/' + api.getYcoord(n).toFixed(6); } catch (e) { return '' }
+    };
+    // ★ 先把**不是交点**的那些点占了的位置记下来（三角形顶点、题目自己标的点…）。
+    //   这个位置上的字归它们 —— 一个叫 A 的顶点被一个跟它重合的交点顶掉名字，
+    //   老师那句"看这个 ∠AOB"就没着落了。**普通的点优先。**
+    var 常规位 = {};
+    for (var t = 0; t < 名.length; t++) {
+      try {
+        if (String(api.getObjectType(名[t]) || '').indexOf('point') !== 0) continue;
+        if (/交点|Intersect/i.test(String(api.getCommandString(名[t]) || ''))) continue;
+        if (!api.getVisible(名[t])) continue;
+        var w = 位(名[t]);
+        if (w) 常规位[w] = 1;
+      } catch (e) {}
+    }
+    var 占位 = {};
     for (var i = 0; i < 名.length; i++) {
       var n = 名[i];
       try {
         if (String(api.getObjectType(n) || '').indexOf('point') !== 0) continue;
         var cmd = String(api.getCommandString(n) || '');
         if (!/交点|Intersect/i.test(cmd)) continue;
+        if (!api.getVisible(n)) continue;                 // ① 整件藏着的 → 不开标签
+        var 位置 = 位(n);
+        if (位置 && 常规位[位置]) continue;                 // ② 这个位置已经有正式的点 → 不跟它抢
+        if (位置 && 占位[位置]) continue;                   // ③ 已经有一件交点占了这个位置
+        if (位置) 占位[位置] = n;
         api.setLabelVisible(n, true);
         api.setLabelStyle(n, 1);     // 1 = 名字 + 值 → `A = (-1, 1)`
       } catch (e) {}
@@ -3650,6 +3703,20 @@ SR.board = (function () {
     }
     var 名 = [];
     try { 名 = api.getAllObjectNames() || []; } catch (e) { return; }
+    // ★ 先把**已经有字**的点在哪儿记下来，同一条"一个位置只留一个标签"的规矩
+    //   （见 `交点显坐标` 那段）。上一步刚给交点开过字，那件就是占位的那一件。
+    var 占位 = {};
+    var 位置 = function (n) {
+      try { return api.getXcoord(n).toFixed(6) + '/' + api.getYcoord(n).toFixed(6); } catch (e) { return '' }
+    };
+    for (var p = 0; p < 名.length; p++) {
+      try {
+        if (String(api.getObjectType(名[p]) || '').indexOf('point') !== 0) continue;
+        if (!api.getLabelVisible(名[p])) continue;
+        var q = 位置(名[p]);
+        if (q) 占位[q] = 1;
+      } catch (e) {}
+    }
     for (var j = 0; j < 名.length; j++) {
       var n = 名[j];
       try {
@@ -3657,6 +3724,9 @@ SR.board = (function () {
         if (String(api.getObjectType(n) || '').indexOf('point') !== 0) continue;
         if (!api.getVisible(n)) continue;          // 整件藏着 → 不碰
         if (api.getLabelVisible(n)) continue;      // 已经有字（交点那种）→ 不碰
+        var 我 = 位置(n);
+        if (我 && 占位[我]) continue;               // 这个位置上已经有一个名字了 → 不叠第二个
+        if (我) 占位[我] = 1;
         api.setLabelVisible(n, true);
         api.setLabelStyle(n, 0);                   // 0 = 光名字：`O`、`A`、`B`
       } catch (e) {}
