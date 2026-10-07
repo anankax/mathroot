@@ -40,7 +40,7 @@ SR.main = (function () {
   //   「备课聊的那道题，切到作图把它画出来」正需要它。要治串味，方向是
   //   在换体系的第一轮补一句"交接口"，**不是**清空（清空会把上面那件正事也砍掉）。
   //   ⚠ 交接口**还没做**，别把这句注释当成它已经做了。
-  function applyWork(w, force) {
+  function applyWork(w, force, opts) {
     if (!SR.WORKS[w]) w = SR.DEFAULT_WORK || 'prep';
     var last = work;
     // ★★ 2026-10-03：点工位那一行 = 老师已经明确说了"办哪一件"，首屏该收了。
@@ -85,8 +85,14 @@ SR.main = (function () {
     var stepsOf = function (id) { return !!(SR.WORKS[id] && SR.WORKS[id].steps); };
     // 同体系（备课↔讲评）：对话留着，档位按历史重推——**不能打回零**，
     // 那条链还接着呢，打回零等于告诉老师"刚才走的都不算"。
+    // ★ 第 3 个参数 `opts`（2026-10-07）：原样交给 reset()，今天只认 `keepBoard`。
+    //   谁传它：js/landing.js 的**自动换工位**那条路——老师正说着话、图还在板上，
+    //   他这一句被认出是另一件活儿，换过去把图抹了是不可接受的
+    //   （"这道题画出来，再出几个变式"正是要接着那张图办）。
+    //   手点工位那一行**不传**，行为跟今天逐字一样。
+    // ⚠ `repaintSteps()` 那条路不看 opts：同体系（备课↔讲评）本来就不动板子。
     if (!force && stepsOf(last) && stepsOf(w)) SR.chat.repaintSteps();
-    else SR.chat.reset(w);                                              // 换了体系：重开
+    else SR.chat.reset(w, opts);                                        // 换了体系：重开
   }
 
   // ★★ 2026-10-05：左边那条工具栏该给谁看。

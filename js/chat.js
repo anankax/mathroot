@@ -277,10 +277,15 @@ SR.chat = (function () {
   //   它只是给老师看的——"底下那些是另一道工序办的"。
   //   塞进 history 的话，模型下一轮会看见一条它自己没说过的话，
   //   而那句话在屏幕上看着完全正常，谁也不会往那儿想。
-  function addDivider(to) {
+  function addDivider(from, to) {
     var el = document.createElement('div');
     el.className = 'wdiv';
-    el.textContent = '换到「' + workLabel(to) + '」';
+    // ★ 2026-10-07：原来就一句「换到「作图」」——读起来像"你换了个房间"，
+    //   而老师该读到的意思是"同一件事，换件工具接着办"。改成接力口吻。
+    //   `from` 认不出来（老存档、半装配）就退回原来那句，别吐半句。
+    el.textContent = from
+      ? '「' + workLabel(from) + '」聊到这儿，换「' + workLabel(to) + '」接着办'
+      : '换到「' + workLabel(to) + '」';
     els.msgs.appendChild(el);
   }
 
@@ -294,12 +299,42 @@ SR.chat = (function () {
   //   屏幕给的答案前后不一致**（[[scanner-numbers-are-not-what-they-claim]] 那条：
   //   同一个事实两处各算一遍，就得两处都算对）。
   //   判据用**盘上最后一条的工位**，不是内存里的 work——切工位时内存已经换过去了。
-  function seamIfWorkChanged() {
-    if (!SR.memo) return;
+  // 上一轮在哪个工位？没有上一轮、或者跟这一轮是同一个——都返回 ''。
+  //
+  // ★★ 判据**只有这一份**：屏幕上那条分界线（seamIfWorkChanged）和发给模型的
+  //   「交接口」（下面 交接口()）都读它。两处各算一遍的下场就是这一族的老毛病——
+  //   屏幕说"换了"、模型那头没接到，或者反过来，而两边单独看都很正常
+  //   （[[scanner-numbers-are-not-what-they-claim]] 那条"同一个事实两处各算一遍"）。
+  function 从哪来() {
+    if (!SR.memo) return '';
     var list = SR.memo.log();
-    if (!list.length) return;
+    if (!list.length) return '';
     var prev = list[list.length - 1].w;
-    if (prev && work && prev !== work) addDivider(work);
+    return (prev && work && prev !== work) ? prev : '';
+  }
+
+  function seamIfWorkChanged() {
+    var prev = 从哪来();
+    if (prev) addDivider(prev, work);
+  }
+
+  // 换工位那第一轮，给模型一句「交接口」。
+  //
+  // ★★ 为什么非要有它：请求长这样 —— [新工位的系统提示] ＋ [整段历史] ＋ [老师这一句]。
+  //   历史是**一本全局账，切工位不清**（故意的，`js/main.js` 那段写着；
+  //   "备课聊的那道题，切到作图把它画出来"正需要它）。
+  //   少了这一句，模型看到的是"一套陌生的规矩 ＋ 一长串别人聊过的话"，
+  //   它的自然反应是**从头问一遍**（"你想画什么？"）——老师刚聊定的那道题就白聊了。
+  //
+  // ★ 措辞上两件事一起办：① 接住历史（那些话都算数，接着往下）；② 钉住人格
+  //   （"同一个老师、同一个你"）。跟底座那句「换的只是你手上拿的东西，不是你」是一对。
+  // ★ 只在**换工位那第一轮**出现：判据是盘上最后一条的工位（换完发一句，账本上就是新工位了，
+  //   下一轮它自己就没了）。刷新页面、重新发送都不会漏——它不存任何状态，是现算的。
+  function 交接口() {
+    var prev = 从哪来();
+    if (!prev) return '';
+    return '老师刚从【' + workLabel(prev) + '】换到【' + workLabel(work) + '】。'
+      + '上面那些话都算数（是同一个老师、同一个你说的）——现在接着往下办，别从头问他一遍。';
   }
 
   // ============================================================
@@ -414,7 +449,7 @@ SR.chat = (function () {
     for (var i = 0; i < list.length; i++) {
       var t = list[i];
       // t.w = 说这句话的时候在哪个工位。变了就插一条分界线。
-      if (t.w && prev && t.w !== prev) addDivider(t.w);
+      if (t.w && prev && t.w !== prev) addDivider(prev, t.w);
       if (t.w) prev = t.w;
       if (t.r === 'u') {
         ask = t.t;
@@ -1016,14 +1051,25 @@ SR.chat = (function () {
       if (kids[j].classList && kids[j].classList.contains('figbox')) continue;
       if (RE_VBLOCK.test(normHead(kids[j].textContent))) domHeads.push(kids[j]);
     }
-    var cb = bubble.querySelector('.copybar'), moved = 0;
+    // ★★ 2026-10-07：这儿原来有一句 `var cb = bubble.querySelector('.copybar')`，
+    //   用处只有一个——没有小标题可当锚点时，把图钉到"按钮前面"（也就是正文末尾）。
+    //   ★ 动作条搬出气泡之后，这一句**永远返回 null**（条子现在是 `.msg` 的孩子）。
+    //     不改的下场不是报错，是图**悄悄钉不到该在的地方**：
+    //     下面那行 `if (!cb) continue` 会把这一张图**整块跳过**，
+    //     而屏幕上看着只是"这一轮没出图"——跟"模型没画"长得一模一样。
+    //   ⇒ 所以这一支改成直接 `appendChild`：正文末尾对气泡来说就是末尾。
+    var moved = 0;
     for (var i = 0; i < boxes.length; i++) {
       var box = boxes[i];
       if (!box || ends[i] == null) continue;
       var k = 0, h;
       for (h = 0; h < 位.length; h++) if (位[h] < ends[i]) k++;
       var anchor = domHeads[k];          // 第 k 块 → 插在它前面（= 上一道题之后）
-      if (!anchor) { if (!cb) continue; anchor = cb; }
+      // 找不到小标题（原文没有节标题那一行）就落到末尾。
+      // ⚠ 原来这儿是 `continue`（**丢掉这张图**）——那是跟着上面那句 null 一起写的，
+      //   图已经钉进气泡了（attachFigure 先跑），再 append 一次只是把它移到末尾，
+      //   **不会多出一张**。
+      if (!anchor) { bubble.appendChild(box); moved++; continue; }
       bubble.insertBefore(box, anchor);
       moved++;
     }
@@ -1456,7 +1502,25 @@ SR.chat = (function () {
   //   上去整条对话会往下跳一下——而跳动的那一下正好落在你准备点的那颗按钮上。
   // ★ 一颗 = `{字, 图, 提示, 点}`。`图` 有就走图标，没有就还是那个字（留着这条路，
   //   万一哪天要加一颗没有合适图标的）。
-  function 动作条(bubble, 颗) {
+  // ★★ 2026-10-07：这根条**从气泡里搬到了气泡外面**（挂到 `.msg` 上，落在气泡底下）。
+  //   孔老师截图 + 原话：「为啥这个聊天框会多一行？你应该把复制修改再试一次的按钮
+  //   放在这个聊天框的**下面**，而不是让这个聊天框一行文字一行留白。」
+  //   ——他说得对，而且病根就在这儿：条子是 `bubble.appendChild(bar)`，
+  //   而气泡是个盒子（老师那侧还有底色和圆角），于是按钮**成了内容的一部分**，
+  //   在盒子里又占了一整行；文字短的时候（"画个直角三角形"），
+  //   看着就是"这个框底下多出一行空白"。
+  //   ⚠ 别再改回 `bubble.appendChild`：条子办的是"对**这一条消息**做点什么"，
+  //     不是"这段话的一部分"。它该在气泡外面，跟气泡平级。
+  //   ⚠ 传进来的仍旧可能是气泡（老调用点只攥着气泡）——所以在这儿统一往上找一层。
+  //     上游保证气泡**已经**在自己那条 `.msg` 里了（三处调用点都在
+  //     `el.appendChild(b)` 之后，见 addAssistantText / addUser / repaintLog）。
+  //     找不到爹（半装配、探针造的孤气泡）就退回挂在容器自己身上：
+  //     宁可它还留在里面，也不能让它**一声不响地消失**。
+  function 动作条(容器, 颗) {
+    var 条仓 = 容器;
+    if (容器 && 容器.classList && 容器.classList.contains('bubble') && 容器.parentNode) {
+      条仓 = 容器.parentNode;
+    }
     var bar = document.createElement('div');
     bar.className = 'copybar';
     for (var i = 0; i < 颗.length; i++) {
@@ -1475,7 +1539,7 @@ SR.chat = (function () {
         bar.appendChild(btn);
       })(颗[i]);
     }
-    bubble.appendChild(bar);
+    条仓.appendChild(bar);
     return bar;
   }
 
@@ -2626,11 +2690,16 @@ SR.chat = (function () {
     //   所以这一轮的身份跟着**出发时**那一个走：跟模型说话、记进账本、
     //   底下挑那三颗按钮，三处用的是同一个值。**别再改回 `work` 去读。**
     var wk = work;                        // 这一轮的工位（下同：ask／lastMeta／账本／底下那排按钮）
+    // ★ 交接口**在这一刻算定**，别留给 api 现算：这一句跟屏幕那条分界线读的是同一个判据
+    //   （从哪来()），而且必须跟 wk 一样**冻在出发这一刻**——答复回来之前老师要是又切了工位，
+    //   现算就变成按新工位写了。
+    var 接口 = 交接口();
     SR.api.ask({
       work: wk,
       history: history.slice(0, -1),      // 最后一条（刚推入的）由 api 自己拼
       text: text,
       parts: parts,
+      交接口: 接口,
       onChunk: function (piece) { msg.raw += piece; paint(msg); }
     }).then(function (res) {
       msg.streaming = false;

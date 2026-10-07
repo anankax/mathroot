@@ -75,14 +75,19 @@ function placeFiguresOff1(bubble, raw, boxes) {
     if (kids[j].classList && kids[j].classList.contains('figbox')) continue;
     if (RE_VBLOCK.test(normHead(kids[j].textContent))) domHeads.push(kids[j]);
   }
-  var cb = bubble.querySelector('.copybar'), moved = 0;
+  // 这一臂是产品的**手抄本**，只把序号 +1（下面 k 从 1 起数就是"差一格"）。
+  // ★ 2026-10-07：产品那边把动作条搬出气泡了，锚点那两行（原先是
+  //   bubble.querySelector('.copybar') + 拿它当兜底）跟着删了，这一臂照抄，
+  //   **除了那 +1 之外跟产品一字不差**——差两处的话，量出来的就不是"差一格"了。
+  //   （兜底那一支也一样：找不到小标题就落到正文末尾，不再整块跳过。）
+  var moved = 0;
   for (var i = 0; i < boxes.length; i++) {
     var box = boxes[i];
     if (!box || ends[i] == null) continue;
     var k = 1, h;
     for (h = 0; h < 位.length; h++) if (位[h] < ends[i]) k++;
     var anchor = domHeads[k];
-    if (!anchor) { if (!cb) continue; anchor = cb; }
+    if (!anchor) { bubble.appendChild(box); moved++; continue; }
     bubble.insertBefore(box, anchor);
     moved++;
   }
@@ -110,7 +115,7 @@ console.log('');
     return r.result && r.result.result ? r.result.result.value : null;
   };
   await send('Page.enable', {}); await send('Runtime.enable', {});
-  await send('Network.setCacheDisabled', { cacheDisabled: true });
+  await send('Network.enable',{});await send('Network.setCacheDisabled', { cacheDisabled: true });
   await send('Page.navigate', { url: 'http://localhost:8138/index.html?figplace=' + Date.now() });
   for (let i = 0; i < 60; i++) { if (await ev('!!(window.SR&&SR.render&&SR.render.md)').catch(() => false)) break; await sleep(500); }
   if (!await ev('!!(window.SR&&SR.render&&SR.render.md)')) { console.log('★ 打不开 localhost:8138（SR.render.md 没就位）。先起 `node test/serve.cjs 8138`。'); process.exit(3); }
@@ -157,13 +162,16 @@ console.log('');
       for (var i = 0; i < n; i++) {                   // 摆 n 块占位图（照 attachFigure 的样子）
         var x = document.createElement('div'); x.className = 'figbox'; b.appendChild(x); boxes.push(x);
       }
-      var bar = document.createElement('div'); bar.className = 'copybar'; b.appendChild(bar);  // 照 attachCopy
+      // ★ 2026-10-07：动作条**搬到气泡外面**了（挂到 .msg 上，见 js/chat.js 的 动作条），
+      //   这一份桩跟着照做——桩不照产品演，量出来的就是另一件事。
+      var m = document.createElement('div'); m.className = 'msg assistant';
+      m.appendChild(b);
+      var bar = document.createElement('div'); bar.className = 'copybar'; m.appendChild(bar);  // 照 动作条
       var moved = fn(b, raw, boxes);
-      // 读回来：DOM 顺序里，每张图前面隔着几道"变式"标题；图还在不在；图在 bar 前面吗
-      var kids = [].slice.call(b.children), 变式在DOM = [], 图位 = [], bar位 = -1;
+      // 读回来：DOM 顺序里，每张图前面隔着几道"变式"标题；图还在不在；条子还在不在气泡里
+      var kids = [].slice.call(b.children), 变式在DOM = [], 图位 = [];
       kids.forEach(function(el, i) {
         if (el.classList.contains('figbox')) 图位.push(i);
-        else if (el.classList.contains('copybar')) bar位 = i;
         var t = String(el.textContent || '').replace(/[\\s*>#]+/g, '');
         if (/^变式[一二三四五六七八九十]/.test(t)) 变式在DOM.push(i);
       });
@@ -171,10 +179,13 @@ console.log('');
       // 快照：把气泡里每个孩子的开头写出来，给人眼看顺序
       var 顺序 = kids.map(function(el){
         if (el.classList.contains('figbox')) return '[图]';
-        if (el.classList.contains('copybar')) return '[复制这段]';
         return (String(el.textContent||'').replace(/\\s+/g,' ').trim().slice(0, 14) || '(空)');
       });
-      return {对上了几处: 隔着, moved: moved, 丢图没: n - 图位.length, 图都在bar前: 图位.every(function(p){return bar位 < 0 || p < bar位;}), 顺序: 顺序};
+      // ★ 判据换了：原来那条是"图在 bar 前面"——bar 已经不在气泡里，那个位置
+      //   **恒为 -1**，整条断言会退化成恒真（"比两个不存在的数"那一族）。
+      //   改成量这一轮真正改的那件事：**条子不在气泡里**（谁把它改回去，这一条就红）。
+      return {对上了几处: 隔着, moved: moved, 丢图没: n - 图位.length,
+              条在气泡外: !b.querySelector('.copybar'), 顺序: 顺序};
     }
     // 分得开分不开：**摆图之前**，顶级块里有几块是以"变式X"开头的
     var probe = document.createElement('div'); probe.innerHTML = R.md(vis);
@@ -189,7 +200,7 @@ console.log('');
   })()`);
 
   const A = { n: 0, 新绿: 0, 没插绿: 0, 差一格绿: 0, 例子: [], 新红例子: [] };
-  const B = { n: 0, 丢图: 0, 图跑bar后面: 0, 例子: [] };
+  const B = { n: 0, 丢图: 0, 条还回气泡: 0, 例子: [] };
   for (const f of 文件) {
     const raw = fs.readFileSync(path.join(SHOT, f), 'utf8');
     let r;
@@ -206,9 +217,9 @@ console.log('');
     } else {
       B.n++;
       if (r.新.丢图没 > 0) B.丢图++;
-      if (!r.新.图都在bar前) B.图跑bar后面++;
-      if (!r.新.丢图没 && r.新.图都在bar前) continue;
-      B.例子.push(f + ' 丢图' + r.新.丢图没 + ' 图在bar后:' + !r.新.图都在bar前);
+      if (!r.新.条在气泡外) B.条还回气泡++;
+      if (!r.新.丢图没 && r.新.条在气泡外) continue;
+      B.例子.push(f + ' 丢图' + r.新.丢图没 + ' 条又跑回气泡里:' + !r.新.条在气泡外);
     }
   }
 
@@ -226,8 +237,8 @@ console.log('');
   });
   console.log('');
   console.log('  ── B 类：变式挤在同一个 <p> 里（"插在变式下面"在 DOM 里没有落脚点） ' + B.n + ' 份');
-  console.log('     只要求：一张图都不许丢 + 都排在「复制这段」前面');
-  console.log('     丢图的：' + B.丢图 + '   图跑到按钮后面的：' + B.图跑bar后面);
+  console.log('     只要求：一张图都不许丢 + 「复制这段」那条不在气泡里');
+  console.log('     丢图的：' + B.丢图 + '   条子又跑回气泡里的：' + B.条还回气泡);
   B.例子.slice(0, 3).forEach(s => console.log('       ✗ ' + s));
   console.log('');
 

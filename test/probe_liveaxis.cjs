@@ -91,7 +91,7 @@ function 判(名, ok, 值) {
   const ev = async (e) => { const r = await send('Runtime.evaluate', { expression: e, returnByValue: true }); const v = r.result && r.result.result ? r.result.result.value : null; return v === undefined ? null : v; };
 
   await send('Page.enable', {}); await send('Runtime.enable', {});
-  await send('Network.setCacheDisabled', { cacheDisabled: true });
+  await send('Network.enable',{});await send('Network.setCacheDisabled', { cacheDisabled: true });
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: 线上 });
 

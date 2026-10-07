@@ -123,7 +123,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await new Promise(r => ws.on('open', r));
   const send = (m, p) => new Promise(r => { const i = ++id; pend[i] = r; ws.send(JSON.stringify({ id: i, method: m, params: p })); });
   await send('Page.enable', {}); await send('Runtime.enable', {});
-  await send('Network.setCacheDisabled', { cacheDisabled: true });
+  await send('Network.enable',{});await send('Network.setCacheDisabled', { cacheDisabled: true });
   // ★ 宽度按 **2000** 给：数根是三栏（工位条 + 对话 + 画板），画板那一栏在 x≈1465 起。
   //   按 1440 模拟，画板整块**落在视口外面**——截图画板会截到一片空，两张空图当然"一模一样"，
   //   于是一张真会动的图被量成"不动"。第一次就是这么栽的：不是产品不动，是我截了一块看不见的地方。

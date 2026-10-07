@@ -42,7 +42,7 @@ const PAGE = 'http://localhost:8138/index.html';
 
   await send('Page.enable', {}); await send('Runtime.enable', {});
   // ★ 核"改动生效没生效"必须硬重载：同域普通导航会吃缓存，把已生效的写入误判成没生效。
-  await send('Network.setCacheDisabled', { cacheDisabled: true });
+  await send('Network.enable',{});await send('Network.setCacheDisabled', { cacheDisabled: true });
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: PAGE + '?lw=' + Date.now() });
   for (let i = 0; i < 60; i++) { if (await ev('!!(window.SR&&SR.chat&&SR.memo)').catch(() => false)) break; await sleep(500); }

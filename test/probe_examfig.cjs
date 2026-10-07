@@ -57,7 +57,7 @@ console.log('夹具 ' + path.basename(IMG) + '，' + Math.round(fs.statSync(IMG)
   await new Promise(r => ws.on('open', r));
   const send = (m, p) => new Promise(r => { const i = ++id; pend[i] = r; ws.send(JSON.stringify({ id: i, method: m, params: p })); });
   await send('Page.enable', {}); await send('Runtime.enable', {});
-  await send('Network.setCacheDisabled', { cacheDisabled: true });
+  await send('Network.enable',{});await send('Network.setCacheDisabled', { cacheDisabled: true });
   // 宽度 2000：数根是三栏，画板那栏在 x≈1465 起（跟 probe_figall 同一个理由）
   await send('Emulation.setDeviceMetricsOverride', { width: 2000, height: 1000, deviceScaleFactor: 1, mobile: false });
 

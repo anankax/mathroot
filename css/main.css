@@ -573,18 +573,46 @@ main > .col { max-width: 1000px; margin: 0 auto; width: 100%; }
      下一个人再看见 `.works { background: transparent }` 会以为工位行是素的。
    ★ 撤掉之后这一行跟通道那两个开关（`.backs`，**留着**凹槽 + 白片）就长得不一样了：
      一条路摊在白底上，一个开关嵌在槽里。这正是那套壳**该拆开**的理由（见文件上头那段）。
-   ★ 只留布局：六格等分、四周留白。 */
+   ★ 只留布局。
+   ★★ 2026-10-07：**这一行从「必点的切换栏」降成了「话头提示」**。孔老师原话：
+     「最好六个工位也只是作为触发词，配合用户的发言的需求，给智能体接收。
+      而不是硬要在网页下面放六个切换的模板。」
+     ——他要的不是"删掉"，是**别让它看着像非得在这儿点一下**。真正的入口已经变成
+     "说话"了（`js/landing.js` 的 `该换吗()`：每轮都拿老师那句话认一遍工位，
+     认得出就自己换过去，还带一句「我换到【作图】办了」）。改了三处，都是份量上的：
+       · 前头加一句「也可以直接说：」（见下面 ::before）——把这一行的身份说出来，
+         它就不再像那排 Tab，而是"你还能这么说"；
+       · 六格**不再等分**。原来那条 `flex:1 1 0` 是照"一排并列的工序"做的，
+         而那正是 Tab 的长相；改成按字数自然宽、左对齐。
+       · 字号降一档、默认是灰的（`--ink-3`），只有选中那一格亮起来。
+     ⚠ **一颗都不许删**：底线③ 是"工位那一行永远能直接跳过去"，
+       而且 `test/_线上看.cjs` 是照 `#works .workbtn` 数够不够六颗的。
+       降份量 ≠ 拆入口——认不出话头的时候，这一行仍是**唯一**能换工位的地方。 */
 .works.stretch {
-  flex: 0 0 auto; margin: 8px 14px 12px;
+  flex: 0 0 auto; margin: 2px 14px 12px;
+  flex-wrap: wrap; align-items: center;
+}
+/* 「也可以直接说：」——★ 用 ::before 而不是往 #works 里塞个 <span>：
+   `js/main.js` 的 paintWorks 是 `box.innerHTML = html` **整块换掉**的，
+   塞进去的元素每画一次就没了（同一件事在助手铭牌那儿踩过，见下面那条注释）。 */
+.works.stretch::before {
+  content: '也可以直接说：';
+  flex: 0 0 auto;
+  font-size: 11.5px; color: var(--ink-3); letter-spacing: .04em;
+  margin-right: 10px;
 }
 .works.stretch .workbtn {
-  flex: 1 1 0; min-width: 0;
-  /* 居中：一颗 6×6 的状态点 + 名字，整个作为一格内容居中（见下面 ::before）。
-     六格构造完全一样，所以那点偏移是一致的小，看着齐。 */
+  flex: 0 0 auto;
+  /* 居中：一颗 6×6 的状态点 + 名字，整个作为一格内容居中（见下面 ::before）。 */
   display: flex; align-items: center; justify-content: center;
-  font-size: 13px; padding: 7px 6px;
-  overflow: hidden; text-overflow: ellipsis;
+  font-size: 12.5px; padding: 4px 9px;
 }
+/* 降份量的那半：只有**没选中**的那几格是灰的。
+   ★ 非用 `:not(.on)` 不可，别直接把 `color` 写进上一条：`.works.stretch .workbtn`
+     的优先级是 (0,3,0)，**高过**文件上头那条 `.workbtn.on` 的 (0,2,0)——
+     直接写就会把选中态的主色一起压成灰，"选中了却看不出来"，
+     而屏幕上的样子跟"点了没反应"一模一样。`:not(.on)` 永远碰不到选中那一格。 */
+.works.stretch .workbtn:not(.on) { color: var(--ink-3); }
 /* 悬停：导航如果点上去毫无动静，会让人怀疑没点上。
    ★ 只换底色，不用 background 简写——简写会连下面"动效与光照"那两层图一起清掉，
      悬停的瞬间按钮反而变平了（`.tool` 那条注释里踩过同一个坑）。 */
@@ -1213,7 +1241,10 @@ body[data-landing="1"] .ghost { display: none; }
 .colhead span, .boardbar span { font-size: 15px; margin-right: 10px; }
 
 /* ---------- 左：对话 ---------- */
-#msgs { flex: 1 1 auto; overflow-y: auto; padding: 18px 18px 6px; scroll-behavior: smooth; }
+/* ★ 2026-10-07：留白放大了一档（18→22 上下、18→20 左右）。
+   助手那一侧没了底色之后，**留白就是唯一的分隔物**了——框撤掉而间距不动，
+   两条回复会糊成一段连着的字。这不是"顺手调好看"，是撤框的**下游**。 */
+#msgs { flex: 1 1 auto; overflow-y: auto; padding: 22px 20px 8px; scroll-behavior: smooth; }
 
 /* ★★ 2026-10-05 `flex-wrap: wrap` 是**修一个真 bug**，不是调节距。
    孔老师截图：「而且这个右侧的小字也很丑」——那条小字（`.localnote`，
@@ -1232,7 +1263,8 @@ body[data-landing="1"] .ghost { display: none; }
    ⇒ 两处一起改：这里允许换行，`.localnote` 那条给它 `flex-basis:100%`
      钉在自己一整行上（见下面 `.localnote` 那段）。少任何一处都还是并排。
    ⚠ `.msg.user` 的 `justify-content:flex-end` 不受影响：只有一个孩子时不换行。 */
-.msg { display: flex; flex-wrap: wrap; margin-bottom: 14px; }
+/* ★ 2026-10-07：14→20，跟 #msgs 那条同一个理由（撤框之后留白要顶上分隔的活儿）。 */
+.msg { display: flex; flex-wrap: wrap; margin-bottom: 20px; }
 .msg.user { justify-content: flex-end; }
 
 /* 「换到「作图」」——六道工序之间的那道接缝（见 js/chat.js 的 addDivider）。
@@ -1255,19 +1287,37 @@ body[data-landing="1"] .ghost { display: none; }
    ——气泡的圆角、小尾巴、渐变阴影全是与交互无关的细节。
    ★ 说话人铭牌是①画内界面的做法：每一块信息都标着它从哪来，
      像仪表上的通道标注，而不是"两团颜色猜谁在说"。 */
+/* ★★ 2026-10-07：**助手那一侧不再是个方框**。孔老师原话：「我的对话框内容也可以
+   改成 deepseek 这样，简约好看，而不是奇怪的方框」——他给的样张里，助手是**裸文本**
+   （没有底、没有边、没有左侧色条），提问那侧才是右边一个浅底圆角气泡。
+   ★ 怎么改的：底色和色条**都抹成透明**，形状这一层只留左边那 3px 的**空位**。
+     ⚠ 那 3px 是**故意留成透明的、不是删掉**：`.figbox` / `.chips` / `.flowbox`
+       这几个块是拿 `margin-left: -14px` 啃到气泡内边距外沿、好顶到边上的
+       （见下面 .figbox 那段），而内边距之外还站着这 3px 边框。
+       把边框整条删掉，这些块会跟着往左挪 3px、跟正文也对不齐了——
+       "改了、也不报错、就是差 3px"比现在这个样子难查得多。
+   ★ 两侧怎么分：助手＝裸文本（本来就左对齐，上面还挂着一枚「数根」小铭牌）；
+     老师＝**右边一个浅底圆角气泡**。跟 deepseek 那一路是同一种读法：
+     靠**位置和底色**认谁在说，而不是给每一条都套一层框。
+   ★ 代价要说清楚：原来那条 3px 色条是**带工位色**的（作图／命题走苔绿），
+     现在没了。工位色没丢，只是搬到别处去了——输入框底下那一行、以及
+     归类那一行 `#routebar`（"我按【作图】办的"）。 */
 .bubble {
   max-width: 88%;
   padding: 10px 14px 11px;
-  border-left: 3px solid var(--rule);
-  background: var(--panel);
+  border-left: 3px solid transparent;
+  background: transparent;
   white-space: normal;
   word-break: break-word;
   overflow-wrap: anywhere;
 }
-.msg.assistant .bubble { border-left-color: var(--brand-line); }
-.msg.user .bubble { background: var(--sunken); border-left-color: var(--brand); }
+.msg.user .bubble {
+  background: var(--sunken);
+  border-left-color: transparent;
+  border-radius: 14px;
+}
 body[data-work="draw"] .msg.user .bubble,
-body[data-work="vary"] .msg.user .bubble { background: var(--alt-soft); border-left-color: var(--alt); }
+body[data-work="vary"] .msg.user .bubble { background: var(--alt-soft); border-left-color: transparent; }
 
 /* ★ 2026-10-03（阶段 H）：这一组原来的选择器是 `.bubble > .who, .msg.assistant
    .bubble::before` —— `.bubble > .who` 那半个**全项目没有任何地方产出过**
@@ -1938,7 +1988,26 @@ footer .r {
      鼠标可能压根不在那条消息上，只认 `:hover` 的话**键盘用户永远看不见自己聚焦的东西**。
    ⚠ 选择器用**后代**不用 `>`：`.copybar` 现在挂的爹不一（助手那根挂在 `.bubble` 里，
      老师那根也是），写死一层的话，哪天气泡里多包一层它就**静悄悄地一直藏着**。 */
-.copybar { opacity: 0; transition: opacity .14s ease; }
+/* ★★ 2026-10-07：这根条**从气泡里搬到了气泡底下**。孔老师截图 + 原话：
+     「为啥这个聊天框会多一行？你应该把复制修改再试一次的按钮放在这个聊天框的
+      下面，而不是让这个聊天框一行文字一行留白。」
+   ——原来它在气泡**里面**（`bubble.appendChild`，见 js/chat.js 的 动作条），
+   于是那三颗成了"内容的一部分"，在盒子里又占一整行；文字短的时候（"画个直角三角形"）
+   看着就是"这个框底下多出一行空白"。
+   ★ 现在它是 `.msg` 的第二个孩子，跟气泡**平级**：
+     `flex-basis:100%` 让它自己占满一整行（`.msg` 本来就是 flex-wrap:wrap），
+     于是它**必然换到气泡下面那一行**，不管气泡多宽。
+   ★ 左右怎么靠：助手那一侧跟正文对齐（气泡有 3px 边框 + 14px 内边距 = 17px，
+     见 .bubble 那条），老师那一侧跟气泡一样贴右。
+   ⚠ 别用 `display:none` 藏它（下面那条 opacity 是故意的）：用 display 藏，
+     鼠标一移上去整条对话会往下跳一下，而跳动那一下正好落在你准备点的那颗按钮上。 */
+.copybar {
+  flex: 0 0 100%;
+  display: flex; gap: 2px; margin-top: 2px;
+  opacity: 0; transition: opacity .14s ease;
+}
+.msg.assistant .copybar { justify-content: flex-start; padding-left: 17px; }
+.msg.user .copybar { justify-content: flex-end; }
 .msg:hover .copybar, .msg:focus-within .copybar { opacity: 1; }
 /* 摸屏的设备没有 hover，那就一直亮着 —— 否则在平板上这根条**永远不出现**，
    而它并不是装饰：「修改 / 重新发送」只有这一个入口。 */

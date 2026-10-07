@@ -17,6 +17,14 @@
 //         「归好类那一趟必须放行，而且放行的时候工位真的换了」。
 //
 // ★ 先跑红（跑法见文件末尾）：四种改法都得真红过，不然不知道它判得了什么。
+//   ★ 2026-10-07 第五份改坏的副本（**第三刀**那条路的红验）：
+//     把 intercept() 里"开场之后自动拿工具"那一段拿掉（`var g = 该换吗(text)` 换成
+//     `var g = null`），产物 test/_red/m_noswitch.js —— ⑨ 里新写的那 **3 条**红、
+//     其余 46 条一条不动。⚠ 尤其是「首屏那道闸不拦」那条**照样绿**：它量的是首屏
+//     那道闸，跟这一刀没关系。两件事分得开，才说明这一格量的是它自己那件事。
+//     造法（一行替换即可，**别用多行字符串**——文件是 CRLF，多行的锚点对不上）：
+//       node -e "...s.split('    var g = 该换吗(text);').join('...g = null;')..."
+//
 //   2026-10-02 实测过一遍，2026-10-03 又照着重跑了一遍（共 47 条），红的就是该红的那几条、也只有那几条：
 //     ① route() 咬得紧时随手挑头名（不再回空）→ ② 的那条红          红 1 条
 //     ② intercept() 归得出来那趟回 true（吞掉那句话）→ ⑤ 的那条红    红 1 条
@@ -74,6 +82,25 @@ function mkEl(id) {
     },
     addEventListener(k, f) { (e._on[k] = e._on[k] || []).push(f); },
     focus() {}, dispatchEvent() { return true; },
+    // ★★ 2026-10-07 补：`landing.js` 的 `mountFirstMessage` 是**现造节点**的
+    //   （`document.createElement('div')`），可这个桩里压根没有 `createElement`——
+    //   于是 `L.init()` 当场抛 TypeError，探针**一格都没跑**就退出了。
+    //   ⚠ 它的样子很唬人：堆栈里全是 landing.js 的函数名（mountFirstMessage /
+    //     ensureMount / show / init），看着像**首屏坏了**；其实是桩比产品旧。
+    //     同一族：桩不照产品合同演，长出来的全像"产品坏了"。
+    //   只补真用得着的那几样（要不要更多，等它真报错再说，别照想象铺开）。
+    parentNode: null,
+    _kids: [],
+    appendChild(n) { if (n) { n.parentNode = e; e._kids.push(n); } return n; },
+    insertBefore(n, ref) {
+      if (!n) return n;
+      n.parentNode = e;
+      const i = ref ? e._kids.indexOf(ref) : -1;
+      if (i < 0) e._kids.push(n); else e._kids.splice(i, 0, n);
+      return n;
+    },
+    get firstChild() { return e._kids[0] || null; },
+    removeChild(n) { const i = e._kids.indexOf(n); if (i >= 0) { e._kids.splice(i, 1); n.parentNode = null; } return n; },
     setAttribute(k, v) { e[k] = v; },
     getAttribute(k) { return e[k] == null ? null : e[k]; },
     querySelector() { return null; },
@@ -110,7 +137,8 @@ function mkEl(id) {
 }
 const FAKE_DOC = {
   body: { _a: {}, setAttribute(k, v) { this._a[k] = v; }, getAttribute(k) { return this._a[k]; }, removeAttribute(k) { delete this._a[k]; } },
-  getElementById(id) { return els[id] || (els[id] = mkEl(id)); }
+  getElementById(id) { return els[id] || (els[id] = mkEl(id)); },
+  createElement(tag) { return mkEl('<' + tag + '>'); }
 };
 function load(rel, src) {
   const code = src != null ? src : fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -391,16 +419,30 @@ console.log('');
 console.log('⑨ 什么时候不该拦');
 reload();
 {
-  // ① 这一场已经说过话了：那是"接着往下"的话，不是"我要办哪一件"
-  reset('出一份周练卷', { hasUser: true });
-  judge('这一场已经说过话了 → 第二句不拦（那是"接着往下"这类话）',
-    L.intercept() === false && calls.applyWork.length === 0, { got: calls.applyWork });
+  // ① 这一场已经说过话了：首屏那一道闸**不该再拦**。
+  //   ★★ 2026-10-07 重写。老版本是 `reset('出一份周练卷')`，工位默认就是"组卷"，
+  //     于是这句话跟当前工位**本来就对得上**——绿是绿了，可绿的是"它认出来跟现在
+  //     这件是同一件"，跟"首屏拦没拦"没有半点关系（**绿在错误的前提上**）。
+  //     现在把当前工位钉到**另一件**上，读数才有分别：
+  //       首屏要是还拦 → intercept 回 true（把话吞了）；
+  //       首屏不拦     → 回 false。
+  //   ⚠ 别再用 `calls.applyWork.length === 0` 当"没拦"的证据了：**每一轮都认一下
+  //     话头、认得出就自己换过去**这件事（2026-10-07 第三刀）本来就是**该干**的，
+  //     applyWork 不该再被要求是空的。它现在量的是另一件事。
+  reset('帮我画个三角形', { hasUser: true, work: 'material' });
+  // ⚠ 只准叫**一次**：`intercept()` 是有副作用的（它真会去 applyWork）。
+  //   写两遍的话第二遍跑在"工位已经换过去了"的状态上，量到的就不是同一件事了。
+  const 放行 = L.intercept();
+  judge('这一场已经说过话了 → 首屏那道闸不拦（回 false，不是 true）',
+    放行 === false, { got: 放行 });
+  judge('  而且照新规矩：话头认出来了，工具**自己拿对了**（换到作图）',
+    calls.applyWork.length === 1 && calls.applyWork[0] === 'draw', { got: calls.applyWork });
 
-  // ② 他自己点过工位：之后一律不拦。
+  // ② 他自己点过工位：之后首屏一律不拦。
   //    ⚠ 这儿必须再调一次 L.show()：`pick()` 会把首屏**收起来**（hide）。
   //      不 show 的话 blocking() 因为 `!live` 就是 false，这条会绿——但绿的是
   //      "首屏收起来了"，不是"他点过工位了"。两件事得分开。
-  reset('出一份周练卷');
+  reset('出一份周练卷', { work: 'draw' });
   L.pick('draw');
   L.show();
   // ⚠ 清一下记录本：`pick()` 自己那一下**本来就会**调 applyWork('draw')——那是它该干的。
@@ -409,7 +451,12 @@ reload();
   calls.applyWork.length = 0;
   judge('他自己点过工位（首屏重新亮着也不拦）→ blocking() 为假',
     L.blocking() === false && L.intercept() === false, { got: L.blocking() });
-  judge('  而且这一句没被归类、也没被吞（回 false = 照发）', calls.applyWork.length === 0, { got: calls.applyWork });
+  // ★★ 这一条老版本写的是"没被归类"（applyWork 必须是空的）——那是**第三刀之前**的契约。
+  //   现在该量的是：既没被吞（回 false），又**把工具拿对了**（组卷，且只拿一次）。
+  //   ⚠ 两个半边都得留：只看回 false，等于"什么都不干"也能过。
+  judge('  这句话没被吞掉（回 false = 照发）', calls.applyWork.length === 1, { got: calls.applyWork });
+  judge('  而且工具拿的是**组卷**（不是随手拿一件、也不是拿两次）',
+    calls.applyWork.length === 1 && calls.applyWork[0] === 'material', { got: calls.applyWork });
 }
 
 console.log('');

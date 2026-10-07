@@ -39,7 +39,7 @@ const 话 = process.argv[3] || '把这道题改一改：解方程 2x+3=7';
   };
 
   await send('Page.enable', {}); await send('Runtime.enable', {});
-  await send('Network.setCacheDisabled', { cacheDisabled: true });
+  await send('Network.enable',{});await send('Network.setCacheDisabled', { cacheDisabled: true });
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: PAGE + '?sd=' + Date.now() });
   for (let i = 0; i < 60; i++) { if (await ev('!!(window.SR&&SR.chat&&SR.memo)').catch(() => false)) break; await sleep(500); }

@@ -62,7 +62,7 @@ const 数图 = "(function(){return {真图:document.querySelectorAll('.figimg').
   });
   await new Promise(r => ws.on('open', r));
   const send = (m, p) => new Promise(r => { const i = ++id; pend[i] = r; ws.send(JSON.stringify({ id: i, method: m, params: p })) });
-  await send('Page.enable', {}); await send('Runtime.enable', {}); await send('Network.setCacheDisabled', { cacheDisabled: true });
+  await send('Page.enable', {}); await send('Runtime.enable', {}); await send('Network.enable',{});await send('Network.setCacheDisabled', { cacheDisabled: true });
 
   // ★ q：页面里炸了（exceptionDetails）**抛**，读回 undefined **返回 null**。
   //   （记忆 46 号那一族：`q()` 抛异常返回真值字符串、被当条件用 → 25 条假红。）

@@ -208,6 +208,56 @@ SR.landing = (function () {
     return { work: '', sure: 0, why: '', ranked: rank, score: top };
   }
 
+  // ---- 开场之后：该不该换一件？（2026-10-07，整改③）----
+  //
+  // ★ 回 {work, why, sure}，或者 null（＝认不出、或者本来就该留在原地）。
+  //   `sure` 是给 strip() 的：真值时那一行**不挂括号**（"我换到【作图】办了"），
+  //   假值时挂上「（照___认的）」——**名字是他自己打的** = 真值（没什么可认的）；
+  //   **没打名字、按话头猜的** = 假值（得让他看见我是怎么猜的，才好改）。
+  //
+  // ★★ 门槛**比首屏那条严**，理由只有一句：首屏认错了，老师看见「这不像……哪一件」、
+  //   那句话压根没发出去，改一下就行；**开场之后认错了，是把他手上正干着的活儿换掉**，
+  //   屏幕上那半截对话还要重画一遍。代价不一样，所以同一条 route() 在这儿要多过三道：
+  //     ① **触发词**：这句话里明明白白出现了那一件的名字（备课／作图／命题／组卷／
+  //        学情／讲评）。名字是老师自己打出来的，他就是要那个，不用再猜。
+  //     ② 没打名字，就得更明显：够得着 4 分门槛，**而且甩开现在这一件 4 分以上**。
+  //     ③ ★★ ① ② **都还要再加一条：现在这一件在这句话里没怎么露脸**（`旧 < BAR`）。
+  //        这一条是探针逼出来的，不是想出来的——红验那一趟它当场红了：
+  //        「这题得分率低，**讲评**的时候重点讲这道」停在【学情】上，
+  //        名字确实打出来了（学情4 / 讲评8），可这句话**一多半分量还在学情那边**，
+  //        换过去就是当着老师的面把他手上的活儿抢走。
+  //        **"他提了另一个名字"不等于"他要换那一件"**——他也可能只是在*说*那一件。
+  //   ⚠ 这三条**都不许放宽**。放宽一点，"多轮交互稳定性"就先塌在这儿：
+  //     在【备课】里说「换个数」会被拽去命题，而屏幕上看着完全正常。
+  //   ⚠ 改这儿之前跑 test/probe_pickwork.cjs（★ **不是** test/probe_route.cjs，
+  //     那一把量的是"这一轮挑了哪颗模型"，跟工位没关系，名字撞过车）。
+  //     它拿真话喂 route() 和 该换吗()，两头一起量：该换的换了没有、**不该换的动了没有**。
+  //     ★ 那把尺子③那组里**两条**是专门盯 ③ 的（红验实测：拿掉 ③ 它们翻，
+  //     同组其余各条 ① 或 ② 本来就拦得住）。**别把它想成整组红**——我第一版注释
+  //     就是这么写的，量完才发现只翻两条，见那份探针的抬头。
+  function 该换吗(text) {
+    var 现在 = (SR.chat && SR.chat.getWork && SR.chat.getWork()) || '';
+    if (!现在) return null;
+    var r = route(text);
+    if (!r.work || r.work === 现在) return null;
+    var s = score(text);
+    var 新 = s[r.work] || 0, 旧 = s[现在] || 0;
+    // ③：现在这件在这句话里已经站住脚了 —— 他还在说这件事，不抢。
+    if (旧 >= BAR) return null;
+    var 名 = (SR.WORKS[r.work] && SR.WORKS[r.work].label) || '';
+    // ★ 返回值里那个 `sure` 是给 `strip()` 用的，别省：
+    //   strip 只在 `!sure` 时才把那句括号挂出来——`（照' + why + '认的）`。
+    //   所以 why 必须是**能填进"照___认的"这个框里的话**，不是一句自带主语的句子。
+    //   ⚠ 这两个串都改过一轮：name 那条原来是「你说了「作图」」（拼出来"照你说了…认的"），
+    //     score 那条原来是「照话头认的」（拼出来"**照照**话头**认的认的**"）。
+    //     两个都是"看着像改好了"，**要拼进那句话里读一遍才知道**。
+    // ①：老师把名字打出来了——这不用"认"，别挂括号，直接说「我换到【作图】办了」。
+    if (名 && text.indexOf(名) >= 0) return { work: r.work, why: '你提到了「' + 名 + '」', sure: 1 };
+    // ②：没打名字，是按话头认的——这一句得让老师看见"我是怎么猜的"，他才好改。
+    if (新 >= BAR && 新 - 旧 >= BAR) return { work: r.work, why: '话头', sure: 0 };
+    return null;
+  }
+
   // ============================================================
   //  二、界面
   // ============================================================
@@ -387,11 +437,14 @@ SR.landing = (function () {
     return false;
   }
 
-  function strip(w, sure, why) {
+  // 第 4 个参数 `lead`（2026-10-07）：左边那句话整句换掉。不传 = 今天那句「我按【X】办的」。
+  //   谁传它：开场之后的**自动换工位**那条路，它要说的是「我换到【作图】办了」，
+  //   跟首屏那句不是一回事（首屏是"我认出来是哪一件"，这儿是"我把手上这件换成那件了"）。
+  function strip(w, sure, why, lead) {
     var bar = els.bar;
     if (!bar) return;
     var soft = sure ? '' : '<span class="soft">（照' + esc(why || '形状') + '认的）</span>';
-    bar.innerHTML = '<span class="rt">我按 ' + esc(lbl(w)) + ' 办的</span>' + soft
+    bar.innerHTML = '<span class="rt">' + esc(lead || ('我按 ' + lbl(w) + ' 办的')) + '</span>' + soft
                   + '<button type="button" class="rchg" id="routechg">换一件</button>'
                   + '<span class="rpick" id="routepick" hidden></span>';
     bar.hidden = false;
@@ -484,30 +537,50 @@ SR.landing = (function () {
   // ★ 它**必须**放在 SR.api.ready() 那道闸后面（见 chat.js submit 里的位置）：
   //   没配 Key 的时候该弹的是 Key 层，不是先替他归个类。
   function intercept() {
-    if (!blocking()) return false;
     var t = $('input');
     var text = t ? String(t.value || '').trim() : '';
-    var hasParts = !!(SR.chat && SR.chat.hasPendingImage && SR.chat.hasPendingImage());
 
-    if (!text && hasParts) {
-      // 只发了文件、一个字没打：**不猜**。一张照片是"卷子"还是"一道题"，
-      // 从这儿看不出来（文件名不可靠），猜错了等于把它送进错的提示词。
-      held = ''; heldOn = true;
-      askState({ why: '', ranked: SR.WORK_ORDER, score: 0 });
-      return true;
+    if (blocking()) {
+      var hasParts = !!(SR.chat && SR.chat.hasPendingImage && SR.chat.hasPendingImage());
+
+      if (!text && hasParts) {
+        // 只发了文件、一个字没打：**不猜**。一张照片是"卷子"还是"一道题"，
+        // 从这儿看不出来（文件名不可靠），猜错了等于把它送进错的提示词。
+        held = ''; heldOn = true;
+        askState({ why: '', ranked: SR.WORK_ORDER, score: 0 });
+        return true;
+      }
+      if (!text) return false;
+
+      var r = route(text);
+      if (!r.work) {
+        held = text; heldOn = true;
+        askState(r);
+        return true;
+      }
+      pick(r.work, true);
+      lastSent = text;                  // 留着，万一他回头点「换一件」
+      strip(r.work, r.sure, r.why);
+      return false;                     // 放行——这一句照样发，只是工位已经按好了
     }
+
+    // ---- 开场之后：每一轮都顺手认一下，认得出就自己换过去（2026-10-07）----
+    // ★ 这就是他要的「六个工位只当**触发词**，配合老师说的话，由智能体自己接」——
+    //   原来 route() 只在首屏那一下跑，老师一开口它就永远闭嘴了。
+    // ★ 认出来：**自己换过去 + 把这件事写在那一行上**（底线① 归类要看得见、一下能改）。
+    //   认不出：**一个字都不动**（底线② 不像就不像，不许硬塞），这句话照常发。
+    // ★ 必须回 **false**：回 true 等于把老师这句话吞掉，屏幕上只剩一行"我换到…办了"，
+    //   一件事没办，而且看着像发出去了（这条坑首屏那条注释里写着）。
+    // ⚠ 位置就在 `blocking()` 的**后面**，不跟首屏那一段抢：首屏是"这一场还没开始，
+    //   这一句走哪一件"；这儿是"已经开始的那一件，要不要换"。两件事，门槛也不一样。
     if (!text) return false;
-
-    var r = route(text);
-    if (!r.work) {
-      held = text; heldOn = true;
-      askState(r);
-      return true;
-    }
-    pick(r.work, true);
-    lastSent = text;                    // 留着，万一他回头点「换一件」
-    strip(r.work, r.sure, r.why);
-    return false;                       // 放行——这一句照样发，只是工位已经按好了
+    var g = 该换吗(text);
+    if (!g) return false;
+    // ★ keepBoard：老师正说着话、图还在板上，换过去把图抹了是不可接受的
+    //   （"这道题画出来，再出几个变式"正是要接着那张图办）。手点工位那一行不传。
+    if (SR.main && SR.main.applyWork) SR.main.applyWork(g.work, false, { keepBoard: true });
+    strip(g.work, g.sure, g.why, '我换到 ' + lbl(g.work) + ' 办了');
+    return false;
   }
 
   function init() {
@@ -532,6 +605,7 @@ SR.landing = (function () {
     init: init,
     route: route,          // 纯函数，探针直接调这个
     score: score,
+    该换吗: 该换吗,          // ← 开场之后那一道（同上，纯函数；工位从 SR.chat.getWork 现问）
     blocking: blocking,
     intercept: intercept,  // chat.js submit() 顶上那一句
     show: show, hide: hide,

@@ -64,7 +64,7 @@ try { fs.mkdirSync(SHOT, { recursive: true }); } catch (e) {}
   const P = (...a) => 出.push(a.join(' '));
 
   await send('Page.enable', {}); await send('Runtime.enable', {});
-  await send('Network.setCacheDisabled', { cacheDisabled: true });
+  await send('Network.enable',{});await send('Network.setCacheDisabled', { cacheDisabled: true });
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: PAGE + '?p032a=' + Date.now() });
   for (let i = 0; i < 80; i++) { if (await ev('!!(window.SR&&SR.board&&SR.memo)').catch(() => false)) break; await sleep(500); }

@@ -46,7 +46,7 @@ const PAGE = 'http://localhost:8138/index.html';
     + '写的工位:SR.chat.getWork()};})()');
 
   await send('Page.enable', {}); await send('Runtime.enable', {});
-  await send('Network.setCacheDisabled', { cacheDisabled: true });
+  await send('Network.enable',{});await send('Network.setCacheDisabled', { cacheDisabled: true });
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: PAGE + '?rb=' + Date.now() });
   for (let i = 0; i < 60; i++) { if (await ev('!!(window.SR&&SR.chat&&SR.memo&&SR.landing)').catch(() => false)) break; await sleep(500); }

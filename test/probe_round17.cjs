@@ -47,7 +47,7 @@ const 判 = (名, 真, 料) => {
   await new Promise(r => ws.on('open', r));
   const send = (m, p) => new Promise(r => { const i = ++id; pend[i] = r; ws.send(JSON.stringify({ id: i, method: m, params: p })) });
   await send('Page.enable', {}); await send('Runtime.enable', {});
-  await send('Network.setCacheDisabled', { cacheDisabled: true });   // ★ 硬过缓存
+  await send('Network.enable',{});await send('Network.setCacheDisabled', { cacheDisabled: true });   // ★ 硬过缓存
   const 视口 = async (w, h) => { await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false }); await sleep(400) };
   const q = async e => {
     const r = await send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true });

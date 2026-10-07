@@ -63,7 +63,7 @@ let TAB = null;
   ws.on('message', m => { const r = JSON.parse(m); if (r.id && pend[r.id]) { pend[r.id](r); delete pend[r.id]; } });
   await new Promise(r => ws.on('open', r));
   await send('Runtime.enable', {}); await send('Page.enable', {});
-  await send('Network.setCacheDisabled', { cacheDisabled: true });   // ★ 别吃缓存：本仓库栽过，会把已生效判成没生效
+  await send('Network.enable',{});await send('Network.setCacheDisabled', { cacheDisabled: true });   // ★ 别吃缓存：本仓库栽过，会把已生效判成没生效
   await send('Page.bringToFront', {});
   const q = async e => {
     const r = await send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true });
