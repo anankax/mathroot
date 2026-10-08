@@ -1137,7 +1137,10 @@ SR.api = (function () {
         model: model,
         messages: msgs,
         temperature: SR.TEMPERATURE,
-        max_tokens: SR.MAX_TOKENS,
+        // ★ 输出上限：默认 SR.MAX_TOKENS（1024，按"数根回的是短问句"定的），
+        //   工位自己写了 `maxTokens` 就用它的。**目前只有组卷那一格**——
+        //   它的提示词要求"一整份卷子一条回复写完"，1024 装不下，见 config.js 那一段。
+        max_tokens: (SR.WORKS[opts.work] || {}).maxTokens || SR.MAX_TOKENS,
         stream: true
       };
       // ★ thinking 只对 DeepSeek 发。GLM 前后两代模型都不吃这个参数，别去惹它的参数校验。

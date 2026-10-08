@@ -330,7 +330,21 @@ SR.WORKS = {
     // ★ 2026-10-06（整改方案⑥）：这一格也开**蓝图闸门**——出的是一整份要印的卷子，
     //   题号、分值、考什么先让他看一眼再排。见 SR.WORKS 顶上 `blueprint` 那一段。
     blueprint: true,
-    retrieve: false, tail: false, listPaper: false, stripAssign: true, chain: 'role'
+    retrieve: false, tail: false, listPaper: false, stripAssign: true, chain: 'role',
+    // ★★ 2026-10-08：**这一格单独放宽输出上限**（SR.MAX_TOKENS 是 1024，其余五格照旧）。
+    //   为什么非改不可：这个工位的提示词里写死了一条命根子规矩——
+    //     js/prompt-material.js:92「★★ 一次只写一个 ```材料 围栏。不要先写半份、再补半份。」
+    //   也就是说"一整份卷子必须在**一条回复**里写完"。可 1024 tokens 只够一千五百来个字，
+    //   实测线上（模板 B08、话说"十道题"）模型照模板排了 10+10+10 共 30 道，
+    //   回话在 28 题中间被**截断**，卡片只好报「有 1 处要修：这一段的 $ 没配对」。
+    //   ⇒ 产品要它一口气写完，又不给它写满的额度，这两条规矩是打架的。
+    //   定 3072 是量出来的，不是拍的：这一格的 system+user 实测 5060 tokens
+    //   （六工位线上那一趟），历史按 b.budget 裁到最多 7000，
+    //   而链底那颗 glm-4v-flash 只有 16K（config.js:26）——
+    //   5060 + 7000 + 3072 = 15132 < 16384，留一千多 token 余量。
+    //   ⚠ 别照着往上加：加到 4096 就顶到 16156，擦着 16K 过，
+    //     降级到 glm-4v-flash 那一档就会 1210「输入过长」，而且是**一声不吭**的那种挂。
+    maxTokens: 3072
   },
   draw: {
     id: 'draw', label: '作图', badge: '平面立体同一块板 · 存图贴进课件',
