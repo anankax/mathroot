@@ -36,15 +36,31 @@ SR.files = (function () {
     if (/^image\//.test(t) || /\.(png|jpe?g|gif|webp|bmp|heic|heif)$/.test(n)) return 'image';
     if (t === 'application/pdf' || /\.pdf$/.test(n)) return 'pdf';
     if (/\.docx$/.test(n)) return 'docx';
+    // ★★ 2026-10-08：`.xlsx` 从这一档里**单独提出来**（原来跟 .xls／.ppt／.pptx 挤在
+    //   'office' 里、共用一句"读不了"）。理由是学情工位：它的第一句话就是
+    //   「把成绩表发给我（智学网导出的那种就行）」，而智学网导出的**就是 .xlsx**——
+    //   这是那一格最常来、也最该读得懂的东西，却被归进了"读不了"。
+    //   ⚠ `.xls` **仍在读不了那一档**：它是 BIFF 二进制（不是 zip），跟 .xlsx 不是一个东西，
+    //     xlsxPart 那套解 zip 的路子对它一个字都用不上。别把这两个后缀并进同一个判断。
+    if (/\.xlsx$/.test(n)) return 'xlsx';
+    if (/\.(xls|ppt|pptx)$/.test(n)) return 'office';
     if (/\.(txt|md|csv|json)$/.test(n) || /^text\//.test(t)) return 'text';
     if (/\.doc$/.test(n)) return 'doc-old';
-    if (/\.(ppt|pptx|xls|xlsx)$/.test(n)) return 'office';
     return 'unknown';
   }
 
   var WHY = {
     'doc-old': '.doc 是 Word 的老格式，浏览器读不了。用 Word 打开，另存为 PDF 或者 .docx 再发。',
-    'office': '.pptx / .xls 读不了。截图，或者另存为 PDF 再发。',
+    // ★★ 2026-10-08 从一条 'office' 里劈出来。原来 xls／xlsx／ppt／pptx 共用一句
+    //   「.pptx / .xls 读不了」——那句话对**成绩表**这件事是**错的**：
+    //   学情工位的第一句话是「把成绩表发给我（智学网导出的那种就行）」，而智学网导出的
+    //   就是 .xlsx，正是这一档最常来的东西；老师拖进来一张 .xlsx，屏幕上却回他一句
+    //   讲 .pptx 和 .xls 的话——**那句话指不到他手上那个文件**，他只会以为
+    //   "这产品不认我的表"，然后放弃。
+    //   ⇒ `.xlsx` 已经**真读得懂了**（`xlsxPart`，走 .docx 那套原生解 zip），
+    //     从这一档里搬走；留在这一档的是 `.xls`（BIFF 二进制，不是 zip，解不了）
+    //     和幻灯片。孔老师 2026-10-08 拍板的：xlsx 直接读 + 得分率在代码里算准。
+    'office': '.xls / .ppt / .pptx 读不了。Excel 的**老格式**（.xls）请先用 Excel 另存为 .xlsx；幻灯片截图，或者另存为 PDF 再发。',
     'unknown': '这个格式读不了。截图，或者另存为 PDF 再发。'
   };
 
@@ -260,6 +276,156 @@ SR.files = (function () {
   }
 
   // ============================================================
+  //  .xlsx → 一张表（制表符分隔的文本）
+  // ============================================================
+  // ★★ 2026-10-08 加。为什么非有不可：学情工位的第一句话是「把成绩表发给我
+  //   （智学网导出的那种就行）」，而智学网导出的**就是 .xlsx**。
+  //   加它之前，老师拖进来的正是它要的那个文件，屏幕上回一句「把成绩表发给我」——
+  //   实测（探针 p/grade_xlsx.json）原文就是这一句。整个工位进不去门。
+  //
+  // ★ 怎么做到不引任何库：.xlsx 跟 .docx 一样是 **zip**，上面 `unzipEntry` 那套
+  //   （原生 DecompressionStream('deflate-raw')）直接能用。要读的只有两个成员：
+  //     xl/sharedStrings.xml  —— 字符串池，单元格 `t="s"` 时那个数是**池子的下标**
+  //     xl/worksheets/sheet1.xml —— 格子本身
+  //   ⚠ 别拿"Excel 文档里大概是这么写的"当事实：下面每一处形状都是拿孔老师机器上
+  //     真存的 .xlsx（`22-阅卷工作/第一次月考/…七年级7班.xlsx`、`19-周考成绩/*.xlsx`）
+  //     解开看过的——包括**这个文件里的 sharedStrings 是空的（0 条）** 这种情形。
+  //
+  // ★ 提取的边界，三件明说：
+  //   ① **值是数字就写数字**（`118.0` 收成 `118`）。日期在 xlsx 里是数字序列号，
+  //      这个格式里**读不成日期**——成绩表里用不着，认了，不硬猜。
+  //   ② 多个工作表时**挑格子最多的那张**（实测有的文件 sheet1 是空的、数据在 sheet2），
+  //      并在 note 里说一句"这文件里有几张表、读了哪张"，不让它悄悄少读。
+  //   ③ 合并单元格、样式、公式**一概不管**：要的是"哪一行哪一列写了什么"。
+  function 列号(s) {                       // 'AB' → 27（0 基）
+    var n = 0;
+    for (var i = 0; i < s.length; i++) n = n * 26 + (s.charCodeAt(i) - 64);
+    return n - 1;
+  }
+  function 去标签(s) {
+    return String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+      .replace(/&#(\d+);/g, function (_, d) { return String.fromCharCode(+d); })
+      .replace(/&#x([0-9a-fA-F]+);/g, function (_, h) { return String.fromCharCode(parseInt(h, 16)); })
+      .replace(/&amp;/g, '&');
+  }
+  // 一块 XML（`<si>` 或 `<is>`）里的所有 `<t>` 拼起来就是那格的字
+  function 池子里字(块) {
+    var m = String(块).match(/<t[^>]*>([\s\S]*?)<\/t>/g) || [];
+    var s = '';
+    for (var i = 0; i < m.length; i++) s += 去标签(m[i].replace(/^<t[^>]*>/, '').replace(/<\/t>$/, ''));
+    return s;
+  }
+  function 读共享串(xml) {
+    var out = [];
+    if (!xml) return out;
+    var si = String(xml).match(/<si\b[\s\S]*?<\/si>/g) || [];
+    for (var i = 0; i < si.length; i++) out.push(池子里字(si[i]));
+    return out;   // ⚠ 可能是**空数组**（实测真文件里就有），所以下面取值一律带存在性判断
+  }
+  // 一张 sheet 的 XML → 二维数组
+  function 读表(xml, 共享) {
+    var rows = [], 行们 = String(xml).match(/<row\b[^>]*>[\s\S]*?<\/row>|<row\b[^>]*\/>/g) || [];
+    for (var i = 0; i < 行们.length; i++) {
+      var 行号 = 0, mr = 行们[i].match(/<row\b[^>]*\br="(\d+)"/);
+      if (mr) 行号 = Number(mr[1]) || 0;
+      var 行 = [], 格们 = 行们[i].match(/<c\b[^>]*>[\s\S]*?<\/c>|<c\b[^>]*\/>/g) || [];
+      for (var j = 0; j < 格们.length; j++) {
+        var c = 格们[j];
+        var mc = c.match(/\br="([A-Z]+)\d+"/);
+        if (!mc) continue;
+        var 列 = 列号(mc[1]);
+        // ⚠ 这里必须是 `[A-Za-z]+`：Excel 的单元格类型里有一个 **`inlineStr`**（大写 S），
+        //   而它正是孔老师那些成绩表**用得最多**的一种（`<is><t>姓名</t></is>`）。
+        //   只写 `[a-z]+` 的话 `inlineStr` **匹配不上** → 类型读成空 → 掉进下面
+        //   "普通数字"那一支 → 那格既没有 `<v>` 也没有别的，于是**一个格子一个字都读不出**。
+        //   症状极阴：表读出来了、行数对、数字全对，**只有文字列是空的**——
+        //   而文字列恰好是「学号／姓名／题号／满分」这些**给表定名分的格子**。
+        //   实测（2026-10-08，`node xtest.cjs`，拿他 19-周考成绩、22-阅卷工作 里真存的
+        //   7 份 xlsx）：改之前每张表的表头整行是空白；改之后 学号／姓名／分数 都在。
+        var 类型 = (c.match(/\bt="([A-Za-z]+)"/) || [,''])[1];
+        var v = '';
+        if (类型 === 's') {
+          var mv = c.match(/<v>([\s\S]*?)<\/v>/);
+          var k = mv ? Number(mv[1]) : -1;
+          v = (共享 && k >= 0 && k < 共享.length) ? 共享[k] : '';
+        } else if (类型 === 'inlineStr') {
+          v = 池子里字(c);
+        } else {
+          var mv2 = c.match(/<v>([\s\S]*?)<\/v>/);
+          if (mv2) v = 去标签(mv2[1]);
+        }
+        v = String(v == null ? '' : v).replace(/\.0+$/, '').replace(/[\t\r\n]+/g, ' ').trim();
+        // ★ 浮点噪声：Excel 存的是二进制浮点，`97.65` 取出来会长成 `97.65000000000001`。
+        //   原样交给模型，它就照这个念——老师看见屏幕上一串小数位，只会觉得这产品脏。
+        //   ⚠ 只在**小数位 ≥8 位**时收，两位三位的真数一个都不碰（成绩表用不着更多位）。
+        if (/^-?\d+\.\d{8,}$/.test(v)) {
+          var f = Number(v);
+          if (isFinite(f)) v = String(Math.round(f * 100) / 100);
+        }
+        行[列] = v;
+      }
+      for (var z = 0; z < 行.length; z++) if (行[z] == null) 行[z] = '';
+      rows.push({ 行号: 行号 || rows.length + 1, 格: 行 });
+    }
+    return rows;
+  }
+  function 记字数(rows) {
+    var n = 0;
+    for (var i = 0; i < rows.length; i++) for (var j = 0; j < rows[i].格.length; j++) if (rows[i].格[j]) n++;
+    return n;
+  }
+  function 铺成文本(rows) {
+    var out = [], W = 0;
+    for (var i = 0; i < rows.length; i++) W = Math.max(W, rows[i].格.length);
+    for (var k = 0; k < rows.length; k++) {
+      var a = rows[k].格.slice(0, W);
+      while (a.length < W) a.push('');
+      out.push(a.join('\t'));
+    }
+    return out.join('\n');
+  }
+  function xlsxPart(file, cb) {
+    file.arrayBuffer().then(function (buf) {
+      // ① 共享串（可能整个成员都没有）
+      return unzipEntry(buf, 'xl/sharedStrings.xml')
+        .then(function (x) { return x; }, function () { return ''; })
+        .then(function (ssxml) {
+          var 共享 = 读共享串(ssxml);
+          // ② 工作表：sheet1..sheet6 挨个试，挑"有字的格子最多"的那张
+          var 底 = null, 有几张 = 0, 名字 = [];
+          var 链 = Promise.resolve();
+          for (var n = 1; n <= 6; n++) (function (n) {
+            链 = 链.then(function () {
+              return unzipEntry(buf, 'xl/worksheets/sheet' + n + '.xml').then(function (x) {
+                有几张++;
+                var rows = 读表(x, 共享);
+                if (记字数(rows) < 2) return;
+                名字.push('sheet' + n);
+                if (!底 || 记字数(rows) > 底.n) 底 = { n: 记字数(rows), rows: rows, 谁: 'sheet' + n };
+              }, function () { /* 这张不存在，跳过 */ });
+            });
+          })(n);
+          return 链.then(function () { return { 底: 底, 有几张: 有几张 }; });
+        });
+    }).then(function (r) {
+      if (!r.底) return cb('这个 xlsx 里没读到内容（可能是空表，或者只有图）。');
+      var 文本 = 铺成文本(r.底.rows);
+      if (!文本) return cb('这个 xlsx 里没读到内容。');
+      var note = '';
+      // ★ 多张表时**必须说一句**：不说的话，"读了信息最多的那张"这个选择
+      //   就成了一次没有痕迹的取舍——老师以为整份文件都进来了。
+      if (r.有几张 > 1) {
+        note = file.name + ' 里有 ' + r.有几张 + ' 张表，我读了信息最多的那张（' + r.底.谁 +
+               '）。要指定哪一张，把它单独存一个文件再发。';
+      }
+      cb(null, { kind: 'text', text: 文本.slice(0, MAX_TEXT), name: file.name }, note);
+    }).catch(function (e) {
+      cb('这个 xlsx 打不开（' + ((e && e.message) || e) + '）。在 Excel 里另存为 CSV 再发也行。');
+    });
+  }
+
+  // ============================================================
   //  汇总：一批文件 → 一批 parts
   // ============================================================
   // cb(errText, parts, notes)
@@ -296,6 +462,7 @@ SR.files = (function () {
       if (kind === 'image') return imagePart(f, done);
       if (kind === 'pdf') return pdfParts(f, done);
       if (kind === 'docx') return docxPart(f, done);
+      if (kind === 'xlsx') return xlsxPart(f, done);
       if (kind === 'text') {
         f.text().then(function (t) {
           t = String(t || '').trim();

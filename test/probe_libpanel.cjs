@@ -114,8 +114,13 @@ window.__锚 = [];
 window.__开 = function(){ var b = document.getElementById('libbtn'); if (!b) return '__没按钮'; b.click(); return 1 };
 window.__书开着 = function(){ var p = document.getElementById('libp');
   return !!p && p.getClientRects().length > 0 };
-window.__尺开着 = function(){ var p = document.getElementById('tplp');
-  return !!p && p.getClientRects().length > 0 };
+// ⚠ 原来这儿还有一条 __尺开着（读 #tplp，作图模板那块）。2026-10-08 撤了——
+//   #tplp / #drawtplbtn / js/drawui.js 三个都不在页面里了，只剩 📚 这一颗。
+//   跟着改的是下面 0.1 / 组1 那几条：📐↔📚 的 Esc 互相让位那一档不存在了，
+//   换成的是一条"Esc 关完再按一次不炸"的对照（js/libui.js 里那句 $('tplp') 守卫
+//   现在恒为假，得有人看着它别把别的路带坏）。
+//   ⚠⚠ 这段是**在模板串里的**：一个反引号都不许出现，会把这个模板串当场掐断
+//      （scanner 那族记过的坑：node --check 是唯一抓得住它的东西）。上面那几行就是这么写才对。
 window.__焦点 = function(){ return document.activeElement ? document.activeElement.id : '' };
 // ★★ 派在 **body** 上，不派在 document 上 —— 这一点必须这么写，不然 1.5 会假红：
 //   按键的真实现场是"事件从焦点元素冒泡到 document"。可如果直接把事件派给 document，
@@ -221,20 +226,21 @@ window.__esc = function(){ document.body.dispatchEvent(new KeyboardEvent('keydow
     return { 条在: !!rail && rail.getClientRects().length > 0, 件数: bs.length, 看: 看,
              data_toolrail: document.body.getAttribute('data-toolrail'), 工位: document.body.getAttribute('data-work') };
   })()`);
-  判('0.1 栏里有 2 件（📐 + 📚），两件都看得见',
-    栏.件数 === 2 && 栏.看.every(x => x.看得见) && 栏.条在, 栏);
+  判('0.1 栏里有 1 件（📚），它看得见，栏也露着',
+    栏.件数 === 1 && 栏.看.every(x => x.看得见) && 栏.条在
+    && 栏.看[0].id === 'libbtn', 栏);
   await q(`(function(){ SR.main.applyWork('material'); return 1 })()`); await sleep(800);
   const 组 = await q(`(function(){
     var bs = document.querySelectorAll('#toolrail .railtool'), 看 = [];
     for (var i=0;i<bs.length;i++) 看.push(bs[i].getClientRects().length > 0);
-    return { 工位: document.body.getAttribute('data-work'), 都看得见: 看.length===2 && 看[0] && 看[1] };
+    return { 工位: document.body.getAttribute('data-work'), 都看得见: 看.length===1 && 看[0] };
   })()`);
   判('0.2 [对照] 切到**组卷**工位，📚 照旧看得见（它没写 data-only；写了就会在这儿消失）',
     组.工位 === 'material' && 组.都看得见 === true, 组);
 
   // ─────────────────────────────────────────────
   console.log('\n════════ 1. 开关（好版本，先量 —— 后面要换版，换完 Esc 监听会累积）════════');
-  await q(`(function(){ if (SR.DRAWUI) SR.DRAWUI.关(); SR.LIBUI.关(); return 1 })()`); await sleep(200);
+  await q('(function(){ SR.LIBUI.关(); return 1 })()'); await sleep(200);
   await q('window.__开()'); await sleep(400);
   const 开1 = await q(`(function(){ return { 开: window.__书开着(), aria: document.getElementById('libbtn').getAttribute('aria-expanded'),
     焦点: window.__焦点() } })()`);
@@ -247,28 +253,24 @@ window.__esc = function(){ document.body.dispatchEvent(new KeyboardEvent('keydow
 
   await q('window.__开()'); await sleep(300);
   await q('window.__esc()'); await sleep(300);
-  判('1.3 开着的时候按 Esc → 收（跟 📐 那条一个规矩）', (await q('window.__书开着()')) === false);
+  判('1.3 开着的时候按 Esc → 收', (await q('window.__书开着()')) === false);
 
-  await q('window.__esc()'); await sleep(150);
-  await q(`(function(){ document.getElementById('drawtplbtn').click(); return 1 })()`); await sleep(400);
+  // ★★ 1.4–1.6 原来量的是"📐 开着的时候按 Esc，先关 📐、📚 还留着"——
+  //   那是 `libui.js` 里 `capture:true` 加"先看 📐 开着没"那两处的**全部理由**。
+  //   2026-10-08 📐 撤了（`#tplp` / `#drawtplbtn` / drawui.js 三个都不在页面里），
+  //   这一档**在页面上已经不可能发生** —— 硬留着就是拿一个不存在的场景读自己的脸色。
+  //   ⇒ 换成现在**唯一还成立**、而且真有人该看着的那条：关完之后再按 Esc 不许有副作用。
+  //   `libui.js` 里那句 `$('tplp')` 守卫现在还留着（防御性的），它**现在恒为假**；
+  //   哪天有人把这段改成"守卫不存在就整个 return"，那就会变成"开着的时候按 Esc 也关不掉"。
+  //   下面这两条就是替那件事站岗的。
+  await q('window.__esc()'); await sleep(300);
+  判('1.4 [Esc 幂等] 关着的时候再按一次 Esc → 面板还关着（守卫恒假的这段路没把它带坏）',
+    (await q('window.__书开着()')) === false);
   await q('window.__开()'); await sleep(400);
-  const 两层 = await q(`(function(){ return { 模板开: window.__尺开着(), 资料开: window.__书开着() } })()`);
-  判('1.4 [前置] 两个面板能同时开着（作图模板开 → 再开资料库）',
-    两层.模板开 === true && 两层.资料开 === true, 两层);
-  await q('window.__esc()'); await sleep(400);
-  const 一层 = await q(`(function(){ return { 模板开: window.__尺开着(), 资料开: window.__书开着() } })()`);
-  判('1.5 ★ [Esc 只收一层] 一次 Esc 只关掉作图模板，资料库**还开着**',
-    一层.模板开 === false && 一层.资料开 === true, 一层);
-  await q('window.__esc()'); await sleep(400);
-  判('1.6 再按一次 Esc → 资料库也收了', (await q('window.__书开着()')) === false);
-  await q(`(function(){ if (SR.DRAWUI) SR.DRAWUI.关(); SR.LIBUI.关(); return 1 })()`); await sleep(300);
-  await q('window.__开()'); await sleep(400);
-  const 反前置 = await q(`(function(){ var p = document.getElementById('tplp');
-    return { 模板没开: !p || p.hidden === true, 资料开: window.__书开着() } })()`);
-  await q('window.__esc()'); await sleep(400);
-  判('1.7 [对照] 📐 没开的时候按 Esc，📚 照样当场关（证明 1.5 不是"Esc 根本不管用"）',
-    反前置.模板没开 === true && 反前置.资料开 === true
-    && (await q('window.__书开着()')) === false, 反前置);
+  const 往返 = await q('window.__书开着()');
+  await q('window.__esc()'); await sleep(300);
+  判('1.5 [Esc 之后仍可用] 再点 📚 照样开得起来（状态没被上一次 Esc 弄坏）',
+    往返 === true && (await q('window.__书开着()')) === false, { 点开: 往返 });
 
   // ─────────────────────────────────────────────
   console.log('\n════════ 2. 开机 / 开面板 / 空查询 —— 一次请求都不许发 ════════');

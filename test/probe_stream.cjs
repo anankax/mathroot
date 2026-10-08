@@ -791,7 +791,7 @@ const later = what => { console.log('  ○ 未验（留到后面阶段）：' + 
   //     比没有还坏，它会让后面的人以为这一块有人看着。）
   //   ⇒ 换成两条：① 那个容器**确实没了**（谁哪天把它加回来，这条会红，
   //        因为"想说"就有回到"常驻一排"那条老路上去的风险）；
-  //      ② **整条祖先链**里不许出现 `.composer`／`#steps`／`#routebar`
+  //      ② **整条祖先链**里不许出现 `.composer`／`#routebar`（#steps 已撤）
   //        —— 这三个都是"跟第几轮无关的固定位置"，长在里面就是老毛病复发。
   console.log('\n⑩「想说」跟着回复走（阶段 G）');
   const ck = await ev(`(function(){
@@ -828,7 +828,7 @@ const later = what => { console.log('  ○ 未验（留到后面阶段）：' + 
      ck.老容器在不在);
   ok((ck.链 || []).length >= 2 && /^chips/.test(ck.链[0]) && /bubble/.test(ck.链[1])
      && !(ck.链 || []).some(function(x){ return /composer|steps|routebar/.test(x); }),
-     '⑩ 它的祖先是 气泡 → 消息，**整条链里没有 `.composer`／`#steps`／`#routebar`**（那三个是固定位置，长在里面就是老毛病）',
+    '⑩ 它的祖先是 气泡 → 消息，**整条链里没有 `.composer`／`#routebar`**' +
      ck.链);
   ok(ck.颗数 === 3 && ck.文字.join('|') === '换一组数据|让它动起来|看这个变化',
      '⑩ 三颗就是模型写的那三句（走的是 ```想说 围栏，不是本地兜底）', ck.文字);

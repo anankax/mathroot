@@ -225,6 +225,13 @@ window.SRlib = (function () {
      放在这里而不是跟着上面四个排，是因为它跟"这份文件从哪儿来的"有关，
      跟加载顺序无关（SR.WORKS 里那几个 prompt 都是函数，调用时才取）。 -->
 <script defer src="js/prompt-grade.js"></script>
+<!-- 学情那一格的**算盘**（2026-10-08）：把老师拖进来的成绩表**在代码里**算成
+     "每题平均分／得分率 + 从低到高的名次"，再交给模型念（见文件顶上那段——
+     算术交给模型它会**编**，实测名次基本是反的）。
+     ★ 它只吃文本，不吃 xlsx —— 表怎么读出来是 js/files.js 的事，两边不搭界。
+     ★ 什么时候加载都行（读它的是 api.js 里那个函数体，发送那一刻才求值），
+       放这儿是因为它跟 prompt-grade.js 是同一格的同一件事，摆一起好找。 -->
+<script defer src="js/scores.js"></script>
 <!-- 模板解析 / 出 docx / 右栏预览。三个都是纯前端、零依赖，
      在任何别的模块之前装好，免得 chat.js 要用时还没到。 -->
 <script defer src="js/docx.js"></script>
@@ -256,20 +263,14 @@ window.SRlib = (function () {
 <script defer src="js/resources.js"></script>
 <script defer src="js/files.js"></script>
 <script defer src="js/board.js"></script>
-<!-- 作图模板（2026-10-05）。两半故意分开：
-     · drawtpl.js —— **纯函数**：老师填的那几个空 →（话，命令骨架）。不开浏览器就能量。
-     · drawui.js  —— 界面那半：把格子摆出来、把值收回去。
-     ★ 排在 board.js **后面**：骨架里那些命令名（射线／多边形／垂直平分线）跟
-       board.js 的 CMD_MAP 是同一套词，注释里对着念的。
-     ★ 排在 chat.js **前面**：`SR.DRAWT.画()` 最后一步是 `SR.chat.submit(话)`。 -->
-<script defer src="js/drawtpl.js"></script>
-<script defer src="js/drawui.js"></script>
 <!-- 资料库面板（见 js/libui.js）。左边那条栏里 📚 那颗按钮开的就是它。
      ★ 排在 gate.js **后面**（要 SR.gate.reslib / libList / libSign）——
        别的它只用 SR.flow.shortName 那一个取短名的函数（在 flow.js 里）。
      ★ 它**不上板、不发对话、不碰口袋**：搜和列全在它自己那块里画，
        跟 chat.js 那条链一个交点都没有，所以排在哪儿都不影响对话那一路。
-     ⚠ 它**不读** `body[data-work]`：六个工位露同一份库（按钮上没写 data-only）。 -->
+     ⚠ 它**不读** `body[data-work]`：六个工位露同一份库（按钮上没写 data-only）。
+     ⚠ 2026-10-08：它跟 📐 作图模板一起撤过一次，当天又单独搬了回来——
+       撤掉之后页面上就没地方能自己去翻库了（见 index.html 里 `#toolrail` 那段）。 -->
 <script defer src="js/libui.js"></script>
 <!-- 右栏多页：一块 GeoGebra，好几页（见 js/tabs.js）。
      ★ 排在 board.js **后面**：它整条路都踩在 SR.board 的 snapshot/restore/
@@ -301,13 +302,6 @@ window.SRlib = (function () {
      ★ 它要的 SR.pack（账本）在上面 pack.js 那句就装好了；
        SR.chat 那几件（setStatus/getStatus）只在这儿的事件回调里才求值。 -->
 <script defer src="js/packui.js"></script>
-<!-- 投影（见 js/project.js）。★ 排在 chat.js **后面**：台阶条末尾那颗「⛶ 投影」
-     是 chat.js 的 renderSteps 挂的，它要问 `SR.project.can()` 才决定画不画。
-     ⚠ 这个顺序反过来**也读得到**（两边都只在运行时互相找，谁也不在装载时用谁），
-        摆在这儿读起来跟上面那几条是同一套道理。
-     ★ 它读 SR.memo.log() / SR.parseChain / SR.parseStepBody / SR.render.renderInto，
-       那四件分别在 memo.js / chips.js / render.js —— 全都在它前面。 -->
-<script defer src="js/project.js"></script>
 <!-- 思维导图（见 js/mindmap.js）。
      ★ 排在 chips.js **后面**：它读 SR.parseRoutes / SR.parseStepBody / SR.absorbChain
        （"有几条岔路""每个环节里学生说了什么"），那几件全在 chips.js 里。
@@ -448,12 +442,11 @@ window.SRlib = (function () {
   <button type="button" class="tool" id="aboutbtn">关于</button>
 </header>
 
-<!-- ── 左侧工具栏（2026-10-05）─────────────────────────────────────
+
+<!-- ── 左侧工具栏（2026-10-05 建 / 2026-10-08 撤 / 2026-10-08 只把 📚 搬回来）───
      ★ 孔老师原话（两次，一次是设计意见、一次是问为什么没做）：
        「实际上那个公式模板按钮什么的是可以在网页左侧的位置，做一个那种白色悬浮质感
          的工具栏集成的。没必要放在上传文件的地方。以后这里面还可以放更多的这种工具。」
-     ★ 所以它挪出了输入条（原来贴在 📎 和输入框中间）：📎 上传文件是"往这一栏送东西"，
-       作图模板是"换一种做法"，两件事本来就不该挤在同一个位置。
      ★★ **这条栏的用法就是"往里加"**：加一件工具只要在下面多写一颗按钮，写上
        `class="railtool"` 和 `data-only="<工位id，空格分开>"`（不写 = 哪个工位都露）——
        显隐由 js/main.js 的 `paintToolrail()` 现算，不用改那个函数、也不用改 css。
@@ -461,37 +454,27 @@ window.SRlib = (function () {
      ⚠ 放在 `<main>` **外面**：`.col` 是 `main` 的直接子元素，往 `main` 里再塞一个
        div，它就成了一个网格项，会多分一行出来（而它是 `position:fixed`，
        本来就不该参与排版——放外面是让这件事**一目了然**，不是补漏）。
-     ⚠ 别把 `#drawtplbtn` 改回 `tplbtn`：底下「模板库」那颗早就占了这个名字，
-       理由见下面原注释（我挪过来时把那段一起搬来了）。 -->
-<div class="toolrail" id="toolrail" role="toolbar" aria-label="作图工具" hidden>
-  <!-- ★★ 2026-10-05：**`data-only="draw"` 撤了。**
-       孔老师原话：「为什么三角尺那个只在作图工位的页面，不是全部通用的工具栏呢。」
-       ⚠ 那个卡子是我从老版本**原样搬过来的**（老 📐 长在输入条上，用
-         `body[data-work="draw"]` 卡着），搬的时候没问过它还成不成立。
-       ★ 为什么不成立：六个工位**不是六个页面**，是一段对话换六段 system。
-         对话、画板、口袋都是同一份，切工位不清空。左边这条栏是**页面的家具**，
-         家具不该跟着"这一轮我在干什么"忽隐忽现。
-       ⚠ 光去掉这个卡子还不够：那样它会**打开、能填、点了「画」，然后什么也不发**
-         ——因为料原来是挂在各工位自己的 `extra` 上，另外四个工位**压根没这个口子**。
-         所以同一刀还改了 js/config.js（六个工位改用共用口 `SR.料`）。
-         两处**必须一起**才成立，单独改哪个都是"点了没反应"。
-       ★ `data-only` 这个机制**留着**（js/main.js 的 paintToolrail 还认它）：
-         以后真有一件"只对某个工位成立"的工具，写上就行。只是 📐 不是那种。 -->
-  <button type="button" id="drawtplbtn" class="railtool"
-          aria-expanded="0" title="作图模板：填几个空，图的骨架由数根算好">📐</button>
+
+     ★★ 2026-10-08 记一笔：这条栏连同 📐 作图模板一起撤过一次，他原话是
+       「这两个也可以拆掉，我觉得不需要，主要还是 agent 要知道去云端 cloudbase
+       调取我的知识库作为参考」。★ 但**当天就把 📚 单独搬了回来**——撤完之后
+       页面上再没有一块地方能自己去翻库了，"库通没通"只能从模型的回话里看出来。
+       ⚠ 所以现在的状态是：**📚 在，📐 没回来**（drawtpl/drawui 两个文件仍然不在
+         index.html 里，别顺手补上）。投影（#proj）和台阶条（#steps）也仍然是撤着的。
+     ⚠ 别把 `#libbtn` 改回 `tplbtn`：底下工具条那颗「模板库」（传校模板的 .docx，
+       `<button class="tool tplbtn" id="tplbtn">`）才是这个名字的正主，
+       `$('tplbtn')` 拿到的是**文档里靠前的那个**，撞名会让模板库的点击挂到别处。 -->
+<div class="toolrail" id="toolrail" role="toolbar" aria-label="工具" hidden>
   <!-- ── 资料库（2026-10-07）─────────────────────────────────────────
        ★ 孔老师原话：「加一个老师自己用的「资料库」面板，面板和工具最好和那个
          三角尺按钮一样放在左边，搞一个气泡工具栏」——上面那段注释写的
          「以后这里面还可以放更多的这种工具」，这就是那"更多的"第一件。
-       ★ **不写 `data-only`** → 六个工位都露。理由跟 📐 那条一样（见上一段）：
-         翻库不是哪一件活儿的配件，是这位老师自己的书房。六个工位共用同一份对话、
-         同一份画板，这条栏是**页面的家具**。
+       ★ **不写 `data-only`** → 六个工位都露。六个工位共用同一份对话、同一份画板，
+         这条栏是**页面的家具**，家具不该跟着"这一轮我在干什么"忽隐忽现。
          ⇒ `js/main.js` 的 `paintToolrail()` **一个字都不用改**：它照 `data-only`
            现算，没写就是"哪个工位都露"；`body[data-toolrail]` 那套让位（css 里
            那个 82px 左内边距）也自动跟着成立——而让位量算的是**一条栏**的宽、
            不是按钮数，所以加一颗也不用回去改那个数。
-       ⚠ 它跟 📐 是**两件不相干的事**（一件是"换一种作图的做法"、一件是"翻我自己的材料"），
-         所以中间不画分隔线、也不做成一组——就是上下挨着的两颗。
        ★ 它**不经过模型**：点开→搜→列表→拿原件，全程直连云函数，一个字都不花额度。
          这也是它跟 `js/resources.js`（本机那本"后备资源"索引）的分工：
          那个只认 localhost、且只有文件名；这一个走云、有正文、还能拿原件。 -->
@@ -604,15 +587,6 @@ window.SRlib = (function () {
                而"两处不一样"在屏幕上看着完全正常。 -->
     <div id="msgs"></div>
     <div id="thumb"></div>
-    <!-- 链子进度条。★ 「一节一节摆」是这个产品的核心交互，所以它得看得见：
-         现在摆到第几节、大概还剩几节、点一下从哪一节接着走。
-         节号是**前端读**出来的（js/chips.js 的 SR.parseChain 读模型自己写的那行
-         `第 N 节 · 名字`），不靠模型另写一个档号——小模型一次只服从得了一件事，
-         让它写围栏之外再记一个档号，第三件一定先丢。
-         ★★ 2026-10-02：格数**不再固定**。步数和节名由模型按题自己定，
-         条子照"已经摆出来的"画，末尾那几格灰的（.todo）是它报的计划、只是预排。
-         一节都没摆出来时整根藏起来；画图／出题两个工位没有台阶，也整根藏。 -->
-    <div id="steps"></div>
     <!-- ★★ 2026-10-03 删掉了这儿的 `<div id="chips"></div>`（输入框上面那排常驻选项）。
          它在阶段 G 就没人往里写了——「想说」那三颗改成挂在**它自己那条回复**的气泡里
          （js/chat.js 的 showChips）。留着的坏处不只是"占个位置"：那条规则是
@@ -633,46 +607,17 @@ window.SRlib = (function () {
            贴着框上沿读着才像在说框里那句话。 -->
     <div id="status"></div>
 
-    <!-- ── 作图模板（2026-10-05）────────────────────────────────────────
-         孔老师那一句「最好是给一个可填写的模板给客户」就落在这个块上。
-         ★ 摆在**输入框上方、读数条下方**，不是浮层：面板一开对话区被顶高，
-           老师填表的时候还看得见上一条回复和他那张图——他多半是**看着图**
-           才想起要点模板的，糊一层浮层上去正好把它盖掉。
-         ★ 右边那块 `.tplp-prev` 是**故意给老师看命令原文的**（「你也得检查你的命令」）：
-           别处的图他只看得见图、看不见命令；模板这一档他看得见，而且看得懂。
-           图不对的时候他能一眼指出是哪一行不对。
-         ★ 内容全由 js/drawui.js 现铺（模板表在 js/drawtpl.js）——换一块模板、
-           加一块模板，这个文件一个字都不用改。 -->
-    <div id="tplp" hidden>
-      <div class="tplp-bar">
-        <span class="tplp-t">作图模板</span>
-        <span class="tplp-hint">填几个空 —— 顶点、字母顺序、坐标由数根算准，模型照着画</span>
-        <button type="button" id="tplp-x" title="关掉（Esc）">✕</button>
-      </div>
-      <div class="tplp-main">
-        <div id="tplp-rail"></div>
-        <div class="tplp-form">
-          <div id="tplp-fname"></div>
-          <div id="tplp-desc"></div>
-          <div id="tplp-fields"></div>
-        </div>
-      </div>
-      <div class="tplp-foot">
-        <pre id="tplp-prev"></pre>
-        <button type="button" id="tplp-go">照着画</button>
-      </div>
-    </div>
-
-    <!-- ── 资料库（2026-10-07）────────────────────────────────────────
-         左边那条栏里 📚 那颗按钮开的就是这一块。**跟 `#tplp` 一个路数**：
-         输入框上方的**常驻面板**（把对话区顶高），不是浮层、不是弹窗。
+    <!-- ── 资料库（2026-10-07，2026-10-08 撤过一次又搬回）────────────────
+         左边那条栏里 📚 那颗按钮开的就是这一块（见 js/libui.js）。
+         ★ 跟底下 `.composer` **不是一回事**：这一块是**常驻面板**（把对话区顶高），
+           不是浮层、不是弹窗；关掉就是 `hidden`。
          ⚠ 所以**方角、细线，别加圆角阴影**——圆角+投影是"浮层"的长相，
            而全站唯一一处浮层是左边那条 `.toolrail` 自己（它那条注释点明了）。
            给这一块加上去，老师会以为"点一下别处它就没了"，而它不会。
 
          ★ 里面**一个字都不写死**：命中、分数、书架、页号全是云上 `reslib` 那一步
            现回的；"库里有什么"那份名单也是 `liblist` 现列的。搁在这儿写死一份
-           就是给库开了第二个真源（同 `#works` / `#proj` 那两处的道理）——
+           就是给库开了第二个真源（同 `#works` 那两处的道理）——
            库里添了一份材料，屏幕上这份死名单不会跟着动，而看着完全正常。
 
          ★ 为什么两个独立的按钮、而不是"搜完自动也列一份"：
@@ -700,26 +645,24 @@ window.SRlib = (function () {
 
     <div class="composer">
       <button type="button" id="attach" title="上传照片、扫描件、PDF 或 Word（也可以直接粘贴截图）">📎</button>
-      <!-- ★★ 2026-10-05：这里原来还有一颗 📐（作图模板）。**搬去左边那条工具栏了**
-           （`#toolrail`，见 `<main>` 上面那段注释）。
-           ★ 搬走的理由：它跟 📎 挤在同一行，可 📎 是"往这一栏送东西"、📐 是"换一种做法"，
-             两件事。而且孔老师看着输入条底下说原文：「作图模板那个三角尺子，也很突兀，
-             就只有这个工位的下面和别的不一样」——它是六个工位里**唯一**多一颗按钮的，
-             靠在哪儿都跟别人不一样；摆到左边那条栏里，它就不在"工位那一行"的上下文里了。
-           ★★ 搬走时**保留了这个 id**：`js/drawui.js` 三处 `$('drawtplbtn')`
-             靠它开关那张填参数的表，改名要连着改那个文件。
-           ★★ 再写一遍那条坑（改回 `tplbtn` 就会踩）：底下工具条那颗「模板库」
+      <!-- ★★ 2026-10-05：这里原来还有一颗 📐（作图模板），搬去过左边那条工具栏。
+           ★★ 2026-10-08：**它和那条栏一起撤了**（孔老师：「这两个也可以拆掉，我觉得不需要」）。
+             这一段留下只为记一件还成立的事：底下那颗「模板库」
              （传校模板的 .docx，`<button class="tool tplbtn" id="tplbtn">`）
-             早就占了这个名字，`$('tplbtn')` 拿到的是**文档里靠前的那个**——
-             于是「模板库」的点击会挂到这颗 📐 上，真正的模板库按钮反倒成了死的。
-             实测症状：点 📐 弹出来的是"传一份你学校给的模板"那张 .docx 框。 -->
+             **才是** `tplbtn` 这个 id 的正主。找不到 📐 了也别把 `tplbtn` 往别处挪。 -->
       <!-- ★ 这里**绝对不能**写 capture="environment"（2026-10-01 拆掉的）：
            它在手机上会跳过选择、直接跳去开相机，相册和文件一个都选不了——
            "学生发一整张卷子"这条就整个落空了。宁可多一步让系统弹"拍照 / 选文件"，
            也不能把"选文件"这条路堵死。
            accept 里 image/* 、.pdf、.docx、.txt/.md 是 js/files.js 真读得了的；
-           .doc / .pptx 读不了，那边会给一句明确的话，不会静默失败。 -->
-      <input type="file" id="file" accept="image/*,.pdf,.docx,.txt,.md" multiple style="display:none">
+           .doc / .pptx 读不了，那边会给一句明确的话，不会静默失败。
+           ★★ 2026-10-08 加 .xlsx / .csv：学情那一格的表就是 xlsx（智学网导出的就是它，
+             而那一格的开场白写着"拖成绩表进来"）——在加读取之前，拖进去只会得到一句
+             **答非所问**的"读不了 .xls/.pptx"（见 js/files.js 的 WHY.office 那段）。
+           ★ 这里带不带 accept **只管选择框里默认筛什么**，不影响真读：漏了 .xlsx
+             老师还能在下拉里选"所有文件"，照样进来。所以它错了只是不方便，不是坏。
+             真正决定读不读得了的是 js/files.js 的 kindOf。 -->
+      <input type="file" id="file" accept="image/*,.pdf,.docx,.txt,.md,.xlsx,.csv" multiple style="display:none">
       <!-- placeholder 要短：输入框最矮只放得下一行，长占位符会被边框切掉半行
            （2026-10-01 截图里就切着）。详细的引导在左边开场白里已经说过了。 -->
       <textarea id="input" rows="1" placeholder="贴一道题，或者写一个课题，例如 3.1 代数式的值"></textarea>
@@ -1123,42 +1066,6 @@ window.SRlib = (function () {
   </div>
 </div>
 
-<!-- ── 投影（2026-10-03）。上课现用的大字视图：**一屏只放一节**。 ──────────
-     ★ 治的是孔老师那句话：「投到教室字太小、步骤全露」。备课／讲评的链子一屏摆全，
-       在电脑上当草稿看正合适，投到教室就同时坏了两次——字小到后排看不清，
-       而且"学生大概会说"那行提前把答案亮在黑板上，这一节课的讲法就白设计了。
-     ★ **一节之内还要再展开一次**（2026-10-04 孔老师拍板）：一上来只亮"学生大概会说"，
-       往下按一下才亮"你接这句"，再按一下才亮"这么接的道理"——
-       不然你念学生那行的时候，"你接这句"已经亮在旁边，学生答之前就看见你要接的话了。
-       展开的规矩和"前后可逆"那条，都写在 js/project.js 的头顶。
-     ★ 内容**一个字都不写在这儿**，由 js/project.js 从 `SR.memo.log()` 现读现画。
-       写死在这儿就是给链子开了第二个真源（同下面 `#works` 那条注释的道理）：
-       链子每往前走一节，这份死文本不会跟着动，而屏幕上看着完全正常。
-     ★ **一个字都不发给模型**：点开只是换一种放映方式，不产生调用、不花额度。
-
-     ⚠ 别往这里放画板（`#ggb`）。这一层是靠 `display:none` 开合的，而
-       `display:none` 会让 board.js 的 `fit()` 量到 0、图**静默**缩成 240×60
-       （同 index.html 抽屉那段里那条教训）。要在投影里看图得另开一块板。
-
-     ⚠ `tabindex="-1"` 是为了开的时候能把焦点收进来（Esc／左右键才有地方落）；
-       `aria-hidden` 交给 js/project.js 开合时写，别在这儿写死成 false。 -->
-<div class="proj" id="proj" data-proj="0" aria-hidden="true"
-     tabindex="-1" role="dialog" aria-modal="true" aria-label="投影">
-  <div class="projhead">
-    <div class="projmk">
-      <span class="projnum" id="projnum"></span>
-      <span class="projname" id="projname"></span>
-    </div>
-    <span class="projhint">空格 / → 下一步 · ← 收回</span>
-    <button type="button" class="projx" id="projx" title="退出投影（Esc）">退出<em>Esc</em></button>
-  </div>
-  <div class="projbody" id="projbody"></div>
-  <div class="projfoot">
-    <button type="button" class="projnav" id="projprev">← 上一节</button>
-    <div class="projdots" id="projdots"></div>
-    <button type="button" class="projnav" id="projnext">下一节 →</button>
-  </div>
-</div>
 
 <!-- 画笔：整页随手画（2026-10-05，孔老师提的）。
      ★★ 它挂在 `<body>` 这一层，**不放进 `.drawer`、也不放进 `.boardwrap`** —— 这是要害。

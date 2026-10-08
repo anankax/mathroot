@@ -287,11 +287,11 @@ function closeTab(tid) {
   //   元素没了，`vis` 恒返回 false，于是这条**永远是绿的**，绿的却是"东西不存在"，
   //   不是"东西被藏了"。同一族的坑：砍掉容器会把否定式断言变成恒真。
   //   现在量首屏**真用 data-landing 藏掉的那几样**（见 css/main.css 的
-  //   `body[data-landing="1"] #msgs>.msg:not(.landing), #thumb, #steps, .works, .ghost {display:none}`）：
-  //   干活那一套（工位那一行 .works、台阶条 #steps）在首屏上必须让开。
+  //   `body[data-landing="1"] #msgs>.msg:not(.landing), #thumb, .works, .ghost {display:none}`）：
+  //   干活那一套（工位那一行 .works）在首屏上必须让开。
+  //   （台阶条 #steps 2026-10-08 撤了，量它那条断言一并删掉——不删就是一条恒真的假绿。）
   //   ⚠ 量的是它们**本身**看得见看不见，不是 getComputedStyle().display——藏的是它自己。
   ok('★ 首屏在的时候，干活那一套让开了（工位那一行 .works 看不见）', (await q(vis('.works'))) === false);
-  ok('★ 首屏在的时候，台阶条 #steps 也让开了', (await q(vis('#steps'))) === false);
 
   // 首屏那几块排不排得下（本机这份宽度下）
   const fit = await q(`(function(){
@@ -343,7 +343,7 @@ function closeTab(tid) {
               //   "…已经搬进抽屉，main 现在只有一个孩子（那个 .col）"）。
               //   querySelector 找 .side 从那天起**永远是 null**，于是这一条**一直红**——
               //   一把永远红的尺子，跟"产品一直坏着"长得一模一样，谁也不会再去看它。
-              //   而且"首屏收起来的那一栏"这个说法今天也没了：首屏收的是 .works/#steps/#thumb，
+              //   而且"首屏收起来的那一栏"这个说法今天也没了：首屏收的是 .works/#thumb，
               //   画板根本不在首屏的收放范围里。所以改成量今天的实情——说完话之后，
               //   画板那一格还在文档里、抽屉还能开。（板子**活着**由下面 ggbBox 那条单独量。）
               //   ⚠ 这里是在一个模板串**里面**，注释里也不许出现反引号——

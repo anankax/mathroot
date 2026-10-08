@@ -274,14 +274,13 @@ SR.HARD_CAP = 240000;               // 全程硬顶
 //     所以 `this.id` 现成。⚠ 别改成从全局读当前工位：`extra` 一轮可能被调两次，
 //     而"当前工位"是个会变的量，读它等于把两件事绑在一起。
 //
-// ⚠ `SR.DRAWT.收()` 仍然挂在每轮收尾（js/chat.js 的 submit 末尾），**没动**：
-//   `extra` 一轮可能被调两次（重试），在 extra 里清会把重试那一次的骨架弄丢。
+// ★★ 2026-10-08：**作图那一格撤了**，连 `js/drawtpl.js` 一起（403 行）。
+//   为什么不能只撤界面：那一格的料是"老师从 📐 面板里点了模板"才有的，
+//   面板撤了，`SR.DRAWT.骨架简报()` 就恒回空串——留着它是一条**永远发不出货**的口子。
+//   ⚠ 三条一起撤的：`SR.料源.作图`、`js/drawtpl.js`、`js/chat.js` 收尾那句 `SR.DRAWT.收()`。
+//     少撤一条的后果是安静的：多一份空串、或者对 undefined 取属性。
+// ⚠ 上面那段"📐 只在作图能用"的历史到这轮为止**只作历史读**：那条栏整个没有了。
 SR.料源 = {
-  // 作图模板的骨架 —— **六个工位都收**（孔老师：工具栏是通用的）
-  作图: {
-    工位: '*',
-    取: function () { return window.SR.DRAWT ? SR.DRAWT.骨架简报() : ''; }
-  },
   // 组卷那份"格式号表" —— **只有组卷收**（原来就是这样，别顺手放宽）
   组卷: {
     工位: 'material',
@@ -439,7 +438,7 @@ SR.WORKS = {
     // ★ 2026-10-05：原来**没有这一行**——所以工具栏里的东西在这一格发不出去。
     extra: SR.料,
     retrieve: true, tail: true, chainStart: true, listPaper: false,
-    stripAssign: true, chain: 'role', steps: true, copy: true
+    stripAssign: true, chain: 'role', sys: 'prepReview', copy: true
   },
   vary: {
     id: 'vary', label: '命题', badge: '换个数字改个条件 · 每道都配图',
@@ -472,6 +471,11 @@ SR.WORKS = {
     takes: '拿走：一张得分率表 + 该讲的题号——按从低到高排，一眼看见先讲哪几道。',   // 见 material 那格 `takes` 的说明
     prompt: function () { return window.SR.PROMPT_GRADE; },
     extra: SR.料,   // ★ 2026-10-05 补：原来没有这一行（同上）
+    // ★★ 2026-10-08 加：这一格**把成绩表算好再交出去**（见 js/scores.js 顶上那段）。
+    //   挂这个钩子＝api.js 会把老师拖进来的那张表**在代码里**算出每题平均分／名次，
+    //   写成一段附注贴在提示词里；模型只负责念，一个数都不许自己算。
+    //   这一格的病就是这么来的：算术交给模型，它**编**——实测名次基本是反的。
+    scores: true,
     retrieve: false, tail: false, listPaper: false, stripAssign: false, chain: 'role'
   },
   // ★ 讲评跟备课共用一份提示词（讲评是备课的一个阶段，不是另一个职责）。
@@ -484,7 +488,7 @@ SR.WORKS = {
     lean: function () { return window.SR.PROMPT_PREP_LEAN; },
     extra: SR.料,   // ★ 2026-10-05 补：原来没有这一行（同上）
     retrieve: true, tail: true, chainStart: true, listPaper: true,
-    stripAssign: true, chain: 'role', steps: true, copy: true
+    stripAssign: true, chain: 'role', sys: 'prepReview', copy: true
   }
 };
 // 默认落在**出材料**——这一版的主线。

@@ -1,0 +1,9 @@
+# SCF 的启动脚本必须是 LF。
+#
+# 为什么单给它一条：Linux 上 exec 一个 `#!/bin/bash\r` 的脚本，内核会去找一个
+# 叫 `/bin/bash\r` 的解释器，找不到就当场退出。HTTP 云函数的后果是容器一次都不启动，
+# 网关几百毫秒就回一个空响应——长得像"函数坏了"，其实一个字符的错。
+#
+# 本机 git 开了 core.autocrlf，检出时会把这个文件从 LF 换回 CRLF，
+# 而部署工具上传的是工作区那一份。所以这里钉死，不让它换。
+cloudfunctions/*/scf_bootstrap text eol=lf

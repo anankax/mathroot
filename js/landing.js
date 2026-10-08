@@ -471,8 +471,14 @@ SR.landing = (function () {
     });
   }
   // 备课↔讲评是同一份提示词、同一条链的两个阶段（main.js 那条清空规则就是这么定的）
+  // ★★ 2026-10-08：判据从 `SR.WORKS[x].steps` 换成 `sys`——`steps` 说的是"这一格有
+  //   台阶条"，台阶条撤了，那面旗子就没地方放了。`sys` 说的才是"这两格是一个体系"。
+  //   ⚠ 这条规则**必须跟 main.js 的 `sameSys` 逐字一致**：那边管"对话要不要重开"，
+  //     这边管"事后把这一轮记到哪一格"。两处判得不一样的样子是
+  //     "对话留着、账本却记成了另一件活儿"——只在事后才看得出来。
   function sameSystem(a, b) {
-    return !!(SR.WORKS[a] && SR.WORKS[b] && SR.WORKS[a].steps && SR.WORKS[b].steps);
+    var A = SR.WORKS[a], B = SR.WORKS[b];
+    return !!(A && B && A.sys && A.sys === B.sys);
   }
   function clearStrip() { if (els.bar) { els.bar.hidden = true; els.bar.innerHTML = ''; } }
 

@@ -283,7 +283,7 @@ body[data-work="vary"] .tick::after { border-color: rgba(95, 107, 18, .5); }
 /* ★★ 裸 `[hidden]` 在这儿会**失效**：UA 样式表永远排在作者样式表前面，
    上面那条 `.onep .opbtn { … }` 一旦给了 display（哪怕是 flex/inline-block），
    `hidden` 就再也藏不住它——**不报错，只是藏不住**。
-   （同族：`.toolrail` 那条，见本文件里那段。）现在没地方用到，先钉在这儿。 */
+   （同族：凡是"先给 display 再挂 hidden"的地方都这样。）
 .onep .opbtn[hidden] { display: none; }
 
 /* ---------- 挑选模式：每条回答左边那个圆圈（见 js/packui.js） ----------
@@ -1127,7 +1127,6 @@ body[data-flow="on"] .flowbox {
      只认它是不是首屏那条，以后加一条消息不用回来改这儿。 */
 body[data-landing="1"] #msgs > .msg:not(.landing),
 body[data-landing="1"] #thumb,
-body[data-landing="1"] #steps,
 body[data-landing="1"] .works,
 body[data-landing="1"] .ghost { display: none; }
 
@@ -1447,18 +1446,17 @@ body[data-work="vary"] #send:hover { background: var(--alt-dark); }
 }
 #attach:hover { border-color: var(--brand); background: var(--brand-soft); }
 
-/* ── 左侧工具栏（2026-10-05）────────────────────────────────────────────
-   ★ 这里原来是 `.composer` 里那颗 📐 的样式（`display:none` + 只给作图显形）。
-     那颗按钮**搬去左边那条栏**了（`index.html` 的 `#toolrail`），
-     所以这一整段跟着换地方、换长相。
-   ★★ 显隐**不再由 css 管**（原来那条 `body[data-work="draw"] #drawtplbtn` 删了）：
-     现在由 `js/main.js` 的 `paintToolrail()` 照按钮上的 `data-only` 现算，
-     算完给按钮加 `hidden`。这样"加一件工具"不用回来改 css。
+/* ── 左侧工具栏（2026-10-05 建 / 2026-10-08 撤过 / 当天只把 📚 搬回来）────────
+   ★ 这里原来还放着 `.composer` 里那颗 📐 的样式（`display:none` + 只给作图显形）。
+     那颗按钮**搬去左边那条栏**（`index.html` 的 `#toolrail`），样式跟着换地方、换长相；
+     2026-10-08 连按钮带样式撤了一回，**只把 📚 那一颗搬了回来**。
+   ★★ 显隐**不由 css 管**：由 `js/main.js` 的 `paintToolrail()` 照按钮上的 `data-only`
+     现算，算完给按钮加 `hidden`。这样"加一件工具"不用回来改 css。
      ⚠ 别把 `display` 写回 `.railtool` 上：作者样式表的 `display` 会盖过
        浏览器默认的 `[hidden]{display:none}`（默认样式表永远排在后面），
        于是 `hidden` 加了等于没加，那颗按钮在六个工位上都露着。
    ★ 这段长相是**全站唯一一处"浮层"**：圆角 + 投影 + 白底。
-     全站别的面板都是方角细线（下面 `#tplp` 那条注释还写着"别加圆角阴影"）——
+     全站别的面板都是方角细线（下面 `#libp` 那条注释还写着"别加圆角阴影"）——
      这一条不是漏改，是孔老师点名要的「白色悬浮质感」：它**是**浮层
      （`position:fixed` 盖在页面上），长得像内容反而会让人以为那儿有内容。
      ⚠ 别为了"统一"把它改回方角——那就把它变回"一块贴在左边的白板"了。
@@ -1478,8 +1476,7 @@ body[data-work="vary"] #send:hover { background: var(--alt-dark); }
   border: 0; border-radius: 8px; background: transparent; cursor: pointer; color: var(--ink-2);
 }
 .toolrail .railtool:hover { background: var(--alt-soft); color: var(--alt-dark); }
-/* 开着的时候给底：跟 `#input:focus` 一个道理——"这一格现在归你"。
-   ★ 作图工位的主色是 --alt（跟 #send 一致），这儿跟着它走，不跟 --brand。 */
+/* 开着的时候给底：跟 `#input:focus` 一个道理——"这一格现在归你"。 */
 .toolrail .railtool[aria-expanded="1"] { background: var(--alt-soft); color: var(--alt-dark); }
 
 /* 让开这一条 —— 跟"抽屉拉开时让出右边"是同一个办法（`padding` 缩 content box，
@@ -1502,104 +1499,19 @@ body[data-work="vary"] #send:hover { background: var(--alt-dark); }
   }
 }
 
-/* 面板本体。★ 方角、细线、跟全站一套硬边语言；**别**给它加圆角和阴影——
-   那是浮层的样子，而它是"把对话区顶高"的一块常驻区域。 */
-#tplp {
-  flex: 0 0 auto; border-top: 1px solid var(--rule);
-  background: var(--panel); position: relative; z-index: 1;
-}
-#tplp[hidden] { display: none; }
-
-.tplp-bar {
-  display: flex; align-items: baseline; gap: 12px;
-  padding: 9px 14px; border-bottom: 1px solid var(--line); background: var(--brand-soft);
-}
-.tplp-t { font: 700 15px/1.4 var(--song); color: var(--brand-deep); letter-spacing: 1px; }
-.tplp-hint { flex: 1 1 auto; font-size: 12.5px; color: var(--ink-3); }
-#tplp-x {
-  border: 1.5px solid var(--brand-line); background: var(--panel); color: var(--brand-deep);
-  cursor: pointer; font-size: 13px; line-height: 1; padding: 5px 9px;
-}
-#tplp-x:hover { background: var(--brand-line); }
-
-.tplp-main { display: flex; align-items: stretch; min-height: 0; }
-/* 左栏：分组名 + 模板名。可滚动——模板越加越多的时候别把面板撑破。 */
-#tplp-rail {
-  flex: 0 0 186px; overflow-y: auto; max-height: 246px;
-  border-right: 1px solid var(--line); padding: 6px 0;
-}
-.tplp-g {
-  font-size: 11.5px; color: var(--ink-3); letter-spacing: 1px;
-  padding: 8px 12px 4px; font-weight: 700;
-}
-.tplp-i {
-  display: block; width: 100%; text-align: left; cursor: pointer;
-  font: inherit; font-size: 14px; color: var(--ink-2);
-  padding: 7px 12px; border: 0; border-left: 3px solid transparent; background: none;
-}
-.tplp-i:hover { background: var(--sunken); color: var(--ink); }
-.tplp-i.on { background: var(--alt-soft); border-left-color: var(--alt); color: var(--ink); font-weight: 700; }
-
-.tplp-form { flex: 1 1 auto; min-width: 0; padding: 12px 14px; overflow-y: auto; max-height: 246px; }
-#tplp-fname { font: 700 15px/1.5 var(--song); color: var(--ink); }
-#tplp-desc { font-size: 12.5px; color: var(--ink-3); margin: 3px 0 10px; line-height: 1.6; }
-#tplp-fields { display: flex; flex-wrap: wrap; gap: 9px 18px; }
-.tplp-row { display: flex; align-items: center; gap: 8px; }
-.tplp-lb { font-size: 13.5px; color: var(--ink-2); white-space: nowrap; }
-.tplp-in {
-  font: inherit; font-size: 14px; width: 108px; padding: 6px 9px;
-  border: 1.5px solid var(--line); background: var(--sunken); color: inherit; outline: none;
-}
-.tplp-in:focus { border-color: var(--alt); background: var(--panel); }
-
-/* 底下这条：左边摊开**即将发出去的骨架原文**（老师能检查我的命令），右边是「照着画」。 */
-.tplp-foot {
-  display: flex; align-items: stretch; gap: 12px;
-  padding: 10px 14px; border-top: 1px solid var(--line); background: var(--sunken);
-}
-#tplp-prev {
-  flex: 1 1 auto; min-width: 0; margin: 0; max-height: 108px; overflow: auto;
-  font: 12.5px/1.65 var(--mono); color: var(--ink-2); white-space: pre-wrap;
-  background: var(--panel); border: 1px solid var(--line); padding: 7px 10px;
-}
-#tplp-go {
-  flex: 0 0 auto; font: inherit; font-weight: 700; letter-spacing: 2px; cursor: pointer;
-  background: var(--alt); color: #fff; border: 0; padding: 0 20px;
-}
-#tplp-go:hover { background: var(--alt-dark); }
-#tplp-go:disabled { background: #b9c2a4; cursor: default; }
-
-/* 窄屏：左栏从"竖着排一列"改成"横着铺一条"——手机上没有 186px 的余量给它。 */
-@media (max-width: 620px) {
-  .tplp-main { flex-direction: column; }
-  #tplp-rail {
-    flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 4px;
-    max-height: none; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px;
-  }
-  .tplp-g { width: 100%; padding: 4px 6px 2px; }
-  .tplp-i { width: auto; border-left: 0; border-bottom: 3px solid transparent; padding: 6px 9px; }
-  .tplp-i.on { border-left: 0; border-bottom-color: var(--alt); }
-  .tplp-form { max-height: 200px; }
-  .tplp-foot { flex-direction: column; }
-  #tplp-go { padding: 11px 0; }
-}
-
-/* ── 资料库面板（2026-10-07）──────────────────────────────────────────
+/* ── 资料库面板（2026-10-07，2026-10-08 撤过一次又搬回）───────────────────
    左边那条栏里 📚 那颗按钮开的就是这一块（见 js/libui.js）。
-   ★★ 跟 `#tplp` **一个路数**：`flex: 0 0 auto` + `border-top`，把对话区**顶高**，
-      **不是浮层**。所以：方角、细线，**别加圆角和阴影**——（同 `#tplp` 那段）
-     圆角+投影是"浮层"的长相，而全站唯一一处浮层是 `.toolrail` 自己。
-     加上去他就会以为"点一下别处它就没了"，而它不会。
-   ★ 它比 `#tplp` **矮**一档（下面 `#libp-hits` 那个 max-height）：模板那份是"填完就走"，
+   ★★ `flex: 0 0 auto` + `border-top`，把对话区**顶高**，**不是浮层**。
+     所以：方角、细线，**别加圆角和阴影**——圆角+投影是"浮层"的长相，
+     而全站唯一一处浮层是 `.toolrail` 自己。加上去他就会以为"点一下别处它就没了"，
+     而它不会。
+   ★ 它比同族那些面板**矮**一档（下面 `#libp-hits` 那个 max-height）：
      这一份是"拿一份名单慢慢挑"，但他多半是**边看对话边挑**——顶得太高就把
-     上面那条回复和自己那张图挤出屏幕了，那正是这个面板"常驻、不当浮层"要保住的东西。
-   ★ 配色**跟 `#tplp` 一样**（`--brand-soft` 头 + `--brand-deep` 字，全站面板的通用长相）——
-     不是漏改，是故意的：两块都是左边那条栏里的工具，是**兄弟**，长得一样才对。
-     ⚠ 写这一段的时候我先写了"用 --brand 蓝那套、跟 #tplp 的 --alt 绿分得开"，
-       两句都是错的：这个站的主色 `--brand` 是**深绿**（css 第一段那个 `#0b6b45`），
-       而 `#tplp` 用的**也是** `--brand-soft`。当时没去核，照着"大概是这样"写的。
-       ⇒ 记这一笔是因为它正是那个老毛病：**注释里写的数、颜色、名字，都要当场从源码里读回来核**，
-         不然下一个人会照着一句没验过的话去改。 */
+     上面那条回复和自己那张图挤出屏幕了，那正是它"常驻、不当浮层"要保住的东西。
+   ★ 配色走 `--brand-soft` 头 + `--brand-deep` 字，是全站面板的通用长相。
+     ⚠ 这一条是**当场从源码里读回来核过**的：这个站的主色 `--brand` 是**深绿**
+       （css 第一段那个 `#0b6b45`），跟"蓝"没有关系。记这一笔是因为它正是那个老毛病：
+       **注释里写的数、颜色、名字，都要当场从源码里读回来核**。 */
 #libp {
   flex: 0 0 auto; border-top: 1px solid var(--rule);
   background: var(--panel); position: relative; z-index: 1;
@@ -2318,260 +2230,6 @@ footer .r {
 .packbtn:disabled { cursor: default; opacity: .75; }
 .packbtn:disabled:hover { border-color: var(--line); color: var(--ink-2); }
 
-/* ---------- 进度条（#steps）：备课／讲评那两个工位的"链子摆到第几节" ----------
-   这一条是这一版的核心可发现性：备课本来的样子是一条没有终点的对话，
-   老师不知道要走几步、现在走到哪。挂上这排格子，"一节一节摆"就看得见了。
-
-   ★ 它不是导航，是**进度**，所以它的形状照着仪表来，不照按钮来：
-     走过的那几格填深色实心（已经走完了），当前那格是主色 + 一道下划线（正在这），
-     还没到的留空。点任意一格 = 从那一节接着走（见 js/chat.js 的 renderSteps）。
-
-   ★★ 2026-10-02：格数**不再是固定的六个**。步数、每步叫什么名字，都由模型按这道题
-     自己定（见 js/prompt-prep.js 顶上那两段诊断）。条子只照**已经摆出来的**那些节画，
-     末尾再补几格 `.todo`——那是它第一轮报的"大概几步"里**还没走到的**，
-     只是个预排，所以故意画得虚。计划读不出来就一格灰格都不画，退回一格「▶ 接着摆」——
-     「接着摆」的判据是**槽位 >= 预排**（走不到计划尽头就一定有得点），见 chat.js 那段注释。
-     一节都还没摆出来时整根藏起来（连备课也藏，理由见 js/chat.js 的 hideStepBar）。
-
-   ★ 用 #steps:empty 来收自己：画图／出题两个工位没有台阶，
-     renderSteps 往里面什么都不放，那两格里这一条整根消失——
-     **不能让它在画图工位上留一条空槽**，那是"没做完"的形状。 */
-#steps {
-  display: flex; flex-wrap: wrap; gap: 0;
-  margin: 0 0 10px; padding: 0;
-  border: 1px solid var(--line); background: var(--sunken);
-}
-#steps:empty { display: none; }
-#steps .stepbtn {
-  border: 0; background: transparent; font: inherit; cursor: pointer;
-  font-size: 12.5px; padding: 6px 12px; color: var(--ink-3); white-space: nowrap;
-  border-left: 1px solid var(--line);
-}
-#steps .stepbtn:first-child { border-left: 0; }
-/* 走完的：实心深色，一眼看出"这几步已经过了" */
-#steps .stepbtn.done { background: var(--ink); color: #fff; font-weight: 700; }
-/* 当前这格：主色 + 一道下划线。用下划线而不是填色，
-   是为了跟"已走完"分得开——填色的话它就混进上面那一列了 */
-#steps .stepbtn.now {
-  color: var(--brand); font-weight: 700;
-  box-shadow: inset 0 -3px 0 var(--brand);
-}
-/* 报了、还没走到的（.todo）：字更淡、整格压虚。
-   ★ 故意跟"已经摆出来的"拉开一档——它表示"大概还有几步"，是**预排不是事实**，
-     画得一样实，老师就分不清哪几节是真摆过的了。 */
-#steps .stepbtn.todo { color: var(--ink-3); opacity: .58; }
-#steps .stepbtn.todo:hover { opacity: 1; }
-/* 「⛶ 投影」——台阶条末尾那一格（2026-10-03，见 js/project.js）。
-   ★ 它跟旁边所有格子**不是一类**：别的格子点下去都是"给模型发一句话"，
-     这一格是纯前端换一种放映方式，一个字都不发出去。
-     所以给它一道**主色的左边条**，让它在条子上认得出是"另一件事"——
-     不是"又一个环节"。同理它也不该穿 .todo 那身灰（它不是预排的格子）。
-   ⚠ 那一道用 inset box-shadow 而不是 border-left：`.stepbtn` 本来就有一条
-     `border-left: 1px solid var(--line)`，再叠一层 border 会变成两条细线，
-     而 `.now` 那颗已经占用了 `inset 0 -3px`，两者不在同一边，不打架。 */
-#steps .stepbtn.proj {
-  color: var(--brand); font-weight: 700;
-  box-shadow: inset 3px 0 0 var(--brand);
-}
-#steps .stepbtn.proj:hover { background: var(--brand-soft); }
-#steps .stepbtn:hover { background: var(--brand-soft); }
-#steps .stepbtn.now:hover { background: var(--brand-soft); }
-
-/* ---------- 投影：上课现用的大字视图（2026-10-03，见 js/project.js） ----------
-   治的是孔老师那句话：「投到教室字太小、步骤全露」。备课／讲评的链子一屏摆全，
-   在电脑上当草稿看正合适，投到教室就同时坏了两次——字小到后排看不清，
-   而且「学生大概会说」那行提前把答案亮在黑板上，这一节课的讲法就白设计了。
-
-   ★ 所以它不是"同一个页面把字放大"，是**换一种放映方式**：一屏只放一节，
-     一节点一下。整层铺满、盖住底下那页。
-
-   ★★ 字号一律走 clamp(最小, vw/vh, 最大)，**不写死 px**。
-     理由是硬的：投影仪的分辨率什么都有——本子上是 1366×768，教室那台可能是
-     1920×1080、也可能被系统缩放到 1280×720。写死 px 的话，同一份讲义在两种机器上
-     差出一倍去，而后排看不看得清**只有一次机会**（课已经开始了）。
-     下界保"小屏也读得清"，上界保"巨大屏上不被撑成一屏两个字"。
-
-   ⚠ 这一层是靠 `display:none` 开合的，**别往里面放画板 `#ggb`**：
-     `display:none` 会让 board.js 的 `fit()` 量到 0、图静默缩成 240×60
-     （同下面抽屉那一段的教训）。要在投影里看图得另开一块板。
-
-   ★★ 选择器一律用 `#proj` 这个 **id**，**不写 `.proj`**——2026-10-03 探针当场
-     抓到的一次类名撞车：台阶条末尾那格按钮也穿着 `proj` 这身衣服
-     （`#steps .stepbtn.proj`，见上面），而那条规则**没写 `display`**，
-     于是按钮的 display 就落到这条 `.proj{display:none}` 头上——
-     **按钮长出来了、事件也挂着、点了就开，可它就是看不见**。
-     这种坏法在屏幕上什么都不报（`click()` 不管可见性，`getComputedStyle().color`
-     照样读得到主色），只有量 `getClientRects().length` 才现形。
-     这一层全页只有一份、本来就有 id，用 id 是它**该有的**写法；
-     换成 id 之后还顺手把"以后再有人叫 proj"这条路堵死了。
-     （`.projhead` / `.projbody` 那些复名不撞，保持原样。） */
-#proj {
-  position: fixed; inset: 0; z-index: 120;
-  display: none; flex-direction: column;
-  background: var(--paper);
-  padding: clamp(18px, 3.2vh, 44px) clamp(20px, 3.4vw, 72px) clamp(16px, 2.6vh, 34px);
-  font-family: var(--sans);
-}
-#proj[data-proj="1"] { display: flex; }
-#proj:focus { outline: 0; }     /* 焦点是收进来给键盘用的，不给它画一圈框 */
-
-/* 头：节号 + 节名。★ 节名走衬线（--song）——它在这块屏上的地位就是"标题"，
-   跟顶栏、弹层标题是同一档；正文才走无衬线。 */
-.projhead {
-  flex: 0 0 auto; display: flex; align-items: flex-start; gap: clamp(12px, 1.6vw, 26px);
-  padding-bottom: clamp(10px, 1.6vh, 20px);
-  border-bottom: 2px solid var(--rule);
-}
-.projmk { flex: 1 1 auto; min-width: 0; }
-.projnum {
-  display: block; font-family: var(--mono); font-variant-numeric: tabular-nums;
-  font-size: clamp(12px, 1.25vw, 17px); letter-spacing: .22em;
-  color: var(--brand); font-weight: 700;
-}
-.projname {
-  display: block; margin-top: clamp(4px, .8vh, 9px);
-  font-family: var(--song); font-weight: 700; color: var(--ink);
-  font-size: clamp(26px, 4vw, 58px); line-height: 1.16;
-  overflow-wrap: break-word;
-}
-.projhint {
-  flex: 0 0 auto; align-self: center; white-space: nowrap;
-  font-family: var(--mono); font-size: clamp(11px, 1vw, 13px);
-  letter-spacing: .1em; color: var(--ink-3);
-}
-.projx {
-  flex: 0 0 auto; cursor: pointer; font: inherit;
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: clamp(12px, 1.15vw, 15px); letter-spacing: .1em;
-  padding: clamp(7px, .9vh, 11px) clamp(12px, 1.2vw, 18px);
-  border: 1px solid var(--rule); background: var(--panel); color: var(--ink-2);
-}
-.projx em { font-style: normal; font-family: var(--mono); color: var(--ink-3); }
-.projx:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
-
-/* 正文：一屏就是这三块。
-   ★ 内容少（常见的是一节两三行）时**竖直居中**，让它落在视线高度上，
-     而不是缩在屏幕顶上、底下空掉一大片——投到教室，"内容都在上半屏、
-     下半屏是空的"会显得整块屏没准备好。
-   ★ 居中用两头 `margin:auto` 而不是 `justify-content:center`：
-     flex 容器配 `justify-content:center` + `overflow:auto` 时，
-     内容一旦比容器高，**顶部会被裁掉且滚不上去**（这是 flex 的经典坑）。
-     两头 auto 的写法在内容超出时自然退回从头顶开始，滚得到。 */
-.projbody {
-  flex: 1 1 auto; min-height: 0; overflow-y: auto;
-  display: flex; flex-direction: column;
-  gap: clamp(12px, 2vh, 26px);
-  padding: clamp(14px, 2.4vh, 30px) 0;
-}
-.projbody > :first-child { margin-top: auto; }
-.projbody > :last-child { margin-bottom: auto; }
-
-/* 一块 = 一个标签 + 一段话。左边那道竖条是这三块的"档位"标识：
-   越粗越深 = 越该照着念。 */
-.pblk {
-  padding: clamp(8px, 1.2vh, 16px) clamp(10px, 1.2vw, 20px) clamp(8px, 1.2vh, 16px) clamp(12px, 1.5vw, 26px);
-  border-left: clamp(4px, .45vw, 8px) solid var(--line);
-}
-.plabel {
-  display: block; font-size: clamp(12px, 1.3vw, 19px);
-  letter-spacing: .16em; font-weight: 700; color: var(--ink-3);
-  margin-bottom: clamp(4px, .8vh, 10px);
-}
-.ptext {
-  color: var(--ink); line-height: 1.55;
-  font-size: clamp(19px, 2.3vw, 34px);
-  overflow-wrap: break-word;
-}
-/* 公式：KaTeX 的 display 模式默认上下留一大截空，在投影上会把三块挤散。
-   收窄成 .72em，读起来还分得开，又不会把"学生大概会说"顶出屏幕。 */
-.ptext .katex-display { margin: .72em 0; }
-
-/* ① 学生大概会说 —— 老师照着这句问出去（或者就是预判的那个答案）。
-      次一等，但它得读得清：读不清老师就得凑到屏幕前，那还不如投影关了。 */
-.p_said { border-left-color: var(--brand-line); }
-.p_said .ptext { font-size: clamp(18px, 2.1vw, 31px); color: var(--ink-2); }
-
-/* ② 你接这句 —— **整屏的主角**。老师要照着念的就是它，所以最大最重、还带底色。 */
-.p_you { border-left-color: var(--brand); background: var(--brand-soft); }
-.p_you .plabel { color: var(--brand); }
-.p_you .ptext { font-size: clamp(23px, 3vw, 46px); font-weight: 700; line-height: 1.42; }
-
-/* ③ 这么接的道理 —— 老师自己的备课笔记。最小最淡：
-      它是"为什么这么讲"，不是要念出来的话，抢了②的戏就本末倒置了。 */
-.p_why { border-left-color: var(--line); }
-.p_why .ptext { font-size: clamp(15px, 1.7vw, 25px); color: var(--ink-2); }
-
-/* ④ **还没亮**的那几块（2026-10-04）。一上来只亮"学生大概会说"，
-      往下按一下才亮"你接这句"——治的是原来三块并排、学生还没答就看见老师要接的话。
-   ★ 还没亮的不写内容，但**照样占着位置**（画一条虚线）：整块不画的话，
-     按下去那一刻三块的位置全变，投到教室就是屏幕跳一下。
-   ★ 只压暗、不给它加边框或底色：这一层是"还没有"，加框就成了"有一块空的"。
-   ★ 虚线宽度用 min(46%, 320px)——跟着屏宽走，但巨大屏上不许拉成一条整幅横线。 */
-.pwait { opacity: .30; }
-/* ★ 把「你接这句」那块自带的淡绿底**抹掉**：`.p_you` 的底色是"这块是主角"的意思，
-   留着就变成"高亮了一块空的"，比不亮还扎眼。没亮的块一律不长这样。 */
-.pwait { background: transparent; }
-.pwait .plabel { margin-bottom: 0; }
-.pwait .pdash {
-  height: 0; margin-top: clamp(8px, .9vh, 13px);
-  border-top: 2px dashed var(--rule); width: min(46%, 320px);
-}
-/* 下一块就要亮的是它——比后面几块稍微显一点，老师一眼看得出"再按一下就出这个"。 */
-.pnext { opacity: .5; }
-.pnext .plabel { color: var(--brand); }
-
-/* 模型没把三行写全时那句实话（js/project.js 写的）。★ 故意做得不像内容：
-   它是**关于这一屏的说明**，不是链子里的话，混进正文里就会被当成模型说的。 */
-.pnote {
-  margin: 0; font-size: clamp(12px, 1.2vw, 16px);
-  color: var(--ink-3); font-family: var(--mono); letter-spacing: .04em;
-}
-
-/* 脚：前后翻 + 进度点。
-   ★ 进度点**可点**：课上最常发生的一件事是"刚才那节再讲一遍"，
-     只能一下一下往回按的话，讲到第五节就得按四下。 */
-.projfoot {
-  flex: 0 0 auto; display: flex; align-items: center;
-  gap: clamp(10px, 1.4vw, 22px);
-  padding-top: clamp(10px, 1.6vh, 20px);
-  border-top: 2px solid var(--rule);
-}
-.projnav {
-  flex: 0 0 auto; cursor: pointer; font: inherit; font-weight: 700;
-  font-size: clamp(14px, 1.45vw, 21px);
-  padding: clamp(9px, 1.3vh, 15px) clamp(14px, 1.7vw, 26px);
-  border: 1px solid var(--rule); background: var(--panel); color: var(--ink);
-  white-space: nowrap;
-  /* ★ 这两颗的字会变（"亮下一块 ▶" / "下一节 ▶"、"◀ 收一块" / "◀ 上一节"），
-     **宽度必须钉住**：不然按一下按钮一伸缩，中间的进度点跟着挪，
-     老师按第二下的时候手指落在别处了——同下面 `:disabled` 那条是一个道理。 */
-  min-width: 7em; text-align: center;
-}
-.projnav:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
-/* 停在头／尾时那一颗按不动。★ 变淡**但不隐藏**——它会消失的话，
-   条子上的东西就跟着位置挪，老师按第二下的时候手指落在别处了。 */
-.projnav:disabled { opacity: .34; cursor: default; }
-.projdots {
-  flex: 1 1 auto; min-width: 0;
-  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
-  gap: clamp(6px, .7vw, 11px);
-}
-.pdot {
-  width: clamp(9px, .85vw, 13px); height: clamp(9px, .85vw, 13px);
-  padding: 0; cursor: pointer; border-radius: 50%;
-  border: 1px solid var(--rule); background: var(--panel);
-}
-.pdot:hover { border-color: var(--brand); background: var(--brand-soft); }
-.pdot.now { background: var(--brand); border-color: var(--brand); transform: scale(1.35); }
-
-/* 手机上投影本来就没什么用（那是投到教室才需要的），
-   但真在手机上打开了也别散架：藏掉键位提示，把翻页那两颗摊平分掉整行。 */
-@media (max-width: 620px) {
-  .projhint { display: none; }
-  .projnav { flex: 1 1 0; }
-  .projdots { flex: 1 1 100%; order: 3; padding: 6px 0 0; }
-}
-
 /* ---------- 弹层（Key 设置 / 关于 / 本地素材，共用一套） ---------- */
 /* 遮罩用毛玻璃。那篇第六节讲"降低玩家对忽然跳出的新页面的抗拒感"：
    背景模糊的关键好处是**覆盖特性**，让人"窥"见下面那页还在。
@@ -2891,7 +2549,6 @@ footer .r {
 /* 那篇第二节 Fluent 配方的最后半句。只有 hover 变色的按钮是"网页"，
    按下去会沉一下的按钮才是"产品"。★ 1px 就够，2px 在投影仪上看像在抖。 */
 .tool:active, .chip:active, .workbtn:active, .backbtn:active, .viewbtn:active,
-#steps .stepbtn:active,
 #attach:active, .err .inlinebtn:active { transform: translateY(1px); }
 #send:active { transform: translateY(2px); }
 /* 主色块按下时压暗一档——它在纸上，不是浮着的东西，不该发光 */
@@ -3153,26 +2810,6 @@ p.figwait { margin: 0 0 9px; font-size: 11.5px; color: var(--brand); }
   .brand .by { font-size: 10px; padding: 1px 5px; letter-spacing: .8px; }
   .brand { margin-right: 0; }
   .workbtn { font-size: 13px; padding: 6px 10px; }
-  /* 台阶条：字号收到 11.5px、左右各留 8px。
-     ★ 再小就不能收了——那是手机上唯一一处"现在走到哪"，
-       收了字就等于这一条白做。
-     ★★ 2026-10-02 第二次改：**手机上允许折成两行（flex-wrap: wrap）。**
-     原来这里写的是 `flex-wrap: nowrap`，理由是一段实测数字："台阶一共 6 格，
-     360px 下格宽 39/40/40/51/40/40（合计 ≈251），连最窄的手机都不用横滑"。
-     ——那段数字是**固定六格**时代量的，格数一由模型按题定、名字一由模型自己起，
-     它当场作废。用 test/_stepbarfit.cjs 重量的结果（360px，框宽 329）：
-       3 节 + 名字短（"找方向"这种）  内容宽 329（100%）  一行放得下
-       4 节 + 名字是**常态长度**       内容宽 467（142%）
-       5 节 + 每格十来个字            内容宽 778（236%）
-     而 nowrap + overflow 那条路，**末尾那格「整条」会滑出屏幕**——
-     那是这个工位的终点动作（链子摆完就要拷走），摸不到就是真问题，
-     而且横滑在手机上没有滚动条提示，等于藏起来。
-     所以改成折行：多占一两行高度，换"每一格都摸得到、看得见"。
-     宁可它折行也别横滑：折行只是难看，横滑是**功能没了**。
-     ⚠ 留着 overflow-x: auto 兜底：万一哪一格自己的名字就宽过整个框（目前没量到），
-       至少还能滑，不至于被裁掉。 */
-  #steps { flex-wrap: wrap; overflow-x: auto; }
-  #steps .stepbtn { font-size: 11.5px; padding: 6px 8px; }
   .backbtn { font-size: 12.5px; padding: 6px 9px; }
   .backbtn .dot { width: 7px; height: 7px; margin-right: 5px; }
   header .tool { font-size: 13px; padding: 6px 10px; }

@@ -47,7 +47,11 @@ SR.LIBUI = (function () {
     return h === 'localhost' || h === '127.0.0.1' || h === '' || location.protocol === 'file:';
   }
 
-  // ---- 开／关（跟 js/drawui.js 那四行一一对应，故意长得一样）----
+  // ---- 开／关 ----
+  // ⚠ 原来这儿写着"跟 js/drawui.js 那四行一一对应，故意长得一样"。2026-10-08 📐
+  //   （drawtpl.js / drawui.js）**跟这条栏一起撤了**，而 📚 当天搬了回来——
+  //   所以现在这条栏里只有这一块面板，"跟谁长得一样"那句话没有对象了。
+  //   这四行的形状留着（它就是"开 = 去掉 hidden + aria=1 + 给焦点"这个最普通的写法）。
   function 开() {
     $('libp').hidden = false;
     var b = $('libbtn');
@@ -295,17 +299,26 @@ SR.LIBUI = (function () {
       if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); 搜(); }
       if (e.key === 'Escape') { e.stopPropagation(); 关(); }
     });
-    // Esc 关掉（跟 📐 那条一个规矩）。
-    // ★★ 用 **capture** 并且**先看 📐 开着没** —— 这是这一小段唯一有点讲究的地方：
-    //   `document` 上那条 Esc 是**一起响**的（drawui.js 自己挂了一条），
+    // Esc 关掉。
+    // ★★ 下面那两处（`capture` + `$('tplp')` 守卫）**原来的理由是 📐**：
+    //   `document` 上那条 Esc 是**一起响**的（drawui.js 当时自己挂了一条），
     //   冒泡阶段我这条排在它后面，那时 📐 已经被它关掉了，我再看就永远看不到"它开着"，
-    //   于是**两按一次 Esc、两个面板一起没**。capture 让这条先跑，才看得到真实状态。
+    //   于是**两按一次 Esc、两个面板一起没**。capture 让我这条先跑，才看得到真实状态。
     //   ⇒ 一次 Esc 只收一层，跟 main.js 里"Esc 先管大窗再管抽屉"那条同一个分寸。
+    // ⚠ 2026-10-08 📐 撤了（`#tplp` / `#drawtplbtn` / drawui.js 三样都不在页面里），
+    //   **这条理由现在没有对象**：`$('tplp')` 恒为 null，那句守卫恒为假，等于没写。
+    //   ★ 两处**都故意留着**，没删：
+    //     · 守卫留着是**防御**——它现在是空操作，一个字都不做；
+    //     · 真删它反而危险：`if (tplp && …) return;` 少一个条件就会变成
+    //       "守卫不存在就直接 return" —— 那正是"开着的时候按 Esc 关不掉"。
+    //       `test/probe_libpanel.cjs` 的 1.4／1.5 就是替这件事站岗的，别把那两条删了。
+    //     · capture 留着同理：它今天的实际效果跟冒泡一样，但哪天再有第二块面板，
+    //       这条就是对的写法。
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Escape') return;
       if (!开着的()) return;
       var tplp = $('tplp');
-      if (tplp && !tplp.hidden) return;      // 作图模板开着：这一下归它，我只等着
+      if (tplp && !tplp.hidden) return;      // 同族面板开着：这一下归它（★ 今天恒不成立，见上）
       关();
     }, true);
   }

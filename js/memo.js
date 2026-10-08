@@ -228,19 +228,33 @@ SR.memo = (function () {
   }
 
   // 这一轮做出了什么。由 chat.js 在每一轮成功之后调一次（一处记账，五个工位共用）。
-  // counts: {fig, prob, paper, chain, rev}
+  // counts: {fig, prob, paper, rev}   ← 「链」不在里面，见下面那一格
   function produced(work, counts) {
     var cfg = SAY[work];
     if (!cfg || !counts) return;
+    var o = get(), m = o.pocket.marks, k = cfg.k;
+    // ★★★ 2026-10-08：「链」这一项**当场重算，不认调用方递来的数**。
+    //   原来它收的是 chat.js 台阶条的状态（`stepSlots.length`）。台阶条撤了，
+    //   那个数的来源没了；而这件事**不能**改成"chat.js 自己再数一遍"——
+    //   「当场攒一套、刷新/截断后重算一套」正是 `重算口袋` 顶上那段注释一直在防的错：
+    //   两处对不上的样子是"截断一次，口袋里的数就换一个"，屏幕上完全看不出来。
+    //   ⇒ 所以两处合并成**同一个函数**：当场也走 `重算口袋(o.turns)`。
+    //   调用时机是对的：chat.js 在 `produced()` 之前已经 `pushTurn` 过这一轮了，
+    //   所以这一遍重算看得见刚说完的那句话。
+    if (work === 'prep') {
+      var c = 重算口袋(o.turns).chain || 0;
+      if (c) m.chain = c; else delete m.chain;   // 0 就不记（跟下面那条规矩同一个道理）
+      save();
+      paintBar();
+      return;
+    }
     // ★ 数是 0 的**一个都不记**。记 0 的后果不是"多一个 0"——
     //   是 marks 里凭空多出一个键，于是口袋那一行的样式判成"有东西"，
     //   而字上写着"口袋空着"。**样式和字各说各的**，看的人只会觉得哪儿不对劲，
     //   又指不出来（判据是 Object.keys(marks).length，见 paintBar）。
-    var o = get(), m = o.pocket.marks, k = cfg.k, n = counts[k] || 0;
+    var n = counts[k] || 0;
     if (!n) return;
-    // 「链」是**这一节摆到第几节**，不是累加——所以它取大的那个。
-    if (work === 'prep') m.chain = Math.max(m.chain || 0, n);
-    else m[k] = (m[k] || 0) + n;
+    m[k] = (m[k] || 0) + n;
     save();
     paintBar();
   }
@@ -346,7 +360,9 @@ SR.memo = (function () {
   //   删了三轮不重算，那个数就是假的；而这两样**老师都会当成事实读**
   //   （[[scanner-numbers-are-not-what-they-claim]]）。所以一律照**剩下的轮次
   //   从头重算**，不做减法——减法要相信"当时记进去的正好就是这些"，
-  //   可当时那一路还掺着别的（`chain` 取的是 max、只有成功那一支才记）。
+  //   可当时那一路还掺着别的（只有**成功**那一支才记，失败那轮一个数都不落）。
+  //   ⚠ 2026-10-08 起「链」这一项当场也走这个函数了（见 `produced` 那段），
+  //     所以它跟截断后的读数**天然一样**，不再依赖"当时记得对不对"。
   //
   // ★ 重算用的是跟当场那条路**同一批函数**（`SR.render.parseFences` /
   //   `countProbs` / `SR.absorbChain`）。两处各数一遍的话，截断之后的读数会跟
@@ -393,7 +409,7 @@ SR.memo = (function () {
           if (nm) marks.paper = (marks.paper || 0) + nm;
         }
       }
-      // 链：跟 chat.js 的 repaintSteps 走**同一条** —— 整段回复过一遍 absorbChain。
+      // 链：整段回复过一遍 absorbChain，数出摆到第几节（台阶条撤了，这条读数只剩它自己在用）。
       if (SR.absorbChain) {
         var st = SR.absorbChain({ slots: slots, plan: plan, now: now }, String(t.t || ''));
         slots = st.slots; plan = st.plan; now = st.now;

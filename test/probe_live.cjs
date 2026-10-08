@@ -191,7 +191,12 @@ function 判(名, ok, 值) {
   // 居中：在 **main 的内容区里** 左右空白差 ≤4px。
   // ★★ 2026-10-07 修基准。这一条原先量的是"离**视口的**左右边各空多少"，读回 **68**，
   //   看着像"这一栏歪了"。**是尺子量错了，不是版式坏了**：
-  //   `body[data-toolrail="1"] main { padding-left: 82px }`（作图工位左边那条工具栏，
+  //   `body[data-toolrail="1"] main { padding-left: 82px }`（左边那条工具栏，
+  //   ★ 2026-10-08：那条栏当天撤过一回（📐／📚 一起没），**当天又把 📚 搬了回来**，
+  //     所以这条 css 和那个 82px 现在照样成立（栏里只剩 📚 一颗，宽度没变）。
+  //   ⚠ 也正因为它量的是 main 自己的 padding box，**哪天那条栏又撤了这条不会变红**——
+  //     栏在与不在，`.col` 都还是在内容区里居中。这条尺子只认"版式歪没歪"，
+  //     认不出"那条栏没露"；栏露没露归 test/probe_libpanel.cjs 的 0.1 管。
   //   css 里早就有）——`main` 按设计给它让出 82px，`.col` 是在**剩下那块地**里居中的，
   //   离内容区左右各 172px，正是它该在的地方。
   //   量错的代价：这 68 会一直红着，而它红的样子跟"版式坏了"一模一样。
@@ -210,21 +215,6 @@ function 判(名, ok, 值) {
     + "cs=getComputedStyle(m),L=mr.left+parseFloat(cs.paddingLeft),R=mr.right-parseFloat(cs.paddingRight);"
     + "return Math.round(Math.abs((r.left-L)-(R-r.right)));})()");
   判('对话栏在内容区里居中（左右空白差 ≤4px）', typeof 居 === 'number' && 居 <= 4, 居);
-  判('project.js 在位且有 can()', await ev("!!(window.SR&&SR.project&&typeof SR.project.can==='function')"));
-  判('投影那一层用的是 #proj id（不是 .proj 类）', await ev(
-    "(function(){var e=document.getElementById('proj');"
-    + "return !!e&&e.className.indexOf('proj')>=0;})()") === true);
-  // ★ 台阶条那格按钮的可见性：量 getClientRects().length，**绝不量 getComputedStyle().display**
-  //   ——2026-10-03 那次类名撞车，按钮"存在、可点、点了就开"，唯独不可见，
-  //     而 getComputedStyle 照样读得到主色。只有 rects 才现形。
-  const 有链 = await ev("!!(window.SR&&SR.memo&&SR.memo.log&&SR.memo.log().length&&SR.project.can())");
-  if (有链) {
-    判('有链子时那格「⛶ 投影」按钮真的可见', await ev(
-      "(function(){var b=document.querySelector('#steps .stepbtn.proj');"
-      + "return b?b.getClientRects().length:0;})()") > 0);
-  } else {
-    console.log('  – 这一页没有链子，跳过「投影按钮可见」那条（要造一条链才能验）');
-  }
 
   console.log('\n— 台面 —');
   判('页面没有 console 报错/未捕获异常', 台.filter(s => s.indexOf('还没到齐') < 0).length === 0,

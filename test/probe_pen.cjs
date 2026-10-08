@@ -277,34 +277,6 @@ const 四颗命中 = `(function(){
     return { 显: s.display, 看: s.visibility, 框: e.getClientRects().length, 层: s.zIndex,
              活: (s.display !== 'none' && s.visibility !== 'hidden' && e.getClientRects().length > 0) } })()`);
 
-  // 8a 投影
-  // ★★ 这里**照着产品自己的显示路径**把投影层摆出来：`data-proj="1"`，
-  //    跟 js/project.js 的 open() 里 `box.setAttribute('data-proj','1')` 是同一个属性、同一个值。
-  //    **跳过了哪一步，说在这儿不藏**：open() 开头有个前置 `if (!节.length) return;`——
-  //    它要求对话里已经摆出过"台阶链"。这一节要量的是**图层叠放**，跟投影里有没有内容
-  //    毫无关系，所以那个前置跳过。（写的仍是产品自己那个显示开关，不是自造一个"看起来像开着"的状态。）
-  //    先记一笔"本来能不能开"，免得这个跳过后面对不上账。
-  const 本可开 = await q('!!(window.SR && SR.project && SR.project.can && SR.project.can() === true)');
-  console.log('     注：本来 can() = ' + 本可开 + '（对话里还没摆出链子），本节跳过那个前置');
-  await q(`(function(){ var b=document.getElementById('proj');
-    if(!b) return 'no'; b.setAttribute('data-proj','1'); b.setAttribute('aria-hidden','false'); return 'ok' })()`);
-  await sleep(700);
-  const 投 = await 可见('proj');
-  判('投影层真的显示出来了（量的是 display/visibility/getClientRects，不是 rect）', !!(投 && 投.活), JSON.stringify(投));
-  if (投 && 投.活) {
-    await q('SR.pen.__开关(true)'); await sleep(250);
-    const 投角 = [await q(落点at(6, 6)), await q(落点at(视口.w - 6, 6)), await q(落点at(6, 视口.h - 6)), await q(落点at(视口.w - 6, 视口.h - 6))];
-    判('★★投影开着：画笔还在所有东西上面（四个角归它）', 投角.every(v => v === 'penlayer'), 投角.join(' / '));
-    const 投钮 = await q(四颗命中);
-    判('★★投影开着：画笔那四颗照样点得到（投影上圈完还能撤、还能关）',
-      Array.isArray(投钮) && 投钮.every(s => /✓$/.test(s)), (投钮 || []).join(' '));
-  } else {
-    判('★投影这一节**没跑成**—— 记红，不当绿灯', false, '投影层没显示出来');
-  }
-  await q(`(function(){ var b=document.getElementById('proj');
-    if(b){ b.setAttribute('data-proj','0'); b.setAttribute('aria-hidden','true') } return 1 })()`);
-  await sleep(500);
-  await 保抽屉();
 
   // 8b 放大看（点页面上那颗真按钮，不是自己 setAttribute —— 那样量的是"产品里不存在的路"）
   const 点结果 = await q(`(function(){

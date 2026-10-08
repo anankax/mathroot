@@ -67,7 +67,7 @@ SR.main = (function () {
     document.body.setAttribute('data-work', w);
     // 流水线那一块跟着这个工位显隐（见 js/flow.js 的 setWork）。
     // ★ 备课↔讲评是**同一条链**，过去的时候账本留着不重开——
-    //   跟下面 `stepsOf(last) && stepsOf(w)` 那条"不把链子打回零"是同一个道理。
+    //   跟下面 `sameSys(last, w)` 那条"不把链子打回零"是同一个道理。
     if (SR.flow) SR.flow.setWork(w);
     var btns = document.querySelectorAll('.workbtn');
     for (var i = 0; i < btns.length; i++) {
@@ -82,34 +82,50 @@ SR.main = (function () {
 
     paintToolrail();
 
-    var stepsOf = function (id) { return !!(SR.WORKS[id] && SR.WORKS[id].steps); };
-    // 同体系（备课↔讲评）：对话留着，档位按历史重推——**不能打回零**，
-    // 那条链还接着呢，打回零等于告诉老师"刚才走的都不算"。
+    // ★★ 2026-10-08：左边那条工具栏（📐／📚）连它这套 `paintToolrail` 一起撤过一回
+    //   （他原话「这两个也可以拆掉，我觉得不需要」），**当天又把 📚 搬了回来**——
+    //   撤干净之后页面上再没有一块地方能自己去翻库。所以这段函数留着，只有一颗按钮。
+    //   ⚠ 现在是 **📚 在、📐 不在**（drawtpl/drawui 两个文件仍然没进 index.html）。
+    //   ⚠ css 那边现在只有 `.toolrail` 和 `#libp` 两块；`#tplp`（📐 的面板）没跟着回来。
+    //   ★ 下面这段通用逻辑仍然成立：它照按钮自己的 `data-only` 现算，
+    //     不写 `data-only` = 哪个工位都露（📚 就是没写）。
+
+    // 同体系（备课↔讲评）：**对话留着**，不重开。
+    // ★ 判据原来是 `SR.WORKS[x].steps`——那面旗子只在这两格上为真，纯属**巧合**：
+    //   `steps` 说的是"这个工位有台阶条"，台阶条撤了，旗子就没地方放了。
+    //   换成工位自己声明的 `sys`（见 config.js 那两格），说的是这件事本身。
+    // ⚠ 判"同体系"只为了**别把对话打回零**：备课聊的那道题，讲评要接着讲；
+    //   清空等于告诉老师"刚才走的都不算"。
     // ★ 第 3 个参数 `opts`（2026-10-07）：原样交给 reset()，今天只认 `keepBoard`。
     //   谁传它：js/landing.js 的**自动换工位**那条路——老师正说着话、图还在板上，
     //   他这一句被认出是另一件活儿，换过去把图抹了是不可接受的
     //   （"这道题画出来，再出几个变式"正是要接着那张图办）。
     //   手点工位那一行**不传**，行为跟今天逐字一样。
-    // ⚠ `repaintSteps()` 那条路不看 opts：同体系（备课↔讲评）本来就不动板子。
-    if (!force && stepsOf(last) && stepsOf(w)) SR.chat.repaintSteps();
-    else SR.chat.reset(w, opts);                                        // 换了体系：重开
+    if (force || !sameSys(last, w)) SR.chat.reset(w, opts);   // 换了体系 / 强制：重开
   }
 
-  // ★★ 2026-10-05：左边那条工具栏该给谁看。
+  // 「这两格是同一个体系吗」——备课↔讲评是同一条链的两个阶段。
+  // ★ 判据是工位自己写的 `sys`（config.js 那两格写了同一个词），不是拿别的旗子凑。
+  //   ⚠ 两处读它：这里（决定要不要重开对话）和 js/landing.js 的 `sameSystem`
+  //     （决定事后记哪一格）。**必须一直是同一条规则**，不然会出现
+  //     "对话留着、但账本记成了另一件活儿"这种只在事后才看得出来的错。
+  function sameSys(a, b) {
+    var A = SR.WORKS[a], B = SR.WORKS[b];
+    return !!(A && B && A.sys && A.sys === B.sys);
+  }
+
+  // ★★ 左边那条工具栏该给谁看（2026-10-05 立，2026-10-08 撤过一回又搬回）。
   //
-  // ★ 为什么要有这个函数，而不是写死在 css 里（原来是
-  //   `body[data-work="draw"] #drawtplbtn{display:block}`）：
+  // ★ 为什么不写死在 css 里（原来是 `body[data-work="draw"] #drawtplbtn{display:block}`）：
   //   这条栏是孔老师要求"以后还可以放更多工具"的地方。写死在 css 里的话，
   //   每加一件工具都得回来改 css、再加一条 `body[data-work="xxx"]`，
   //   加两个工位就要写四条——**漏掉一条不报错，只是那件工具在某个工位不来**。
   //   现在改成只看按钮自己写的 `data-only`（工位 id，空格分开；不写 = 哪都露）：
   //   加一件工具 = 在 index.html 里多写一颗按钮，别处一个字不用动。
   //
-  // ★ 一个工具都不该露的时候，**整条栏一起藏**（`rail.hidden`）：一条空的
-  //   白色悬浮栏比没有更糟——它会一直在那儿，让老师去点它。
-  //   ⚠ 2026-10-05：这条**现在几乎不会触发**了——📐 撤了 `data-only`，六个工位都露，
-  //     所以 `n` 恒 ≥ 1、栏恒在。留着这段是因为它是对的：哪天工具全被收走，
-  //     空栏自己会消失，不用谁记着去关。
+  // ★ 一个工具都不该露的时候，**整条栏一起藏**（`rail.hidden`）。今天栏里只有 📚
+  //   一颗、而且没写 `data-only`，所以 `n` 恒为 1、栏恒在；留着这个判据是因为
+  //   它是这段逻辑的一部分——哪天工具全被收走，空栏自己会消失，不用谁记着去关。
   // ★ 顺带把 `body[data-toolrail]` 挂上：css 靠它给 `main` 让左边的地方
   //   （见 css 里 `body[data-toolrail="1"] main`）。挂在 body 上而不是栏自己身上，
   //   是因为要让位的是 `main`，不是栏。
@@ -1001,30 +1017,17 @@ SR.main = (function () {
     //   跟下面知识库那条是同一条纪律：首屏不许为了一个还没打开的抽屉付流量。
     if (SR.cards) SR.cards.bind();
 
-    // ---- 投影（见 js/project.js）：挂退出/翻页三颗按钮 + 一个键盘监听 ----
-    // ★ 它跟上面 cards/mindmap 那几件是同一种东西——**只挂监听，不干活**：
-    //   不预读对话、不建 DOM、不花流量。真正的取数在 open() 那一刻（建()），
-    //   所以开机这一趟它一毫秒都不占。
-    // ★ 位置放在 applyWork **前面**：applyWork 会 reset 对话，而投影读的是
-    //   `SR.memo` 里已经落盘的对话——顺序反过来也不出错（它取数是惰性的），
-    //   摆在这儿只是"开机这一串里，挂监听的跟挂监听的一起"。
-    if (SR.project) SR.project.init();
-
-    // 作图模板（见 js/drawui.js）。★ 就压在 applyWork **前面**：它只挂三颗按钮的
-    //   监听（📐 / ✕ / 照着画）+ 一条 Esc，不读 `body[data-work]`——所以它跟工位是谁
-    //   没有先后关系。
-    //   ⚠ 这里原来还写着"那一位是 css 在管（`body[data-work="draw"] #drawtplbtn`）"，
-    //     那条 css **已经删了**（2026-10-05 📐 去掉了 data-only，显隐改由上面
-    //     paintToolrail 照 `data-only` 现算）。留着这句会让人去找一条不存在的规则。
-    //   ⚠ 那颗 📐 的 id 是 `drawtplbtn`，**不是 `tplbtn`**：`tplbtn` 是底下
-    //     「模板库」那颗按钮的名字（就是下面 main.js 里 `$('tplbtn')` 抓的那颗），
-    //     撞名会让模板库的点击挂到 📐 上、两个功能一起坏。原因写在 index.html 那儿。
-    if (SR.DRAWUI) SR.DRAWUI.init();
-
-    // 资料库面板（见 js/libui.js）。★ 跟上面那几件一样：**只挂监听，不干活**——
-    //   开机这一趟一次云函数都不发（搜索、列桶全是老师点了才发生）。
-    //   ★ 它跟工位没有先后关系：按钮上没写 `data-only`，六个工位露的是同一块面板。
+    // ★★ 2026-10-08：这里原来还挂三件东西——投影（js/project.js）、作图模板
+    //   （js/drawui.js，📐）、资料库面板（js/libui.js，📚）。三件**连文件一起撤了**，
+    //   当天又把 📚 这一件搬了回来（另外两件没回来）。
+    //   ⚠ 撤的时候**只动了界面**：`js/gate.js` 里那几条读库的口子（`reslib` /
+    //     `libList` / `libSign`）一个字没动，模型自己发起的「查」也一直走它们——
+    //     那是他真正要的那条路（他原话「主要还是 agent 要知道去云端 cloudbase
+    //     调取我的知识库作为参考」）。搬回 📚 只是让**他自己**也够得着同一个库。
+    // ★ 跟上面 cards 那几件一样：**只挂监听，不干活**——开机这一趟一次云函数都不发
+    //   （搜索、列桶全是老师点了才发生）。它跟工位也没有先后关系：按钮上没写 `data-only`。
     if (SR.LIBUI) SR.LIBUI.init();
+
 
     applyWork(readSavedWork(), true);
 
