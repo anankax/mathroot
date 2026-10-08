@@ -1175,7 +1175,28 @@ SR.api = (function () {
       //     DeepSeek 三条都没配，一律回落到 models。
       var w = SR.WORKS[opts.work] || SR.WORKS[SR.DEFAULT_WORK];
       var chain;
-      if (w.chain === 'board') chain = b.models;
+      // ★★ 2026-10-08：工位可以**点名**要哪几颗（`chainModels`），比 'board'/'role' 再窄一层。
+      //   为什么非有这一层：出题那一格共用「作图」那条链，而链上第二颗
+      //   glm-4.1v-thinking-flash **在出题这一格上一个字都不给**——
+      //   `node thinkprobe.cjs` 重放冻住的请求体 6/6 `finish_reason=length`、
+      //   `</think>` 一次都没闭上、闭后正文 0 字；`node varycand.cjs` 再量 3 次，同样 3/3 空。
+      //   而头一颗 glm-4.6v-flash 这会儿很挤（`node headtries.cjs`：按产品这条退避打 6 次，
+      //   3 条序列里 2 条能通、1 条 6 次全不通；2 次之内通的只有 1 条）——
+      //   于是头一颗 429 两下之后，就掉到那颗**空手**的身上：老师本来该拿到一句红字。
+      //   ⇒ 出题点名走这一条：还是先请守规矩的头一颗，挤掉了就换 glm-4v-flash
+      //     （实测同一份请求体 3 次：209~417 字、finish=stop，三段变式带答案，
+      //      它不给蓝图、直接出成品——**这是拿"守合同"换"答得出来"**，见 config.js 那段）。
+      //   ⚠ 按**后端**分档写（`{glm: [...]}`）：切到「我的 Key」时后端是 deepseek，
+      //     本地取不到就说不上话，照旧回落到 b.models——否则会把 glm 的模型名发给
+      //     api.deepseek.com，整条链当场 400。别改成一颗平铺的数组。
+      //   ⚠ 只给**出题**点名，别顺手去改 `b.models`：作图／组卷那条链上第二颗是用得上的
+      //     （config.js 量过围栏 32/36；今天组卷那一格跑出 1180 字也是好的）。
+      //   ⚠ 这一层**不动** `板上有算图` 的判据：那一条看的是 `chain === 'board'`，
+      //     出题仍旧算"算图"的工位，板上画着东西照样当"手里有图"——
+      //     所以 config 里 `chain` 保持 'board'，只是多一行 `chainModels`。
+      var 点名 = w.chainModels && w.chainModels[b.id];
+      if (点名 && 点名.length) chain = 点名;
+      else if (w.chain === 'board') chain = b.models;
       else if (hasImg) chain = b.modelsImage || b.models;
       else chain = b.modelsText || b.models;
       // ★ 例外（2026-10-04）：工位带 textHead 时，**板还空着的第一轮**也走 modelsText。
@@ -1296,8 +1317,33 @@ SR.api = (function () {
       //   里那支"桩不照产品合同演 → 空气泡"就是同一个病。
       //   现在合成一处。`onChunk` 只在流里**一个字符都没吐**的时候叫
       //   （`all` 是 `out()` 里逐段攒的，它有值就说明已经推过了），所以不会推两遍。
+      // ★★ 2026-10-08 夜：上面那句"总比空手强"**是错的**——它就是那件"推理稿漏给老师看"
+      //   的缺陷本尊。命题那一格量出来的（`node thinkprobe.cjs`，冻住同一个请求体重放 6 次）：
+      //   glm-4.1v-thinking-flash 拿 1024 颗 token **全用来想**，`finish_reason=length`、
+      //   `</think>` **6/6 一次都没闭上**、闭后正文 0 字。
+      //   于是 makeStripper 把整段丢干净（`flush()` 见 `inside` 还立着，什么都不推），
+      //   `all` 是空的 → 走到这儿 → 把 1400~1500 字的稿子（只是没了标签）端给老师。
+      //   老师读到的第一句是「用户现在需要把"2x + 3 = 7"这道题变出三个变式…」。
+      //   ⚠ api.js:1195 那段注释把这条写成"刮刀没刮到**不带 `<think>` 外壳**"的形状、
+      //     说是**一件独立的缺陷**、别拿 textHead 当它的解药——**说的就是这一处**，
+      //     只是根子不在刮刀身上，在这个兜底。
+      //   ⇒ 判据换成 `</think>` 有没有出现过：闭过，才有"标签后面那段"可捞（那才是答案）；
+      //     没闭过，就是**这一轮一个字正文都没有**。空着手比端稿子强——
+      //     下一行 `if (!all) return { error: '模型没说出话来' }` 会照实报，
+      //     老师看见的是一句红字，不是一整屏心里话。
+      //   ⚠ 只改**量到过的那一种形状**，别的原样不动：`<think>` 从头就没出现过
+      //     （刮刀自己误判），照旧退回原文——老行为留着，别顺手扩大打击面。
       if (!all && rawAll) {
-        all = rawAll.replace(/<\/?think>/gi, '').trim();
+        var 小写 = rawAll.toLowerCase();
+        var 闭 = 小写.lastIndexOf('</think');
+        var 开过 = 小写.indexOf('<think') >= 0;
+        if (闭 >= 0) {
+          var 右尖 = rawAll.indexOf('>', 闭);
+          all = (右尖 < 0 ? '' : rawAll.slice(右尖 + 1)).replace(/<\/?think>/gi, '').trim();
+        } else if (!开过) {
+          all = rawAll.replace(/<\/?think>/gi, '').trim();
+        }
+        // 开过、却没闭上 = 满篇心里话，一个字都不退，让下面那句红字照实报
         if (all) onChunk(all);
       }
 
