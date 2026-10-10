@@ -451,7 +451,9 @@ SR.chat = (function () {
       if (t.w && prev && t.w !== prev) addDivider(prev, t.w);
       if (t.w) prev = t.w;
       if (t.r === 'u') {
-        ask = t.t;
+        // ★ 2026-10-10：**不点头的那句才算名字的来源**（见 `名字源` 顶上那段）——
+        //   点头轮不更新 `ask`，它自然就停在上一句真交代要求的话上，跟当场那条路同一个答案。
+        if (!(SR.blueprint && SR.blueprint.是点头 && SR.blueprint.是点头(t.t))) ask = t.t;
         // ★ 2026-10-06：老师这一条也要钉门牌 —— 「修改 / 重新发送」要按它算
         //   "从第几条重来"（见 账本号 / 从这儿重来）。重画这条路跟当场那条路
         //   **必须钉同一个号**，不然刷新之后这两颗按钮要么失灵、要么切错地方，
@@ -598,7 +600,8 @@ SR.chat = (function () {
     var list = SR.memo.log(), ask = '', n = 0;
     for (var i = 0; i < list.length; i++) {
       var t = list[i];
-      if (t.r === 'u') { ask = t.t; continue; }
+      // ★ 2026-10-10：同上面重画那一处——点头轮不更新 `ask`（见 `名字源` 顶上那段）。
+      if (t.r === 'u') { if (!(SR.blueprint && SR.blueprint.是点头 && SR.blueprint.是点头(t.t))) ask = t.t; continue; }
       var msg = els.msgs.querySelector('.msg[data-mi="' + i + '"]');
       if (!msg) continue;
       var b = msg.querySelector('.bubble');
@@ -1804,6 +1807,32 @@ SR.chat = (function () {
   // 也是给"另存为"后面还要接 (1)(2) 留地方。
   var NAME_MAX = 22;
 
+  // ★★ 2026-10-10：**点头那一句不算「老师要什么」**。
+  //   病（录屏时在页面上量到的）：组卷那一格出完的成品卡，文件名印出来是「就按这个办.docx」。
+  //   来路：组卷／命题开着**蓝图闸门**（js/config.js:332 的 `blueprint: true`）——
+  //   第 1 轮只出蓝图，老师点头（「就按这个办」，见 js/prompt-blueprint.js:118 的 `是点头`），
+  //   第 2 轮才出全套。而那张卷子卡是挂在**点头那一轮**的气泡上的（`msg.matEl`），
+  //   `fileTitle` 取的又是「老师最后那句话」⇒ 名字就取到了「就按这个办」。
+  //   他说的确实是那句话，可那不是个名字——跟上面「出一份…」那条病同根：
+  //   **句子是给模型听的、名字是给老师看的，两样东西的来源不该是同一句。**
+  //   治法：碰上点头轮，名字**往前找上一句真交代要求的老师话**（「出一份有理数的周练…」）。
+  //   ⚠ 只换「名字的来源」，不碰 `fileTitle` 自己那套剥词规则——那套是给真要求用的。
+  //   ⚠ 往前找是**有界的**：找到头都没有就回空串，让 `fileTitle` 落到它自己那句模板名兜底上。
+  function 名字源(话) {
+    var s = String(话 || '').trim();
+    var 判点头 = SR.blueprint && SR.blueprint.是点头;
+    if (s && !(判点头 && 判点头(s))) return s;
+    var list = (SR.memo && SR.memo.log) ? SR.memo.log() : [];
+    for (var i = list.length - 1; i >= 0; i--) {
+      if (!list[i] || list[i].r !== 'u') continue;
+      var t = String(list[i].t || '').trim();
+      if (!t) continue;
+      if (判点头 && 判点头(t)) continue;
+      return t;
+    }
+    return '';
+  }
+
   function fileTitle(ask, tpl) {
     var s = String(ask || '').replace(/[\r\n]+/g, ' ').trim();
     // ① 剥口气词。**循环剥**——"给我出一份"是两层，剥一次还剩一层。
@@ -2673,7 +2702,10 @@ SR.chat = (function () {
     els.msgs.appendChild(el);
     scroll();
 
-    var msg = { raw: '', bubble: b, streaming: true, ggbDone: 0, ggbReal: 0, lastVisible: null, lastSay: [], ask: text };
+    // ★ 2026-10-10：`ask` 是**卷子名字的来源**（见 `名字源` 顶上那段）。点头那一句不算——
+    //   组卷／命题开着蓝图闸门时，成品卡正好挂在「就按这个办」那一轮上，
+    //   名字要多退一句才回到老师真交代要求的那个说法上。
+    var msg = { raw: '', bubble: b, streaming: true, ggbDone: 0, ggbReal: 0, lastVisible: null, lastSay: [], ask: 名字源(text) };
     setStatus('');
 
     // ★★ 2026-10-05：这一轮算哪个工位，**在这儿定下来，之后不许再变**。
