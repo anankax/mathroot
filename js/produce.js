@@ -295,6 +295,20 @@ SR.produce = (function () {
     return { body: got.join('\n'), rest: keep.join('\n'), n: got.length };
   }
 
+  // ★ 2026-10-18：**掉了开围栏、只剩一个「材料」粘在句末**。
+  //   实测（test/_sweep6_multi.cjs 组卷第 2 轮）：免费那颗想写 ```材料，
+  //   开头那三个反引号丢了，正文就成了「…我马上为您生成。材料」+ 二十行 `#号`。
+  //   编号行被 lift 收走了，这个孤零零的「材料」留在气泡最末——
+  //   老师看到的就是一句没头没脑的话，还会以为"材料"是正文的一部分。
+  //   只在**真捡走了一整份**（from === 'lift'，≥3 行编号行、且没有围栏）时抹：
+  //   证据足够，而正常的中文正文不会以「。材料」结尾。
+  function tidyLiftRest(s) {
+    return String(s == null ? '' : s).split(/\r?\n/).map(function (ln) {
+      if (/^\s*材料\s*[:：]?\s*$/.test(ln)) return '';                 // 单独一行
+      return ln.replace(/([。！？.!?]["”』」]?)\s*材料\s*$/, '$1');      // 粘在句子末尾
+    }).join('\n');
+  }
+
   // 一段文字有几行（空行不算）。
   function lineCount(s) {
     if (!s) return 0;
@@ -331,7 +345,7 @@ SR.produce = (function () {
       //   收都不收还把它们从气泡里抹掉，结果是**气泡整个空掉**——
       //   老师看到的是一句回复都没有，右栏也没有东西。那比看见两行 `#2 …` 糟得多。
       //   （实测边界：模型只写一两行编号、又没开围栏，就会走到这儿。）
-      rest: from ? lf.rest : visible,                  // 气泡里该显示的文字
+      rest: from ? (from === 'lift' ? tidyLiftRest(lf.rest) : lf.rest) : visible,   // 气泡里该显示的文字
       n: lf.n,
       from: from,
       body: useLift ? lf.body : (fenced || '')

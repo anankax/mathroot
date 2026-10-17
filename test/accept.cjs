@@ -385,6 +385,66 @@ const CASES = [
     }
   },
   {
+    id: 'L2.scores-nodata', layer: 2, name: '学情：没贴成绩表就只许要表，不许编一张出来',
+    // ★★ 2026-10-18 实测的那次翻车（test/_sweep6_multi.cjs）：老师只说
+    //    「这次周练我们班的情况」，模型编了 8 道题 + 每题得分率，屏幕上看不出是编的。
+    //    现在缺表时附注里要直接递上「要表」那句话。
+    //    反面四档同样重要——有数据的三种来源（这一句里的表、历史里的表、图片）
+    //    一个都不许误伤，不然老师明明发了表，它掉头又来要。
+    fn: function () {
+      var F = window.SR.api.学情附注;
+      var 表 = ['学号\t姓名\t1\t2', '1\t张三\t4\t2', '2\t李四\t4\t2', '3\t王五\t4\t1'].join('\n');
+      var 空 = F('grade', [], '这次周练我们班的情况', []);
+      var 本句 = F('grade', [], 表, []);
+      var 历史 = F('grade', [], '接着看', [{ role: 'user', content: 表 }]);
+      var 图 = F('grade', [{ kind: 'image', dataUrl: 'x' }], '这张表看下', []);
+      var 别格 = F('prep', [], '这次周练我们班的情况', []);
+      var got = {
+        // ★ 不只量"那段在不在"，还量**里面递没递那句可照念的话**——第一版只写了五条
+        //   「不许编」，量出来全在、模型照样跑偏（回「你的口袋里还没有题」）。
+        空: /这一轮没有成绩表/.test(空) && /你的回复长这样/.test(空) && /把成绩表发我/.test(空),
+        本句: /这一轮没有成绩表/.test(本句),
+        历史: /这一轮没有成绩表/.test(历史),
+        图: /这一轮没有成绩表/.test(图),
+        别格: 别格 === ''
+      };
+      var ok = got.空 && !got.本句 && !got.历史 && !got.图 && got.别格;
+      return { ok: ok, got: got, want: { 空: true, 本句: false, 历史: false, 图: false, 别格: true } };
+    }
+  },
+  {
+    id: 'L2.material-notpl', layer: 2, name: '组卷：没模板那一轮只许要模板（跟着 user 走，不留在 system 里）',
+    // ★★ 2026-10-18 真打三轮（test/_sweep6_multi.cjs material）量出来的两件事：
+    //   ① 这段话原来只在 system 里（material.js 的 slotBrief），**一次都没被提过**——
+    //      模型反问了题型数量；同一天学情那段挂在 user 上，3/3 都照说了。
+    //   ② 老师点头以后（第二轮）还要有个说法：他点头了，但模板确实还没到。
+    //   反面三档同样重要：传过模板、别的工位、别的后端的首轮，一个都不许冒出这段。
+    fn: function () {
+      var F = window.SR.api.组卷附注;
+      var M = window.SR.material;
+      var 老的 = M.current;
+      var out = {};
+      try {
+        M.current = function () { return null; };
+        out.首轮 = F('material', []);
+        out.二轮 = F('material', [{ role: 'user', content: '第五周周练' },
+                                  { role: 'assistant', content: '模板在左边「我的模板」里传一份（.docx）' },
+                                  { role: 'user', content: '可以，就按这个出' }]);
+        out.别格 = F('prep', []);
+        M.current = function () { return { name: 't', slots: [] }; };
+        out.有模板 = F('material', []);
+      } finally { M.current = 老的; }
+      var got = {
+        首轮: /还缺模板/.test(out.首轮) && /你的回复长这样/.test(out.首轮) && /传一份/.test(out.首轮),
+        二轮: /还缺模板/.test(out.二轮) && /点头/.test(out.二轮),
+        别格: out.别格 === '',
+        有模板: out.有模板 === ''
+      };
+      var ok = got.首轮 && got.二轮 && got.别格 && got.有模板;
+      return { ok: ok, got: got, want: { 首轮: true, 二轮: true, 别格: true, 有模板: true } };
+    }
+  },
+  {
     id: 'L2.material-blocks', layer: 2, name: '组卷→材料：编号行拆得开、掉了围栏也捡得回来',
     // 第二把尺：pickSource 选中的那一份**必须真比另一份厚**，不是"挑到了就行"。
     fn: function () {
@@ -395,6 +455,9 @@ const CASES = [
       var lf = B.lift(['#1 一', '正文', '#2 二', '#0 三'].join('\n'));
       var p1 = B.pickSource(['#1 一', '#2 二', '#0 三', '正文'].join('\n'), '#1 一');
       var p2 = B.pickSource(['#1 一', '正文'].join('\n'), '#9 围栏里');
+      // 2026-10-18：开围栏的反引号丢了，句末留一个光秃秃的「材料」。
+      var p3 = B.pickSource(['我马上为您生成。材料', '#1 一', '#2 二', '#0 三'].join('\n'), '');
+      var p4 = B.pickSource(['好的', '材料', '#1 一', '#2 二', '#0 三'].join('\n'), '');
       var got = {
         段数: bl.length,
         格式号: JSON.stringify(bl.map(function (x) { return x.slot; })),
@@ -403,7 +466,9 @@ const CASES = [
         空的图行没成段: !bl.some(function (x) { return x.slot === 6; }),
         捡回: { n: lf.n, rest: lf.rest },
         两条来源: { from: p1.from, body行: p1.body.split('\n').length, rest: p1.rest },
-        围栏顶住: { from: p2.from, body: p2.body, rest: p2.rest }
+        围栏顶住: { from: p2.from, body: p2.body, rest: p2.rest },
+        掉了开围栏: { from: p3.from, rest: p3.rest },
+        单独一行材料: { from: p4.from, rest: p4.rest }
       };
       var ok = got.段数 === 6 &&
                got.格式号 === '[0,2,1,1,1,null]' &&
@@ -411,8 +476,10 @@ const CASES = [
                got.漏号落正文 && got.空的图行没成段 &&
                got.捡回.n === 3 && got.捡回.rest === '正文' &&
                got.两条来源.from === 'lift' && got.两条来源.body行 === 3 && got.两条来源.rest === '正文' &&
-               got.围栏顶住.from === 'fence' && got.围栏顶住.body === '#9 围栏里' && got.围栏顶住.rest === '正文';
-      return { ok: ok, got: got, want: '6 段 / 图在第 5 段 / 3 行被捡回 / 两条来源都比过' };
+               got.围栏顶住.from === 'fence' && got.围栏顶住.body === '#9 围栏里' && got.围栏顶住.rest === '正文' &&
+               got.掉了开围栏.from === 'lift' && got.掉了开围栏.rest === '我马上为您生成。' &&
+               got.单独一行材料.from === 'lift' && got.单独一行材料.rest === '好的\n';
+      return { ok: ok, got: got, want: '6 段 / 图在第 5 段 / 3 行被捡回 / 两条来源都比过 / 光秃秃的「材料」不留' };
     }
   },
   {
@@ -538,6 +605,104 @@ const CASES = [
         ok: ok, got: got,
         want: { 发出去的: '3 次全是 glm-4.6v-flash', 备胎被请求: [], 回话: '含 ```ggb' }
       };
+    }
+  },
+  {
+    id: 'L2.review-nopaper', layer: 2, name: '讲评：一张卷子都没发来，只请它要卷子，不许自己编一份',
+    // 2026-10-18 实测出来的病（test/_sweep6_iso.cjs）：老师只说「这份卷子讲评一下」，
+    // 模型自己编了 6 道题、安上得分率，再按假表排讲评顺序。屏幕上看不出是编的。
+    // 这条尺子只认**开场那一轮、手里空着**这个条件——有图、有历史、别的工位，都不许挂。
+    fn: function () {
+      var A = window.SR.api;
+      window.SR.memo.clear();
+      var B = function (work, q, parts, hist) {
+        return A.buildSystem(work, q, 'glm', parts || [], hist || [], null, q, null, '', false, null) || '';
+      };
+      var 空 = B('review', '这份卷子讲评一下');
+      var 有图 = B('review', '这份卷子讲评一下', [{ kind: 'image' }]);
+      var 有历史 = B('review', '这份卷子讲评一下', [],
+        [{ role: 'user', content: '讲评这份卷子' }, { role: 'assistant', content: '好的，第 1 题……' }]);
+      var 别的工位 = B('prep', '这道题怎么讲');
+      var 标记 = '这一轮老师手里没有卷子';
+      var got = {
+        空场: 空.indexOf(标记) >= 0,
+        空场递了口径: 空.indexOf('把卷子发我') >= 0 && 空.indexOf('不许自己编一份卷子') >= 0,
+        有图: 有图.indexOf(标记) >= 0,
+        有历史: 有历史.indexOf(标记) >= 0,
+        别的工位: 别的工位.indexOf(标记) >= 0
+      };
+      var ok = got.空场 && got.空场递了口径 && !got.有图 && !got.有历史 && !got.别的工位;
+      return { ok: ok, got: got,
+               want: { 空场: true, 空场递了口径: true, 有图: false, 有历史: false, 别的工位: false } };
+    }
+  },
+  {
+    id: 'L2.review-wholepaper', layer: 2, name: '讲评：一整份卷子贴进来，先列题号再问先讲哪一道（附注挂在 user 消息上）',
+    // ★★ 2026-10-18 夜真打出来的病：老师贴了 8 道题的周练卷，模型**只答了第 1 题**，
+    //   题号一个都没列。老附注躺在 system 的第 3098/5617 字——正中间，模型读不到。
+    //   同一天学情／组卷两档量出同一条规律：小模型只读最近那条 user 消息。
+    //   ⇒ 这段现在由 `SR.api.讲评附注` 生成、拼进 user 消息末尾；system 里必须**一个字都没有**。
+    // ⚠ 判据用形状（≥3 行以题号开头，或 ≥2 张图），不用字数：一页真卷子正文只有四五百字。
+    fn: function () {
+      var A = window.SR.api;
+      var 卷 = ['第五周周练·数学', '1．下列各式中，是代数式的是（　　）',
+        '2．当 a=2 时，代数式 3a-1 的值是（　　）', '3．单项式 -2x²y 的系数和次数分别是（　　）'].join('\n');
+      var 一句 = A.讲评附注('review', '这份卷子讲评一下', []) || '';
+      var 整卷 = A.讲评附注('review', 卷, []) || '';
+      var 两图 = A.讲评附注('review', '这份卷子讲评一下', [{ kind: 'image' }, { kind: 'image' }]) || '';
+      var 别的工位 = A.讲评附注('prep', 卷, []) || '';
+      var sys = A.buildSystem('review', '这份卷子讲评一下', 'glm', [], [], null,
+        '这份卷子讲评一下', null, '', false, null) || '';
+      var 标记 = '一整份（或好几道）题';
+      var got = {
+        一句话不挂: 一句.indexOf(标记) < 0,
+        一模一样的卷子才挂: 整卷.indexOf(标记) >= 0,
+        两张图就挂: 两图.indexOf(标记) >= 0,
+        别的工位不挂: 别的工位.indexOf(标记) < 0,
+        分成两段: 整卷.indexOf('你的回复分成两段') >= 0,
+        第一段要列题号: 整卷.indexOf('按题号列一遍') >= 0,
+        收尾问句: 整卷.indexOf('先讲哪一道') >= 0 && 整卷.indexOf('你再摆那一道的链子') >= 0,
+        // ★ 第三版把样例里的具体题目删干净了：真打三遍里有两遍拿样例的「全等三角形」
+        //   当成这卷子上的题、还配了个编出来的平均分。这条钉住"附注里不出现任何具体题目"。
+        没有样例内容: !/[1-8]．/.test(整卷) && 整卷.indexOf('三角形') < 0 && 整卷.indexOf('全等') < 0,
+        system里没有: sys.indexOf(标记) < 0
+      };
+      var ok = got.一句话不挂 && got.一模一样的卷子才挂 && got.两张图就挂 &&
+               got.别的工位不挂 && got.分成两段 && got.第一段要列题号 && got.收尾问句 &&
+               got.没有样例内容 && got.system里没有;
+      return { ok: ok, got: got,
+               want: { 一句话不挂: true, 一模一样的卷子才挂: true, 两张图就挂: true, 别的工位不挂: true,
+                       分成两段: true, 第一段要列题号: true, 收尾问句: true, 没有样例内容: true,
+                       system里没有: true } };
+    }
+  },
+  {
+    id: 'L2.review-scores-hist', layer: 2, name: '讲评：老师刚从学情过来，表在历史里——要把算好的数递过去，别让它自己算',
+    // ★★ 2026-10-18 夜实测（test/_sweep6_multi.cjs 六工位连着走）：老师在【学情】贴了
+    //   成绩表，切到【讲评】只说「这份卷子讲评一下」。账本把上一场带过来了、原始表还在，
+    //   可**算好的那段没跟过来**——模型自己拿表算，编出「得分率较高／一般／较低」，
+    //   还排出"先讲第四题"。这跟学情那格的老病同一个根：模型不会算，它会编。
+    //   ⇒ 讲评也能挂 学情附注：表只在历史里时，**从最近的一条真算一遍**递过去。
+    fn: function () {
+      var A = window.SR.api;
+      var 表 = ['学号\t姓名\t1\t2', '1\t张三\t4\t2', '2\t李四\t4\t2', '3\t王五\t4\t1',
+        '4\t赵六\t4\t1', '5\t钱七\t3\t1', '满分\t\t5\t5'].join('\n');
+      var 有史 = A.学情附注('review', '这份卷子讲评一下', [], [{ role: 'user', content: 表 }]) || '';
+      var 无表 = A.学情附注('review', '这份卷子讲评一下', [], []) || '';
+      var 当前 = A.学情附注('review', [{ kind: 'text', text: 表 }], '', []) || '';
+      var 别的工位 = A.学情附注('prep', '这份卷子讲评一下', [], [{ role: 'user', content: 表 }]) || '';
+      var got = {
+        历史里的表算上了: 有史.indexOf('这一轮算好的学情') >= 0 && 有史.indexOf('第 2 题') >= 0,
+        说了表是哪来的: 有史.indexOf('前面那一轮') >= 0,
+        没表就不吭声: 无表 === '',
+        这一轮刚贴的也算: 当前.indexOf('这一轮算好的学情') >= 0 && 当前.indexOf('前面那一轮') < 0,
+        别的工位不挂: 别的工位 === ''
+      };
+      var ok = got.历史里的表算上了 && got.说了表是哪来的 && got.没表就不吭声 &&
+               got.这一轮刚贴的也算 && got.别的工位不挂;
+      return { ok: ok, got: got,
+               want: { 历史里的表算上了: true, 说了表是哪来的: true, 没表就不吭声: true,
+                       这一轮刚贴的也算: true, 别的工位不挂: true } };
     }
   },
   {
@@ -734,6 +899,16 @@ const RED_MUTATIONS = [
     script: "window.SR.scores.解析 = function(){ return {err:'坏了'}; };"
   },
   {
+    target: 'L2.scores-nodata',
+    why: '缺表时一个字都不加（回到 2026-10-18 之前那版，模型当场编了 8 道题）',
+    script: "window.SR.api.学情附注 = function(){ return ''; };"
+  },
+  {
+    target: 'L2.material-notpl',
+    why: '缺模板时一个字都不加（回到 2026-10-18 白天那版：只在 system 里，模型三次都没提模板）',
+    script: "window.SR.api.组卷附注 = function(){ return ''; };"
+  },
+  {
     target: 'L2.material-blocks',
     why: '让编号行解析一个都拆不出来',
     script: "window.SR.produce.parseBlocks = function(){ return []; };"
@@ -757,6 +932,21 @@ const RED_MUTATIONS = [
     target: 'L2.draw-chain',
     why: '把作图链退回三颗（头一颗挤掉后，第三个请求会落到不说话的那颗上）',
     script: "window.SR.WORKS.draw.chainModels = { glm: ['glm-4.6v-flash','glm-4.1v-thinking-flash','glm-4v-flash'] };"
+  },
+  {
+    target: 'L2.review-nopaper',
+    why: '把讲评的整卷开关关掉（这档附注跟着它走，等于"手里没卷子"这件事根本不存在）',
+    script: "window.SR.WORKS.review.listPaper = false;"
+  },
+  {
+    target: 'L2.review-wholepaper',
+    why: '整卷附注一个字都不加（回到 2026-10-18 夜之前那版：模型只答第 1 题）',
+    script: "window.SR.api.讲评附注 = function(){ return ''; };"
+  },
+  {
+    target: 'L2.review-scores-hist',
+    why: '讲评拿不到"算好的学情"（题号传 null 那一档直接不出简报——回到编得分率那版）',
+    script: "window.SR.scores.简报自 = (function(f){ return function(r,t){ return t===null ? '' : f(r,t); }; })(window.SR.scores.简报自);"
   },
   {
     target: 'L2.robustness',
