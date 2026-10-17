@@ -2366,7 +2366,12 @@ SR.chat = (function () {
       busy = false; els.send.disabled = false;
       var 还 = [];
       if (res && res.error) {
-        noteUnder(el, '想让它改一遍，可这一趟没发出去（' + res.error + '）。没认的还在状态条上。');
+        // ★ 2026-10-17：原来写的是「这一趟**没发出去**」——不真。
+        //   实测（test/_repair_empty.cjs）自修那一趟是**真发出去了**，只是
+        //   glm-4.1v-thinking-flash 回了一千多字没闭口的 `<think>`、正文 0 字，
+        //   刮刀整段丢掉，`ask` 才报「模型没说出话来」。老师读到"没发出去"会去查网络，
+        //   可问题在模型那头。改成"没改成"，这句话对排队、对空正文、对断网都成立。
+        noteUnder(el, '想让它改一遍，可这一趟没改成（' + res.error + '）。没认的还在状态条上。');
         setStatus('没认：' + 没认.slice(0, 3).join(' ／ '));
         return;
       }

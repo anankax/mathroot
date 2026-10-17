@@ -482,6 +482,65 @@ const CASES = [
     }
   },
   {
+    id: 'L2.draw-chain', layer: 2, name: '作图链只留能用的一颗：头一颗挤掉也回它，不去找那颗不说话/塞不下的',
+    // 2026-10-17 孔老师截图那一趟：板上好好的 8 件，只有 1 条没认，产品自修，
+    // 回来的却是「模型没说出话来」。量下来是降级链本身的问题（test/_repair_empty.cjs）：
+    //   glm-4.1v-thinking-flash 回一千多字没闭口的 `<think>`，正文 0 字；
+    //   glm-4v-flash 在这一格 16.6k 的请求体上直接 1210。
+    // 这条用例**不看配置**，看真发出去的请求体：让头一颗连续 429 两次，
+    // （旧链子这个时候必然掉到第二颗）→ 第三次必须还是 glm-4.6v-flash。
+    // 第二把尺：断言**两条备胎一次都没被请求过**，而不只是"最后成功了"。
+    timeout: 40000,
+    fn: async function () {
+      var A = window.SR.api;
+      A.setBackend('glm');
+      if (window.SR.GATE) window.SR.GATE.on = false;
+      var 原名 = window.SR.WORKS.draw.chainModels;
+      var orig = window.fetch;
+      var 发过 = [], n = 0;
+      window.fetch = function (u, o) {
+        if (String(u).indexOf('chat/completions') < 0) return orig.apply(window, arguments);
+        var b = {}; try { b = JSON.parse(o.body); } catch (e) {}
+        发过.push(b.model); n++;
+        if (n <= 2) return Promise.resolve(new Response('', { status: 429 }));
+        var s = 'data: {"choices":[{"delta":{"content":"```ggb\\n#清空\\nA=(0,0)\\nB=(4,0)\\n```"}}]}\n\n' +
+                'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n' +
+                'data: {"usage":{"prompt_tokens":10,"completion_tokens":8}}\n\n' +
+                'data: [DONE]\n\n';
+        return Promise.resolve(new Response(new Blob([s]).stream(), { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
+      };
+      var r, 抛 = null;
+      try {
+        r = await A.ask({
+          work: 'draw', text: '画个三角形', history: [],
+          // 带一张图 = "这一轮手里有图"，避开 textHead 把板空着的第一轮改派文字模型。
+          parts: [{ kind: 'image', dataUrl: 'data:image/png;base64,AAAA' }]
+        });
+      } catch (e) { 抛 = String(e && e.message || e); }
+      finally {
+        window.fetch = orig;
+        if (原名 === undefined) delete window.SR.WORKS.draw.chainModels;
+        else window.SR.WORKS.draw.chainModels = 原名;
+      }
+      var 备胎 = ['glm-4.1v-thinking-flash', 'glm-4v-flash'];
+      var 漏了 = 发过.filter(function (m) { return 备胎.indexOf(m) >= 0; });
+      var got = {
+        发出去的: 发过,
+        备胎被请求: 漏了,
+        回话: r && (r.text || r.error),
+        抛了: 抛
+      };
+      var ok = !抛 && 发过.length >= 3 &&
+               发过.every(function (m) { return m === 'glm-4.6v-flash'; }) &&
+               漏了.length === 0 &&
+               !!(r && r.text && r.text.indexOf('```ggb') >= 0);
+      return {
+        ok: ok, got: got,
+        want: { 发出去的: '3 次全是 glm-4.6v-flash', 备胎被请求: [], 回话: '含 ```ggb' }
+      };
+    }
+  },
+  {
     id: 'L2.robustness', layer: 2, name: '空回复/半截围栏/超长文本：纯函数不许抛，也不许崩在空值上',
     // 输入只用**真会出现的东西**：空串、没写完的围栏、模型只回了一个 ``` 或空行。
     // 不拿对象/数字去凑——那不是产品会遇到的情况，拿它报出来的红是假警报。
@@ -693,6 +752,11 @@ const RED_MUTATIONS = [
     target: 'L2.draw-cards',
     why: '让作图一张卡都不翻',
     script: "window.SR.drawkb.翻 = function(){ return []; };"
+  },
+  {
+    target: 'L2.draw-chain',
+    why: '把作图链退回三颗（头一颗挤掉后，第三个请求会落到不说话的那颗上）',
+    script: "window.SR.WORKS.draw.chainModels = { glm: ['glm-4.6v-flash','glm-4.1v-thinking-flash','glm-4v-flash'] };"
   },
   {
     target: 'L2.robustness',
