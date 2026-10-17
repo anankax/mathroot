@@ -128,6 +128,12 @@ SR.BACKENDS = {
     hint: '用你自己的 DeepSeek Key',
     url: 'https://api.deepseek.com/chat/completions',
     models: ['deepseek-flash'],
+    // ★ 2026-10-17：两条链显式写出来。它们本来会回落到 models（值一样），
+    //   但"碰巧对"和"写明白"不是一回事——以后 DeepSeek 出了更便宜的文字模型，
+    //   改这里就行，不用回来猜当初为什么带图也走它。
+    //   ★ V4.1-Flash-1017 起这颗原生支持图像输入（官方 /models 里 input_modalities 有 image）。
+    modelsImage: ['deepseek-flash'],
+    modelsText: ['deepseek-flash'],
     stripThink: false,
     keyInPage: false,
     sendThinking: true,   // DeepSeek 默认吐思维链，要显式关掉
@@ -344,7 +350,15 @@ SR.WORKS = {
     //   5060 + 7000 + 3072 = 15132 < 16384，留一千多 token 余量。
     //   ⚠ 别照着往上加：加到 4096 就顶到 16156，擦着 16K 过，
     //     降级到 glm-4v-flash 那一档就会 1210「输入过长」，而且是**一声不吭**的那种挂。
-    maxTokens: 3072
+    maxTokens: 3072,
+    // ★★ 2026-10-17：**DeepSeek 端单独一档**。上面那 3072 是拿 16K 免费链算的账，
+    //   而「我的 Key」走 api.deepseek.com，上下文 1M、输出上限 393K，再拿 3072 卡它
+    //   没有道理——30 道的卷子照样会在第 28 题被截断。
+    //   8192 是这么量的：上一版 3072 截在第 28 题，按题量线性外推一份约 3300~3600 tokens，
+    //   8192 留了两倍余量；即使模型写得比模板啰嗦，也够它把「材料」围栏闭上。
+    //   ⚠ 只对 deepseek 生效，glm 那条链照旧 3072——别把这行挪进 maxTokens。
+    //   选哪一档在 js/api.js 的 `输出上限()` 里判，判据是 b.id === 'deepseek'。
+    maxTokensDeepseek: 8192
   },
   draw: {
     id: 'draw', label: '作图', badge: '平面立体同一块板 · 存图贴进课件',

@@ -20,6 +20,16 @@ SR.api = (function () {
     try { return localStorage.getItem(SR.LS_BACKEND) || SR.DEFAULT_BACKEND; } catch (e) { return SR.DEFAULT_BACKEND; }
   }
   function backend(id) { return SR.BACKENDS[id || getBackendId()] || SR.BACKENDS[SR.DEFAULT_BACKEND]; }
+
+  // ★★ 2026-10-17：输出上限按**后端**分档。组卷那一格的 3072 是拿 16K 的免费链算出来的账，
+  //   而「我的 Key」走 api.deepseek.com，上下文 1M、输出上限 393K，没有理由再迁就它。
+  //   两套数都写在 SR.WORKS 里（maxTokens / maxTokensDeepseek），这里只负责挑。
+  //   放在模块作用域而不是 ask 里面，是为了探针能单独量这一行（见文件末尾的导出）。
+  function 输出上限(work, b) {
+    var w = SR.WORKS[work] || {};
+    if (b && b.id === 'deepseek' && w.maxTokensDeepseek) return w.maxTokensDeepseek;
+    return w.maxTokens || SR.MAX_TOKENS;
+  }
   function setBackend(id) {
     if (!SR.BACKENDS[id]) return;
     try { localStorage.setItem(SR.LS_BACKEND, id); } catch (e) {}
@@ -1140,7 +1150,7 @@ SR.api = (function () {
         // ★ 输出上限：默认 SR.MAX_TOKENS（1024，按"数根回的是短问句"定的），
         //   工位自己写了 `maxTokens` 就用它的。**目前只有组卷那一格**——
         //   它的提示词要求"一整份卷子一条回复写完"，1024 装不下，见 config.js 那一段。
-        max_tokens: (SR.WORKS[opts.work] || {}).maxTokens || SR.MAX_TOKENS,
+        max_tokens: 输出上限(opts.work, b),
         stream: true
       };
       // ★ thinking 只对 DeepSeek 发。GLM 前后两代模型都不吃这个参数，别去惹它的参数校验。
@@ -1367,6 +1377,8 @@ SR.api = (function () {
     getKey: getKey, setKey: setKey, forgetKey: forgetKey, hasKey: hasKey, ready: ready,
     probeKey: probeKey,
     backend: backend, getBackendId: getBackendId, setBackend: setBackend,
+    // ★ 探针用：量"这一格、这个后端"最终会发多少 max_tokens。别在界面里调。
+    输出上限: 输出上限,
     userContent: userContent, trimHistory: trimHistory, estTokens: estTokens,
     // ★ 学情那一段单独放出来（2026-10-08）：探针要能**单独**量它——比如"这段到底跟着
     //   哪条消息走"。原来它埋在 buildSystem 里，只能靠读最后那段 system 反推。
